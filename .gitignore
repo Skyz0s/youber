@@ -1,0 +1,21 @@
+# Entorno virtual y caches
+.venv/
+__pycache__/
+*.pyc
+
+# Variables de entorno reales (nunca commitear)
+.env
+
+# Datos locales / temporales
+*.log
+.pytest_cache/
+
+# Reportes generados por los ejemplos y la CLI
+reports/
+
+# Artefactos de build/empaquetado
+build/
+dist/
+
+# Metadata de instalación editable
+src/*.egg-info/

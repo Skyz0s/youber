@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "youber"
+version = "0.1.0"
+description = "Browser Automation Research Framework - Framework educativo para investigación de navegación y accesibilidad"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Skyzo", email = "skyzos@users.noreply.github.com" }]
+keywords = ["automation", "playwright", "accessibility", "research", "mcp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "playwright>=1.45",
+    "python-dotenv>=1.0",
+    "pydantic>=2.7",
+    "loguru>=0.7",
+    "httpx>=0.27",
+    "mcp>=2.0.0,<3",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pre-commit>=3.0",
+]
+
+[project.scripts]
+youber-audit = "youber.cli:audit"
+youber-sandbox = "youber.cli:sandbox"
+youber-client = "youber.client.interactive:main"
+
+[project.urls]
+Homepage = "https://github.com/Skyz0s/youber"
+Repository = "https://github.com/Skyz0s/youber"
+Documentation = "https://github.com/Skyz0s/youber/docs"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# axe-core va vendored dentro del paquete (auditorías offline deterministas):
+# sin esto, el .js no viajaría en el wheel.
+[tool.setuptools.package-data]
+youber = ["assets/*.js"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true

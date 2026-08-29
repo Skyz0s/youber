@@ -1,0 +1,14 @@
+# Dependencias base del framework BARF
+playwright>=1.45
+python-dotenv>=1.0
+pydantic>=2.7
+loguru>=0.7
+httpx>=0.27
+
+# Capa MCP
+# MCP Python SDK 2.x (MCPServer; migración completada en Fase 5).
+# Guía de migración v1->v2: https://py.sdk.modelcontextprotocol.io/v2/migration/
+mcp>=2.0.0,<3
+
+# CLI interactiva del cliente
+rich>=13.0

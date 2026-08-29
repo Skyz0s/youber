@@ -1,0 +1,29 @@
+# Pre-commit hooks del proyecto BARF.
+# Instalación: pre-commit install
+# Los hooks usan las herramientas del venv (language: system) para replicar
+# exactamente lo que corre el CI.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        entry: ruff check src/ tests/ examples/
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: mypy
+        name: mypy (type check)
+        entry: mypy src/
+        language: system
+        types: [python]
+        pass_filenames: false

@@ -1,0 +1,16 @@
+# MANIFEST.in — ficheros incluidos en el sdist (además de los del paquete)
+
+include README.md
+include LICENSE
+include pyproject.toml
+include CHANGELOG.md
+
+# Asset vendored de axe-core (auditorías offline deterministas)
+recursive-include src/youber/assets *
+
+# Documentación y ejemplos
+recursive-include examples *
+recursive-include docs *
+
+exclude .env.example
+exclude .gitignore
