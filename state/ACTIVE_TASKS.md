@@ -2,17 +2,17 @@
 
 > Estado del proyecto, actualizado en cada fase.
 
-## Fase 7: Publicación en PyPI + GitHub Release — 🚧 En progreso (PyPI publicado)
+## Fase 7: Publicación en PyPI + GitHub Release — ✅ Completada
 
 - [x] `pyproject.toml` verificado (name youber, v0.1.0, deps, scripts, package-data axe-core, pre-commit en dev)
-- [x] `MANIFEST.in` (spec de Skyzo: README/LICENSE/pyproject + assets/examples/docs, exclude .env.example/.gitignore)
-- [x] `.pre-commit-config.yaml` (pre-commit-hooks + ruff/mypy locales) + `pre-commit` en dev deps
-- [x] `CHANGELOG.md` (0.1.0)
-- [x] Build local: `python -m build` → **twine check PASSED** (wheel + sdist), axe.min.js en ambos, excludes OK
-- [x] `.github/workflows/publish.yml` (trusted publishing al crear tag v*) + nota en PUBLISHING.md
-- [x] **PyPI publicado: `youber 0.1.0` live** (https://pypi.org/project/youber/0.1.0/) — subido con token de Skyzo vía env var; wheel verificado descargable
-- [ ] Trusted Publishing en el proyecto PyPI (para futuros releases sin token)
-- [ ] Repo GitHub + CI activo + release v0.1.0 (requiere repo/credenciales de Skyzo)
+- [x] `MANIFEST.in` (spec de Skyzo) + `.pre-commit-config.yaml` + `CHANGELOG.md` (0.1.0)
+- [x] Build local: `python -m build` → **twine check PASSED** (wheel + sdist)
+- [x] **PyPI publicado: `youber 0.1.0` live** (https://pypi.org/project/youber/0.1.0/)
+- [x] **Repo GitHub: https://github.com/Skyz0s/youber** (público, push desde `projects/barf/` como repo nuevo, 84 ficheros limpios)
+- [x] **CI verde** (Python 3.11 + 3.12: ruff, mypy, 59 tests, coverage) — fix de headless en tests MCP (CI no tiene display X)
+- [x] **Release v0.1.0**: https://github.com/Skyz0s/youber/releases/tag/v0.1.0 + workflow Publish OK (guard: salta si la versión ya está en PyPI)
+- [ ] Trusted Publishing en PyPI (para futuros releases sin token) — pendiente de Skyzo
+- [ ] Revocar el token de PyPI usado en el chat (recomendado)
 
 ## Fase 6: Cliente MCP + Investigación anti-bot + Publicación — ✅ Completada
 
