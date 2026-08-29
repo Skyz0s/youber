@@ -19,8 +19,8 @@ EXAMPLE_URL = "https://example.com"
 
 @pytest.fixture
 async def session():
-    """Sesión de navegador aislada por test."""
-    s = BrowserSession()
+    """Sesión de navegador aislada por test (headless: CI no tiene display X)."""
+    s = BrowserSession(headless=True)
     yield s
     await s.close()
 

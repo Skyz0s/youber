@@ -50,9 +50,14 @@ class BrowserSession:
     Mantiene un :class:`BrowserManager` y un registro de páginas abiertas
     (``page_id`` -> página). El navegador se lanza de forma perezosa en la
     primera operación y se cierra al terminar el proceso.
+
+    Args:
+        headless: Ejecutar el navegador sin interfaz gráfica. Si es ``None``,
+            se usa la configuración del framework (``BROWSER_HEADLESS``).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, headless: bool | None = None) -> None:
+        self._headless = headless
         self._manager: BrowserManager | None = None
         self._pages: dict[str, Page] = {}
 
@@ -66,7 +71,7 @@ class BrowserSession:
     async def ensure_manager(self) -> BrowserManager:
         """Devuelve el gestor de navegador, lanzándolo si hace falta."""
         if self._manager is None:
-            self._manager = BrowserManager()
+            self._manager = BrowserManager(headless=self._headless)
             await self._manager.launch()
             logger.info("Navegador de sesión lanzado")
         return self._manager

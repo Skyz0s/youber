@@ -42,6 +42,7 @@ async def create_mcp_session(
     server_args: list[str] | None = None,
     url: str | None = None,
     retries: int = 3,
+    env: dict[str, str] | None = None,
 ) -> AsyncIterator[ClientSession]:
     """Crea una sesión de cliente MCP conectada al servidor de BARF.
 
@@ -53,6 +54,9 @@ async def create_mcp_session(
             ``["-m", "youber.mcp.server"]``).
         url: URL del servidor para los transportes ``sse``/``streamable-http``.
         retries: Reintentos de inicialización antes de fallar.
+        env: Variables de entorno extra para el subproceso del servidor
+            (mcp 2.x solo hereda un conjunto seguro; usa esto para pasar
+            p. ej. ``BROWSER_HEADLESS=true`` en CI).
 
     Yields:
         Sesión MCP inicializada, lista para ``list_tools``/``call_tool``.
@@ -69,6 +73,7 @@ async def create_mcp_session(
         params = StdioServerParameters(
             command=command or sys.executable,
             args=server_args or DEFAULT_SERVER_ARGS,
+            env=env,
         )
         logger.debug(f"Conectando por stdio: {params.command} {' '.join(params.args)}")
         async with stdio_client(params) as (read, write):

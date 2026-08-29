@@ -9,7 +9,6 @@ con ``yield``) porque pytest-asyncio + anyio (que usa mcp 2.x) producen un
 finalizar fixtures async generadores.
 """
 
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,20 +27,13 @@ EXAMPLE_URL = "https://example.com"
 async def _client() -> AsyncIterator[MCPTools]:
     """Cliente MCP conectado al servidor (un servidor por test, headless).
 
-    El servidor se lanza como subproceso; le forzamos ``BROWSER_HEADLESS``
-    solo durante el arranque y restauramos el entorno al salir, para no
-    contaminar el resto de la suite (p. ej. test_settings).
+    mcp 2.x solo hereda un subconjunto seguro de variables de entorno
+    (``get_default_environment``), así que ``BROWSER_HEADLESS`` se pasa
+    explícitamente vía ``env`` para que el servidor lance el navegador en
+    headless (necesario en CI, donde no hay display X).
     """
-    previous = os.environ.get("BROWSER_HEADLESS")
-    os.environ["BROWSER_HEADLESS"] = "true"
-    try:
-        async with create_mcp_session() as session:
-            yield MCPTools(session)
-    finally:
-        if previous is None:
-            os.environ.pop("BROWSER_HEADLESS", None)
-        else:
-            os.environ["BROWSER_HEADLESS"] = previous
+    async with create_mcp_session(env={"BROWSER_HEADLESS": "true"}) as session:
+        yield MCPTools(session)
 
 
 async def test_open_page():
