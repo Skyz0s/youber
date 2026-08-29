@@ -25,5 +25,18 @@ jobs:
           pip install build
           python -m build
 
+      - name: Check if version already published
+        id: check-pypi
+        run: |
+          VERSION="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+          if curl -sSf "https://pypi.org/pypi/youber/json" > /dev/null 2>&1 && \
+             curl -sS "https://pypi.org/pypi/youber/json" | python -c "import json,sys; print(json.load(sys.stdin)['info']['version'])" | grep -qx "$VERSION"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "La versión $VERSION ya está publicada en PyPI; se omite la subida."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to PyPI
+        if: steps.check-pypi.outputs.skip != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
