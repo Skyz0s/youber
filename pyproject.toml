@@ -45,6 +45,7 @@ youber-audit = "youber.cli:audit"
 youber-sandbox = "youber.cli:sandbox"
 youber-client = "youber.client.interactive:main"
 youber-research = "youber.cli.research_cli:main"
+youber-workflow = "youber.cli.workflow_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Skyz0s/youber"

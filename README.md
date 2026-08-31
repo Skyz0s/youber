@@ -14,7 +14,7 @@ sobre **Playwright**, con:
 - **Investigación de YouTube** (datos públicos de canales/vídeos, patrones y exportación)
 - **Edición de audio** (música de fondo propia, efectos, sincronización con FFmpeg)
 - **Sandbox de simulaciones** (geolocalización, red, dispositivos)
-- **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva) y `youber-research`
+- **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva), `youber-research` y `youber-workflow`
 
 ## Propósito educativo
 
@@ -65,6 +65,13 @@ youber-research https://youtu.be/abc123 -o video_info.json
 youber-research https://www.youtube.com/@python --insights -o reporte.md
 ```
 
+Flujo completo (investigación + edición de audio):
+
+```bash
+youber-workflow --channel @python -n 10 -o reports
+youber-workflow --demo -o reports   # sin red: canal sintético + medios generados
+```
+
 Desde código:
 
 ```python
@@ -94,6 +101,7 @@ asyncio.run(main())
 - [Investigación anti-bot](docs/ANTI_BOT_RESEARCH.md) — estudio educativo
 - [Investigación de YouTube](docs/YOUTUBE_RESEARCH.md) — datos públicos y patrones
 - [Edición de audio](docs/AUDIO.md) — música de fondo, efectos y sincronización
+- [Flujo completo](docs/WORKFLOW.md) — investigación de YouTube + edición de audio
 - [Guía de laboratorio](docs/RESEARCH.md) — experimentos observacionales
 - [Ejemplos](docs/EXAMPLES.md) — guía de los ejemplos
 - [Publicación en PyPI](docs/PUBLISHING.md) — cómo publicar el paquete
