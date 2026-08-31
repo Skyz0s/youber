@@ -12,6 +12,7 @@ sobre **Playwright**, con:
 - **Auditoría de accesibilidad** (axe-core + mapeo WCAG 2.1/2.2 + reportes)
 - **Estudio de UX** (patrones de navegación, heatmaps, user journeys)
 - **Investigación de YouTube** (datos públicos de canales/vídeos, patrones y exportación)
+- **Edición de audio** (música de fondo propia, efectos, sincronización con FFmpeg)
 - **Sandbox de simulaciones** (geolocalización, red, dispositivos)
 - **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva) y `youber-research`
 
@@ -92,6 +93,7 @@ asyncio.run(main())
 - [Sandbox](docs/SANDBOX.md) — simulaciones de entorno
 - [Investigación anti-bot](docs/ANTI_BOT_RESEARCH.md) — estudio educativo
 - [Investigación de YouTube](docs/YOUTUBE_RESEARCH.md) — datos públicos y patrones
+- [Edición de audio](docs/AUDIO.md) — música de fondo, efectos y sincronización
 - [Guía de laboratorio](docs/RESEARCH.md) — experimentos observacionales
 - [Ejemplos](docs/EXAMPLES.md) — guía de los ejemplos
 - [Publicación en PyPI](docs/PUBLISHING.md) — cómo publicar el paquete
