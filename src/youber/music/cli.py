@@ -24,6 +24,12 @@ from rich.console import Console
 from rich.table import Table
 
 from youber.console import ensure_utf8_console
+from youber.music.audio_features.cli import (
+    register as register_audio_features,
+)
+from youber.music.audio_features.cli import (
+    run as run_audio_features,
+)
 from youber.music.library import MusicLibrary
 from youber.music.models import Mood, Track
 
@@ -87,6 +93,8 @@ def build_parser() -> argparse.ArgumentParser:
     remove = sub.add_parser("remove", help="Elimina una pista del catálogo")
     remove.add_argument("id", help="Id de la pista")
 
+    register_audio_features(sub)
+
     return parser
 
 
@@ -125,6 +133,9 @@ def run(args: argparse.Namespace) -> None:
     """Ejecuta el subcomando indicado sobre el catálogo."""
     library = MusicLibrary(args.library, db_path=args.db)
     try:
+        if args.command in ("analyze", "recommend"):
+            run_audio_features(args, library)
+            return
         if args.command == "scan":
             summary = asyncio.run(library.scan())
             console.print(

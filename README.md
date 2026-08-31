@@ -14,6 +14,7 @@ sobre **Playwright**, con:
 - **Investigación de YouTube** (datos públicos de canales/vídeos, patrones y exportación)
 - **Edición de audio** (música de fondo propia, efectos, sincronización con FFmpeg)
 - **Catálogo de música** (biblioteca local, moods, búsqueda y sugerencias)
+- **Análisis musical** (audio features: Spotify API + estimador local, recomendación por características)
 - **YouTube Music** (catálogo en la nube: búsqueda e importación desde CSV, sin descargar)
 - **Descubrimiento de canales** (búsqueda por categorías/temas, ranking y canales similares)
 - **Edición de vídeo** (proyectos multi-clip, transiciones, overlays, render con FFmpeg)
@@ -111,6 +112,7 @@ asyncio.run(main())
 - [Edición de audio](docs/AUDIO.md) — música de fondo, efectos y sincronización
 - [Flujo completo](docs/WORKFLOW.md) — investigación de YouTube + edición de audio
 - [Catálogo de música](docs/MUSIC.md) — biblioteca local, moods y sugerencias
+- [Análisis musical](docs/AUDIO_FEATURES.md) — audio features vía Spotify y estimación local
 - [YouTube Music](docs/YOUTUBE_MUSIC.md) — catálogo en la nube e importación CSV
 - [Descubrimiento de canales](docs/DISCOVERY.md) — búsqueda por categorías, ranking y similares
 - [Edición de vídeo](docs/VIDEO_EDITOR.md) — proyectos, transiciones y overlays
