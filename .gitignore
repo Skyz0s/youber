@@ -13,6 +13,9 @@ __pycache__/
 # Reportes generados por los ejemplos y la CLI
 reports/
 
+# Librería de música por defecto (catálogo local)
+music/
+
 # Artefactos de build/empaquetado
 build/
 dist/

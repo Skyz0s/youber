@@ -51,6 +51,7 @@ youber-music = "youber.music.cli:main"
 youber-edit = "youber.video.cli:main"
 youber-upload = "youber.upload.cli:main"
 youber-schedule = "youber.scheduler.cli:main"
+youber-dashboard = "youber.dashboard.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Skyz0s/youber"
