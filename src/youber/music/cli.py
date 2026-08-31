@@ -1,0 +1,180 @@
+"""CLI ``youber-music``: gestiona el catálogo local de música de BARF.
+
+Comandos: ``scan``, ``list``, ``search``, ``suggest``, ``favorite``,
+``info`` y ``remove``.
+
+Ejemplos:
+
+.. code-block:: bash
+
+    youber-music --library ~/musica scan
+    youber-music --library ~/musica list
+    youber-music --library ~/musica search --mood relajante
+    youber-music --library ~/musica suggest --mood energética -n 5
+    youber-music --library ~/musica favorite <id>
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+from pathlib import Path
+
+from rich.console import Console
+from rich.table import Table
+
+from youber.console import ensure_utf8_console
+from youber.music.library import MusicLibrary
+from youber.music.models import Mood, Track
+
+console = Console()
+
+DEFAULT_LIBRARY = Path("music")
+
+
+def _mood(value: str | None) -> Mood | None:
+    """Convierte el texto del usuario en un :class:`Mood` (o ``None``)."""
+    if not value:
+        return None
+    lowered = value.strip().lower()
+    for mood in Mood:
+        if mood.value.lower() == lowered or mood.name.lower() == lowered:
+            return mood
+    raise argparse.ArgumentTypeError(
+        f"Mood desconocido: {value!r}. Válidos: {', '.join(m.value for m in Mood)}"
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Construye el parser de argumentos de ``youber-music``."""
+    parser = argparse.ArgumentParser(
+        prog="youber-music",
+        description="BARF: catálogo local de música (uso educativo)",
+    )
+    parser.add_argument(
+        "--library",
+        default=str(DEFAULT_LIBRARY),
+        help=f"Directorio de música (por defecto: {DEFAULT_LIBRARY})",
+    )
+    parser.add_argument("--db", default=None, help="Ruta de la base de datos SQLite")
+
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("scan", help="Escanea el directorio y sincroniza el catálogo")
+
+    sub.add_parser("list", help="Lista todas las pistas del catálogo")
+
+    search = sub.add_parser("search", help="Busca pistas por mood/género/texto")
+    search.add_argument("--mood", type=_mood, help="Estado de ánimo (p. ej. relajante)")
+    search.add_argument("--genre", help="Género (coincidencia parcial)")
+    search.add_argument("--text", help="Texto libre (título/artista/género)")
+    search.add_argument("--favorite", action="store_true", help="Solo favoritas")
+    search.add_argument("--bpm-min", type=int, help="BPM mínimo")
+    search.add_argument("--bpm-max", type=int, help="BPM máximo")
+
+    suggest = sub.add_parser("suggest", help="Sugiere pistas para un estado de ánimo")
+    suggest.add_argument("--mood", type=_mood, help="Estado de ánimo deseado")
+    suggest.add_argument("--text", help="Tema o texto libre")
+    suggest.add_argument("-n", "--limit", type=int, default=5, help="Número de sugerencias")
+
+    favorite = sub.add_parser("favorite", help="Marca/desmarca una pista como favorita")
+    favorite.add_argument("id", help="Id de la pista")
+    favorite.add_argument("--no", dest="favorite", action="store_false", default=True)
+
+    info = sub.add_parser("info", help="Muestra los detalles de una pista")
+    info.add_argument("id", help="Id de la pista")
+
+    remove = sub.add_parser("remove", help="Elimina una pista del catálogo")
+    remove.add_argument("id", help="Id de la pista")
+
+    return parser
+
+
+def _print_track(track: Track) -> None:
+    moods = ", ".join(mood.value for mood in track.moods) or "-"
+    console.print(f"[bold]{track.title}[/] — {track.artist or '?'}")
+    console.print(f"  id: {track.id} | {track.duration:.1f}s | {track.genre or '-'}")
+    console.print(f"  moods: {moods} | bpm: {track.bpm or '-'} | key: {track.key or '-'}")
+    console.print(
+        f"  favorita: {'⭐' if track.favorite else 'no'} | usos: {track.usage_count} | "
+        f"último uso: {track.last_used or '-'}"
+    )
+
+
+def _print_table(tracks: list[Track]) -> None:
+    table = Table(title=f"{len(tracks)} pista(s)")
+    table.add_column("Id", style="dim")
+    table.add_column("Título")
+    table.add_column("Artista")
+    table.add_column("Duración", justify="right")
+    table.add_column("Moods")
+    table.add_column("Fav", justify="center")
+    for track in tracks:
+        table.add_row(
+            track.id,
+            track.title,
+            track.artist or "-",
+            f"{track.duration:.0f}s",
+            ", ".join(mood.value for mood in track.moods) or "-",
+            "⭐" if track.favorite else "",
+        )
+    console.print(table)
+
+
+def run(args: argparse.Namespace) -> None:
+    """Ejecuta el subcomando indicado sobre el catálogo."""
+    library = MusicLibrary(args.library, db_path=args.db)
+    try:
+        if args.command == "scan":
+            summary = asyncio.run(library.scan())
+            console.print(
+                f"[green]Catálogo sincronizado:[/] +{summary['added']} nuevas, "
+                f"~{summary['updated']} actualizadas, ={summary['unchanged']} sin cambios, "
+                f"-{summary['removed']} eliminadas, !{summary['errors']} errores"
+            )
+        elif args.command == "list":
+            _print_table(library.all())
+        elif args.command == "search":
+            tracks = library.search(
+                mood=args.mood,
+                genre=args.genre,
+                text=args.text,
+                favorite=args.favorite or None,
+                bpm_min=args.bpm_min,
+                bpm_max=args.bpm_max,
+            )
+            _print_table(tracks)
+        elif args.command == "suggest":
+            tracks = library.suggest(mood=args.mood, text=args.text, limit=args.limit)
+            _print_table(tracks)
+        elif args.command == "favorite":
+            ok = library.mark_favorite(args.id, args.favorite)
+            if not ok:
+                console.print(f"[red]Pista no encontrada: {args.id}[/]")
+                raise SystemExit(1)
+            console.print(f"⭐ Pista {args.id} {'marcada como favorita' if args.favorite else 'desmarcada'}")
+        elif args.command == "info":
+            track = library.get(args.id)
+            if track is None:
+                console.print(f"[red]Pista no encontrada: {args.id}[/]")
+                raise SystemExit(1)
+            _print_track(track)
+        elif args.command == "remove":
+            ok = library.remove(args.id)
+            if not ok:
+                console.print(f"[red]Pista no encontrada: {args.id}[/]")
+                raise SystemExit(1)
+            console.print(f"🗑️  Pista {args.id} eliminada")
+    finally:
+        library.close()
+
+
+def main() -> None:
+    """Entry point de ``youber-music``."""
+    ensure_utf8_console()
+    args = build_parser().parse_args()
+    run(args)
+
+
+if __name__ == "__main__":
+    main()
