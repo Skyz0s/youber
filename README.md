@@ -17,6 +17,7 @@ sobre **Playwright**, con:
 - **Edición de vídeo** (proyectos multi-clip, transiciones, overlays, render con FFmpeg)
 - **Subida a YouTube** (contenido propio, OAuth 2.0, publicación programada)
 - **Bot de Telegram** (control del framework desde el chat: investigación, música, edición, subida)
+- **Programador de tareas** (scheduler: once/daily/weekly/cron + daemon en segundo plano)
 - **Sandbox de simulaciones** (geolocalización, red, dispositivos)
 - **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva), `youber-research`, `youber-workflow`, `youber-music`, `youber-edit` y `youber-upload`
 
@@ -110,6 +111,7 @@ asyncio.run(main())
 - [Edición de vídeo](docs/VIDEO_EDITOR.md) — proyectos, transiciones y overlays
 - [Subida a YouTube](docs/UPLOAD.md) — OAuth 2.0 y publicación programada
 - [Bot de Telegram](docs/TELEGRAM.md) — comandos para controlar el framework
+- [Programador de tareas](docs/SCHEDULER.md) — jobs, cron y daemon
 - [Guía de laboratorio](docs/RESEARCH.md) — experimentos observacionales
 - [Ejemplos](docs/EXAMPLES.md) — guía de los ejemplos
 - [Publicación en PyPI](docs/PUBLISHING.md) — cómo publicar el paquete

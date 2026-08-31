@@ -50,6 +50,7 @@ youber-workflow = "youber.cli.workflow_cli:main"
 youber-music = "youber.music.cli:main"
 youber-edit = "youber.video.cli:main"
 youber-upload = "youber.upload.cli:main"
+youber-schedule = "youber.scheduler.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Skyz0s/youber"
