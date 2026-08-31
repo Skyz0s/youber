@@ -11,6 +11,7 @@ sobre **Playwright**, con:
 - **Servidor MCP** (Model Context Protocol, SDK 2.x) para agentes de IA
 - **Auditoría de accesibilidad** (axe-core + mapeo WCAG 2.1/2.2 + reportes)
 - **Estudio de UX** (patrones de navegación, heatmaps, user journeys)
+- **Investigación de YouTube** (datos públicos de canales/vídeos, patrones y exportación)
 - **Sandbox de simulaciones** (geolocalización, red, dispositivos)
 - **CLI**: `youber-audit`, `youber-sandbox` y `youber-client` (interactiva)
 
@@ -82,6 +83,7 @@ asyncio.run(main())
 - [Cliente MCP](docs/CLIENT.md) — conexión al servidor desde código/terminal
 - [Sandbox](docs/SANDBOX.md) — simulaciones de entorno
 - [Investigación anti-bot](docs/ANTI_BOT_RESEARCH.md) — estudio educativo
+- [Investigación de YouTube](docs/YOUTUBE_RESEARCH.md) — datos públicos y patrones
 - [Guía de laboratorio](docs/RESEARCH.md) — experimentos observacionales
 - [Ejemplos](docs/EXAMPLES.md) — guía de los ejemplos
 - [Publicación en PyPI](docs/PUBLISHING.md) — cómo publicar el paquete
