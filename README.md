@@ -14,6 +14,7 @@ sobre **Playwright**, con:
 - **Investigación de YouTube** (datos públicos de canales/vídeos, patrones y exportación)
 - **Edición de audio** (música de fondo propia, efectos, sincronización con FFmpeg)
 - **Catálogo de música** (biblioteca local, moods, búsqueda y sugerencias)
+- **YouTube Music** (catálogo en la nube: búsqueda e importación desde CSV, sin descargar)
 - **Edición de vídeo** (proyectos multi-clip, transiciones, overlays, render con FFmpeg)
 - **Subida a YouTube** (contenido propio, OAuth 2.0, publicación programada)
 - **Bot de Telegram** (control del framework desde el chat: investigación, música, edición, subida)
@@ -109,6 +110,7 @@ asyncio.run(main())
 - [Edición de audio](docs/AUDIO.md) — música de fondo, efectos y sincronización
 - [Flujo completo](docs/WORKFLOW.md) — investigación de YouTube + edición de audio
 - [Catálogo de música](docs/MUSIC.md) — biblioteca local, moods y sugerencias
+- [YouTube Music](docs/YOUTUBE_MUSIC.md) — catálogo en la nube e importación CSV
 - [Edición de vídeo](docs/VIDEO_EDITOR.md) — proyectos, transiciones y overlays
 - [Subida a YouTube](docs/UPLOAD.md) — OAuth 2.0 y publicación programada
 - [Bot de Telegram](docs/TELEGRAM.md) — comandos para controlar el framework
