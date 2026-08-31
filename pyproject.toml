@@ -47,6 +47,7 @@ youber-client = "youber.client.interactive:main"
 youber-research = "youber.cli.research_cli:main"
 youber-workflow = "youber.cli.workflow_cli:main"
 youber-music = "youber.music.cli:main"
+youber-edit = "youber.video.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Skyz0s/youber"

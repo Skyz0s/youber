@@ -14,8 +14,9 @@ sobre **Playwright**, con:
 - **Investigación de YouTube** (datos públicos de canales/vídeos, patrones y exportación)
 - **Edición de audio** (música de fondo propia, efectos, sincronización con FFmpeg)
 - **Catálogo de música** (biblioteca local, moods, búsqueda y sugerencias)
+- **Edición de vídeo** (proyectos multi-clip, transiciones, overlays, render con FFmpeg)
 - **Sandbox de simulaciones** (geolocalización, red, dispositivos)
-- **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva), `youber-research`, `youber-workflow` y `youber-music`
+- **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva), `youber-research`, `youber-workflow`, `youber-music` y `youber-edit`
 
 ## Propósito educativo
 
@@ -104,6 +105,7 @@ asyncio.run(main())
 - [Edición de audio](docs/AUDIO.md) — música de fondo, efectos y sincronización
 - [Flujo completo](docs/WORKFLOW.md) — investigación de YouTube + edición de audio
 - [Catálogo de música](docs/MUSIC.md) — biblioteca local, moods y sugerencias
+- [Edición de vídeo](docs/VIDEO_EDITOR.md) — proyectos, transiciones y overlays
 - [Guía de laboratorio](docs/RESEARCH.md) — experimentos observacionales
 - [Ejemplos](docs/EXAMPLES.md) — guía de los ejemplos
 - [Publicación en PyPI](docs/PUBLISHING.md) — cómo publicar el paquete
