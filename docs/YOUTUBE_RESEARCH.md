@@ -43,6 +43,24 @@ asyncio.run(main())
 - El layout de YouTube cambia: el parser es de mejor esfuerzo. Para datos
   fiables en producción, usa el modo `api`.
 
+## CLI ``youber-research``
+
+Entry point instalable que extrae canales o vídeos y exporta a fichero:
+
+```bash
+youber-research https://www.youtube.com/@python -n 20 -o python_channel.csv
+youber-research https://youtu.be/abc123 -o video_info.json
+youber-research https://www.youtube.com/@python --insights -o reporte.md
+```
+
+- `-n/--max-videos`: vídeos a extraer (por defecto 10).
+- `-o/--output` + `-f/--format` (csv|json|md): el formato se deduce de la
+  extensión si se omite `-f`.
+- `--api` / `--html`: fuerza la API oficial (requiere `YOUTUBE_API_KEY`) o el
+  parser de la página pública (por defecto).
+- `--insights`: añade patrones (hashtags, títulos, duración, vistas) al
+  informe Markdown y los muestra por consola.
+
 ## Análisis de patrones (`patterns.py`)
 
 Funciones puras para estudiar *qué publica* un canal:

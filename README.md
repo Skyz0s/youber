@@ -13,7 +13,7 @@ sobre **Playwright**, con:
 - **Estudio de UX** (patrones de navegación, heatmaps, user journeys)
 - **Investigación de YouTube** (datos públicos de canales/vídeos, patrones y exportación)
 - **Sandbox de simulaciones** (geolocalización, red, dispositivos)
-- **CLI**: `youber-audit`, `youber-sandbox` y `youber-client` (interactiva)
+- **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva) y `youber-research`
 
 ## Propósito educativo
 
@@ -54,6 +54,14 @@ CLI interactiva (cliente MCP):
 youber-client
 > audit https://example.com
 > geo JP https://example.com
+```
+
+Investigación de YouTube (datos públicos):
+
+```bash
+youber-research https://www.youtube.com/@python -n 20 -o python_channel.csv
+youber-research https://youtu.be/abc123 -o video_info.json
+youber-research https://www.youtube.com/@python --insights -o reporte.md
 ```
 
 Desde código:
