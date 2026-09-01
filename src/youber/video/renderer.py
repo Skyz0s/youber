@@ -64,9 +64,12 @@ async def render_project(
     fps = timeline.fps
 
     # -- Entradas -----------------------------------------------------------
+    # Los clips se buclean (-stream_loop -1) para que un clip corto de stock
+    # rellene toda la duración de su escena; el trim posterior corta el tramo
+    # exacto. La música también se buclea (ya lo hacía).
     inputs: list[str] = []
     for segment in timeline.segments:
-        inputs += ["-i", str(segment.file_path)]
+        inputs += ["-stream_loop", "-1", "-i", str(segment.file_path)]
     for overlay in project.image_overlays:
         inputs += ["-i", str(overlay.image_path)]
 

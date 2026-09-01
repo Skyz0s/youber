@@ -177,24 +177,38 @@ async def fetch_clips_for_scenes(
         )
 
     result: dict[str, list[Path]] = {}
+    # Agrupar escenas por query: si varias comparten keywords (caso normal
+    # con contenido real), se hace UNA búsqueda y se reparten clips DISTINTOS
+    # de la misma búsqueda (así los clips guardan relación entre sí).
+    groups: dict[str, list[int]] = {}
     for index, scene in enumerate(scenes):
-        query = (scene.get("keywords") or scene.get("text") or scene.get("title") or "")[:100]
+        query = (
+            scene.get("keywords") or scene.get("text") or scene.get("title") or ""
+        )[:100]
         if not query:
             continue
-        label = f"escena{index + 1}"
+        groups.setdefault(query, []).append(index)
+
+    for query, indexes in groups.items():
+        need = len(indexes) * per_scene
         try:
             if bank == "pexels":
-                items = await search_pexels(query, per_page=per_scene + 2)
+                items = await search_pexels(query, per_page=need + 2)
             else:
-                items = await search_pixabay(query, per_page=per_scene + 2)
+                items = await search_pixabay(query, per_page=need + 2)
         except Exception as exc:
-            print(f"  ⚠️  {label}: búsqueda falló ({exc})")
+            for index in indexes:
+                print(f"  ⚠️  escena{index + 1}: búsqueda falló ({exc})")
             continue
-        paths: list[Path] = []
-        for item in items[:per_scene]:
-            path = await download_clip(item, dest_dir, label)
-            if path:
-                paths.append(path)
-        result[label] = paths
-        print(f"  ✅ {label} «{query[:40]}» → {len(paths)} clip(s)")
+        cursor = 0
+        for index in indexes:
+            label = f"escena{index + 1}"
+            paths: list[Path] = []
+            for item in items[cursor : cursor + per_scene]:
+                path = await download_clip(item, dest_dir, label)
+                if path:
+                    paths.append(path)
+            cursor += per_scene
+            result[label] = paths
+            print(f"  ✅ {label} «{query[:40]}» → {len(paths)} clip(s)")
     return result

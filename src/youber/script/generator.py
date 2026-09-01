@@ -63,14 +63,13 @@ def _scene_keywords(
 ) -> list[str]:
     """Keywords de búsqueda de stock para una escena.
 
-    Si hay keywords extraídas del contenido real del vídeo origen, se usan
-    esas (reflejan la intención del vídeo: que audio y vídeo casen) junto a
-    la intención visual de la escena. Sin contenido, cae a la plantilla
-    genérica por tipo de escena.
+    Si hay keywords extraídas del contenido real del vídeo origen, TODAS las
+    escenas usan las mismas (reflejan la intención del vídeo y los clips
+    guardan relación entre sí). Sin contenido, cae a la plantilla genérica
+    por tipo de escena.
     """
     if content_keywords:
-        merged = list(dict.fromkeys(content_keywords[:5] + _SCENE_INTENT[scene_type]))
-        return merged[:8]
+        return list(dict.fromkeys(content_keywords))[:8]
     return _SCENE_KEYWORDS.get(scene_type, [])
 
 DEFAULT_DURATION = 60.0  # duración objetivo si el canal no aporta datos

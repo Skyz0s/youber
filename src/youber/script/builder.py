@@ -65,6 +65,7 @@ def build_project(
     title: str | None = None,
     resolution: tuple[int, int] = (1920, 1080),
     fps: int = 30,
+    with_texts: bool = True,
 ) -> Project:
     """Construye el :class:`Project` de edición a partir del guion.
 
@@ -76,6 +77,10 @@ def build_project(
         title: Título del proyecto (por defecto: el tema del guion).
         resolution: Resolución del proyecto (WxH).
         fps: Fotogramas por segundo.
+        with_texts: Si ``False``, no se superponen los textos del guion
+            (las instrucciones de escena son para el editor, no para el
+            espectador — por defecto ``True`` para el CLI, ``False`` en el
+            flujo automático del dashboard).
 
     Returns:
         Proyecto listo para ``editor.render(project, out, ...)``.
@@ -102,7 +107,7 @@ def build_project(
                 type=scene.transition,
                 duration=min(scene.transition_duration, scene.duration / 2),
             )
-        if scene.text:
+        if with_texts and scene.text:
             editor.add_text(
                 project,
                 scene.text,

@@ -398,6 +398,7 @@ class DashboardApp:
         music_track_id: str | None = None,
         output_dir: str = "reports",
         use_stock: bool = False,
+        show_texts: bool = False,
     ) -> dict[str, Any]:
         """Construye y renderiza el vídeo aprobado por el usuario.
 
@@ -411,6 +412,9 @@ class DashboardApp:
             use_stock: Si True y no hay clips, busca/descarga B-roll de
                 stock según las keywords de cada escena (requiere
                 ``PEXELS_API_KEY`` o ``PIXABAY_API_KEY``).
+            show_texts: Si False (por defecto), NO se superponen los textos
+                del guion (son instrucciones de edición, no texto para el
+                espectador).
 
         Returns:
             Dict con ``ok``, ``output`` (ruta del MP4), número de clips y
@@ -445,7 +449,12 @@ class DashboardApp:
         library = self._get_library()
         editor = VideoEditor(library=library)
         project = build_project(
-            script, clips=clips, library=library, editor=editor, title=script.topic
+            script,
+            clips=clips,
+            library=library,
+            editor=editor,
+            title=script.topic,
+            with_texts=show_texts,
         )
         if music_track_id:
             editor.set_music(project, music_track_id, volume=0.25)
@@ -1269,6 +1278,9 @@ function renderScriptProposal(payload) {{
     + '🆓 Descargar clips de stock automáticamente (Pexels/Pixabay)'
     + (payload.stock && (payload.stock.pexels || payload.stock.pixabay) ? '' : ' <em>(sin key: configura PEXELS_API_KEY en el entorno)</em>')
     + '</label>'
+    + '<label style="display:block;margin-top:0.3rem"><input type="checkbox" id="script-texts"> '
+    + '📝 Superponer textos de escena (aviso: los textos son instrucciones de edición, no texto para el espectador)'
+    + '</label>'
     + '<div style="margin-top:0.8rem">'
     + '<button onclick="approveScript()">✅ Visto bueno — editar y renderizar</button>'
     + '<span id="script-render-status" class="status"></span>'
@@ -1282,6 +1294,7 @@ function renderScriptProposal(payload) {{
 async function approveScript() {{
   const status = document.getElementById('script-render-status');
   const useStock = document.getElementById('script-stock') && document.getElementById('script-stock').checked;
+  const showTexts = document.getElementById('script-texts') && document.getElementById('script-texts').checked;
   const clips = document.getElementById('script-clips').value
     .split(',').map(c => c.trim()).filter(Boolean);
   if (!clips.length && !useStock) {{
@@ -1300,6 +1313,7 @@ async function approveScript() {{
         clips: clips,
         music_track_id: scriptMusicTrack,
         use_stock: useStock,
+        show_texts: showTexts,
       }}),
     }});
     const result = await res.json();
@@ -1685,7 +1699,7 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 self._send_json({"error": str(exc)}, status=500)
 
         def _handle_script_render(self) -> None:
-            """Renderiza el vídeo aprobado (body: script, clips, music_track_id, use_stock)."""
+            """Renderiza el vídeo aprobado (body: script, clips, music_track_id, use_stock, show_texts)."""
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(length)
@@ -1694,13 +1708,18 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 clips = [str(c) for c in body.get("clips", [])]
                 music_track_id = body.get("music_track_id")
                 use_stock = bool(body.get("use_stock", False))
+                show_texts = bool(body.get("show_texts", False))
                 if not script:
                     self._send_json({"error": "Parámetro script requerido"}, status=400)
                     return
                 self._send_json(
                     asyncio.run(
                         self.app.script_render(
-                            script, clips, music_track_id, use_stock=use_stock
+                            script,
+                            clips,
+                            music_track_id,
+                            use_stock=use_stock,
+                            show_texts=show_texts,
                         )
                     )
                 )
