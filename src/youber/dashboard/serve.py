@@ -433,6 +433,8 @@ tr:hover{{background:#f7fafc}}
     <button class="filter-btn" data-filter="energetic" onclick="setTrackFilter('energetic')">⚡ Energética</button>
     <button class="filter-btn" data-filter="danceable" onclick="setTrackFilter('danceable')">💃 Bailable</button>
     <button class="filter-btn" data-filter="relaxed" onclick="setTrackFilter('relaxed')">😌 Relajada</button>
+    <button class="filter-btn" data-filter="positive" onclick="setTrackFilter('positive')">😊 Positiva</button>
+    <button class="filter-btn" data-filter="intense" onclick="setTrackFilter('intense')">🖤 Intensa</button>
   </div>
   <div style="overflow-x:auto;background:#fff;border:1px solid #ddd;border-radius:8px">
   <table>
@@ -608,7 +610,7 @@ function switchTab(name) {{
 let tracksAll = [];
 let tracksSort = {{key: 'title', dir: 1}};
 let tracksFilter = 'all';
-const FILTER_LABELS = {{all: 'todas', energetic: '⚡ energéticas', danceable: '💃 bailables', relaxed: '😌 relajadas'}};
+const FILTER_LABELS = {{all: 'todas', energetic: '⚡ energéticas', danceable: '💃 bailables', relaxed: '😌 relajadas', positive: '😊 positivas', intense: '🖤 intensas'}};
 
 function fmtDuration(s) {{
   if (s == null || isNaN(s)) return '-';
@@ -646,6 +648,8 @@ function renderTracks() {{
   if (tracksFilter === 'energetic') list = list.filter(t => (t.energy || 0) >= 0.7);
   else if (tracksFilter === 'danceable') list = list.filter(t => (t.danceability || 0) >= 0.6);
   else if (tracksFilter === 'relaxed') list = list.filter(t => (t.energy || 0) < 0.5 && (t.tempo || 0) < 110);
+  else if (tracksFilter === 'positive') list = list.filter(t => (t.valence || 0) >= 0.6);
+  else if (tracksFilter === 'intense') list = list.filter(t => (t.valence || 0) < 0.4);
   const key = tracksSort.key, dir = tracksSort.dir;
   const sorted = [...list].sort((a, b) => {{
     let va = a[key], vb = b[key];
