@@ -260,6 +260,130 @@ def test_http_import_apple_library_no_encontrado(tmp_path: Path, monkeypatch):
         server.server_close()
 
 
+def test_http_research_canal_ordenado_por_vistas(tmp_path: Path, monkeypatch):
+    """GET /api/research devuelve el canal con vídeos ordenados por vistas desc."""
+    from youber.research.data_models import ChannelData, VideoData
+
+    videos = [
+        VideoData(
+            title=f"Vídeo {i}",
+            url=f"https://www.youtube.com/watch?v=vid{i}",
+            video_id=f"vid{i}",
+            views=f"{i} M de visualizaciones",
+            duration="10:00",
+            publish_date=f"hace {i} días",
+            channel_name="Canal Demo",
+            channel_url="https://www.youtube.com/@canaldemo",
+        )
+        for i in range(1, 4)
+    ]
+    # El analizador devuelve los vídeos desordenados (2 M, 1 M, 3 M);
+    # el endpoint debe ordenarlos por vistas desc (3 M, 2 M, 1 M).
+    videos = [videos[1], videos[0], videos[2]]
+    channel = ChannelData(
+        name="Canal Demo",
+        url="https://www.youtube.com/@canaldemo",
+        handle="canaldemo",
+        subscribers="12,3 K suscriptores",
+        videos=videos,
+    )
+
+    async def fake_analyze(url, max_videos=10, mode="html"):
+        assert mode == "html"
+        return channel
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    monkeypatch.setattr(
+        "youber.research.channel_analyzer.ChannelAnalyzer",
+        lambda **kwargs: type(
+            "Fake", (), {"analyze": staticmethod(fake_analyze)}
+        )(),
+    )
+    app = DashboardApp(config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS)
+    server, base = _start_server(app)
+    try:
+        with urlopen(f"{base}/api/research?url=@canaldemo&n=3", timeout=5) as response:
+            assert response.status == 200
+            payload = json.loads(response.read().decode("utf-8"))
+            assert payload["kind"] == "channel"
+            assert payload["channel"]["name"] == "Canal Demo"
+            titles = [v["title"] for v in payload["videos"]]
+            assert titles == ["Vídeo 3", "Vídeo 2", "Vídeo 1"]
+            assert payload["views_summary"]["max"] == 3_000_000
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_research_video(tmp_path: Path, monkeypatch):
+    """GET /api/research con URL de vídeo devuelve los datos del vídeo."""
+    from youber.research.data_models import VideoData
+
+    video = VideoData(
+        title="Vídeo suelto",
+        url="https://www.youtube.com/watch?v=abc123def45",
+        video_id="abc123def45",
+        views="1.234 visualizaciones",
+        likes="98",
+        comments="12",
+        duration="12:34",
+        publish_date="2026-08-15",
+        channel_name="Canal Demo",
+        channel_url="https://www.youtube.com/@canaldemo",
+    )
+
+    async def fake_analyze(url, mode="html"):
+        assert mode == "html"
+        return video
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    monkeypatch.setattr(
+        "youber.research.video_analyzer.VideoAnalyzer",
+        lambda **kwargs: type(
+            "Fake", (), {"analyze": staticmethod(fake_analyze)}
+        )(),
+    )
+    app = DashboardApp(config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS)
+    server, base = _start_server(app)
+    try:
+        with urlopen(
+            f"{base}/api/research?url=https://youtu.be/abc123def45", timeout=5
+        ) as response:
+            assert response.status == 200
+            payload = json.loads(response.read().decode("utf-8"))
+            assert payload["kind"] == "video"
+            assert payload["video"]["title"] == "Vídeo suelto"
+            assert payload["video"]["video_id"] == "abc123def45"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_research_sin_url(tmp_path: Path, monkeypatch):
+    """GET /api/research sin url devuelve 400."""
+    from urllib.error import HTTPError
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS)
+    server, base = _start_server(app)
+    try:
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(f"{base}/api/research", timeout=5)
+        assert exc_info.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_http_import_apple_library_requiere_path(tmp_path: Path, monkeypatch):
     from urllib.error import HTTPError
 

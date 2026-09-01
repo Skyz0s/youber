@@ -218,6 +218,58 @@ class DashboardApp:
 
         return await import_channel(handle, db=self._library.db)
 
+    # -- Research (pestaña 🔍 Research) -------------------------------------
+
+    async def research(
+        self, url: str, max_videos: int = 10
+    ) -> dict[str, Any]:
+        """Analiza un canal o vídeo de YouTube (datos públicos) y devuelve
+        los ``max_videos`` más virales ordenados por vistas desc.
+
+        Args:
+            url: URL del canal (``@handle``, ``channel/UC...``) o vídeo.
+            max_videos: Número de vídeos a recoger del canal.
+
+        Returns:
+            Dict con ``kind`` (``channel``/``video``), datos del canal o
+            vídeo, lista de vídeos (ordenada por vistas desc) y resumen
+            ``views_summary``. Lanza ``ValueError`` si no se puede extraer.
+        """
+        from youber.research.channel_analyzer import ChannelAnalyzer
+        from youber.research.patterns import parse_compact_count
+        from youber.research.video_analyzer import VideoAnalyzer, extract_video_id
+
+        if extract_video_id(url):
+            video = await VideoAnalyzer().analyze(url, mode="html")
+            return {"kind": "video", "video": video.model_dump(mode="json")}
+
+        channel = await ChannelAnalyzer().analyze(
+            url, max_videos=max_videos, mode="html"
+        )
+        videos = [video.model_dump(mode="json") for video in channel.videos]
+        videos.sort(
+            key=lambda v: parse_compact_count(v.get("views") or "") or 0.0,
+            reverse=True,
+        )
+        parsed = [
+            parse_compact_count(video.get("views") or "") or 0.0 for video in videos
+        ]
+        summary: dict[str, Any] = {"count": len(parsed)}
+        if parsed:
+            summary["avg"] = round(sum(parsed) / len(parsed))
+            summary["max"] = round(max(parsed))
+        return {
+            "kind": "channel",
+            "channel": {
+                "name": channel.name,
+                "url": channel.url,
+                "handle": channel.handle,
+                "subscribers": channel.subscribers,
+            },
+            "videos": videos,
+            "views_summary": summary,
+        }
+
     # -- Catálogo (pestaña Canciones) --------------------------------------
 
     def _get_library(self) -> Any:
@@ -484,6 +536,7 @@ tr:hover{{background:#f7fafc}}
 <div class="tabs">
   <button class="tab-btn active" id="tab-btn-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
   <button class="tab-btn" id="tab-btn-tracks" onclick="switchTab('tracks')">🎵 Canciones</button>
+  <button class="tab-btn" id="tab-btn-research" onclick="switchTab('research')">🔍 Research</button>
 </div>
 <div id="tab-dashboard">
 <div class="controls">
@@ -575,6 +628,19 @@ tr:hover{{background:#f7fafc}}
     <span id="playlists-count" class="status"></span>
   </div>
   <div id="playlists-list"></div>
+</div>
+<div id="tab-research" style="display:none">
+  <div class="controls">
+    <form id="research-form">
+      <strong>🔍 Research de YouTube (datos públicos):</strong>
+      <input type="text" id="research-url" placeholder="URL del canal o vídeo (p. ej. https://www.youtube.com/@MrBeast)" style="min-width:320px">
+      <label>Top <input type="number" id="research-n" value="10" min="1" max="50" style="width:60px"></label>
+      <button type="submit">Analizar</button>
+      <span id="research-status" class="status"></span>
+    </form>
+    <p class="status" style="margin-top:0.5rem">Solo datos públicos, con rate-limit (1.5 s por petición) y sin login. Ordena los vídeos por vistas (los más virales primero).</p>
+  </div>
+  <div id="research-results"></div>
 </div>
 <script>
 const REFRESH_MS = {refresh} * 1000;
@@ -717,8 +783,10 @@ loadData();
 function switchTab(name) {{
   document.getElementById('tab-dashboard').style.display = name === 'dashboard' ? '' : 'none';
   document.getElementById('tab-tracks').style.display = name === 'tracks' ? '' : 'none';
+  document.getElementById('tab-research').style.display = name === 'research' ? '' : 'none';
   document.getElementById('tab-btn-dashboard').classList.toggle('active', name === 'dashboard');
   document.getElementById('tab-btn-tracks').classList.toggle('active', name === 'tracks');
+  document.getElementById('tab-btn-research').classList.toggle('active', name === 'research');
   if (name === 'tracks') loadTracks();
 }}
 
@@ -739,6 +807,81 @@ function fmtDuration(s) {{
 
 function sourceBadge(source) {{
   return '<span class="badge badge-' + esc(source) + '">' + esc(source) + '</span>';
+}}
+
+// ---------------------------------------------------------------------------
+// Pestaña Research
+// ---------------------------------------------------------------------------
+document.getElementById('research-form').addEventListener('submit', async (e) => {{
+  e.preventDefault();
+  const url = document.getElementById('research-url').value.trim();
+  const n = document.getElementById('research-n').value || 10;
+  const status = document.getElementById('research-status');
+  const box = document.getElementById('research-results');
+  if (!url) {{ status.textContent = 'Escribe la URL del canal o vídeo'; return; }}
+  status.textContent = 'Analizando… (puede tardar unos segundos)';
+  box.innerHTML = '';
+  try {{
+    const res = await fetch('/api/research?url=' + encodeURIComponent(url) + '&n=' + n);
+    const payload = await res.json();
+    if (payload.error) {{
+      status.textContent = '✗ ' + payload.error;
+      return;
+    }}
+    status.textContent = '';
+    if (payload.kind === 'video') {{
+      renderResearchVideo(payload.video);
+    }} else {{
+      renderResearchChannel(payload);
+    }}
+  }} catch (err) {{
+    status.textContent = '✗ Error: ' + esc(String(err));
+  }}
+}});
+
+function renderResearchVideo(video) {{
+  const box = document.getElementById('research-results');
+  const link = '<a href="' + esc(video.url) + '" target="_blank">' + esc(video.title) + '</a>';
+  box.innerHTML = '<div class="controls">'
+    + '<strong>🎬 Vídeo:</strong> ' + link
+    + '<ul style="margin:0.6rem 0 0 1.2rem">'
+    + '<li>Vistas: ' + esc(video.views || '-') + '</li>'
+    + '<li>Likes: ' + esc(video.likes || '-') + ' · Comentarios: ' + esc(video.comments || '-') + '</li>'
+    + '<li>Duración: ' + esc(video.duration || '-') + ' · Publicado: ' + esc(video.publish_date || '-') + '</li>'
+    + '<li>Canal: ' + esc(video.channel_name || '-') + '</li>'
+    + (video.hashtags && video.hashtags.length ? '<li>Hashtags: ' + video.hashtags.map(h => '#' + esc(h)).join(' ') + '</li>' : '')
+    + '</ul></div>';
+}}
+
+function renderResearchChannel(payload) {{
+  const box = document.getElementById('research-results');
+  const ch = payload.channel;
+  const summary = payload.views_summary || {{}};
+  const rows = (payload.videos || []).map((v, i) => {{
+    const thumb = v.thumbnail_url
+      ? '<img src="' + esc(v.thumbnail_url) + '" style="width:120px;height:auto;border-radius:4px" alt="">'
+      : '';
+    return '<tr>'
+      + '<td>' + (i + 1) + '</td>'
+      + '<td>' + thumb + '</td>'
+      + '<td><a href="' + esc(v.url) + '" target="_blank">' + esc(v.title) + '</a></td>'
+      + '<td>' + esc(v.views || '-') + '</td>'
+      + '<td>' + esc(v.duration || '-') + '</td>'
+      + '<td>' + esc(v.publish_date || '-') + '</td>'
+      + '</tr>';
+  }}).join('');
+  box.innerHTML = '<div class="controls">'
+    + '<strong>📺 Canal: ' + esc(ch.name || '') + '</strong>'
+    + (ch.handle ? ' · @' + esc(ch.handle) : '')
+    + (ch.subscribers ? ' · ' + esc(ch.subscribers) : '')
+    + (summary.count ? ' · ' + summary.count + ' vídeo(s) analizados' : '')
+    + (summary.avg ? ' · vistas medias ' + summary.avg.toLocaleString('es-ES') : '')
+    + (summary.max ? ' · máx ' + summary.max.toLocaleString('es-ES') : '')
+    + '</div>'
+    + '<div style="overflow-x:auto;background:#fff;border:1px solid #ddd;border-radius:8px">'
+    + '<table><thead><tr><th>#</th><th></th><th>Título</th><th>Vistas</th><th>Duración</th><th>Publicado</th></tr></thead>'
+    + '<tbody>' + (rows || '<tr><td colspan="6" style="text-align:center;color:#888">Sin vídeos</td></tr>') + '</tbody></table>'
+    + '</div>';
 }}
 
 async function loadTracks() {{
@@ -1024,6 +1167,9 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path == "/api/playlists":
                 self._send_json({"playlists": self.app.list_playlists()})
                 return
+            if self.path.startswith("/api/research"):
+                self._handle_research()
+                return
             body = self.app.render_page().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1055,6 +1201,22 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 self._send_json(self.app.recommend(track_id, limit=limit))
             except Exception as exc:
                 logger.warning(f"Error en /api/recommend: {exc}")
+                self._send_json({"error": str(exc)}, status=500)
+
+        def _handle_research(self) -> None:
+            """Analiza un canal/vídeo de YouTube (?url=...&n=...)."""
+            from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(self.path).query)
+            url = (query.get("url") or [""])[0].strip()
+            n = int((query.get("n") or ["10"])[0])
+            if not url:
+                self._send_json({"error": "Parámetro url requerido"}, status=400)
+                return
+            try:
+                self._send_json(asyncio.run(self.app.research(url, max_videos=n)))
+            except Exception as exc:
+                logger.warning(f"Error en /api/research: {exc}")
                 self._send_json({"error": str(exc)}, status=500)
 
         def _handle_create_playlist(self) -> None:
