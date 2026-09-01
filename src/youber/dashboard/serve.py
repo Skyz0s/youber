@@ -208,6 +208,16 @@ class DashboardApp:
             include_playlists=include_playlists,
         )
 
+    async def channel_import(self, handle: str) -> dict[str, Any]:
+        """Importa el catálogo público de un artista/canal de YouTube Music."""
+        from youber.music.library import MusicLibrary
+
+        if self._library is None:
+            self._library = MusicLibrary(self.library_dir)
+        from youber.music.youtube_music import import_channel
+
+        return await import_channel(handle, db=self._library.db)
+
     # -- Catálogo (pestaña Canciones) --------------------------------------
 
     def _get_library(self) -> Any:
@@ -372,6 +382,12 @@ tr:hover{{background:#f7fafc}}
     <button type="submit">Importar</button>
     <span id="ytmusic-status" class="status"></span>
   </form>
+  <form id="channel-form" style="margin-top:0.8rem;border-top:1px dashed #ccc;padding-top:0.7rem">
+    <strong>🎤 Importar catálogo del canal/artista:</strong>
+    <input type="text" id="channel-handle" placeholder="p. ej. @KnightPrincessReal" style="min-width:220px">
+    <button type="submit">Importar</button>
+    <span id="channel-status" class="status"></span>
+  </form>
 </div>
 <div id="grid">{cards}</div>
 <p id="updated"></p>
@@ -446,6 +462,23 @@ document.getElementById('ytmusic-form').addEventListener('submit', async (e) => 
   const result = await res.json();
   status.textContent = result.error ? '✗ ' + result.error
     : `✅ YouTube Music: ${{result.added}} nuevas, ${{result.skipped}} ya existían`;
+  loadData();
+}});
+
+document.getElementById('channel-form').addEventListener('submit', async (e) => {{
+  e.preventDefault();
+  const handle = document.getElementById('channel-handle').value.trim();
+  const status = document.getElementById('channel-status');
+  if (!handle) {{ status.textContent = 'Escribe el handle del canal (p. ej. @KnightPrincessReal)'; return; }}
+  status.textContent = 'Importando catálogo…';
+  const res = await fetch('/api/import-channel', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{handle}}),
+  }});
+  const result = await res.json();
+  status.textContent = result.error ? '✗ ' + result.error
+    : `✅ Catálogo de ${{result.artist}}: ${{result.added}} nuevas, ${{result.skipped}} ya existían`;
   loadData();
 }});
 
@@ -702,6 +735,9 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path == "/api/import-ytmusic":
                 self._handle_import_ytmusic()
                 return
+            if self.path == "/api/import-channel":
+                self._handle_import_channel()
+                return
             if self.path == "/api/tracks/favorite":
                 self._handle_toggle_favorite()
                 return
@@ -709,6 +745,22 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 self._handle_import_apple_library()
                 return
             self._send_json({"error": "no encontrado"}, status=404)
+
+        def _handle_import_channel(self) -> None:
+            """Importa el catálogo público de un artista/canal (body: handle)."""
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                body = json.loads(raw.decode("utf-8"))
+                handle = str(body.get("handle", "")).strip()
+                if not handle:
+                    self._send_json({"error": "Parámetro handle requerido (p. ej. @KnightPrincessReal)"}, status=400)
+                    return
+                summary = asyncio.run(self.app.channel_import(handle))
+                self._send_json({"ok": True, **summary})
+            except Exception as exc:
+                logger.warning(f"Error en POST /api/import-channel: {exc}")
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
 
         def _handle_toggle_favorite(self) -> None:
             """Marca/desmarca una canción como favorita (body: track_id)."""

@@ -15,6 +15,7 @@ from youber.music.models import TrackSource
 from youber.music.youtube_music import (
     YouTubeMusicClient,
     _track_from_ytmusic,
+    import_channel,
     import_ytmusic_library,
 )
 from youber.music.youtube_music import (
@@ -41,6 +42,79 @@ class FakeYTMusic:
                 "thumbnails": [{"url": "https://i.ytimg.com/vi/x/hqdefault.jpg"}],
             }
         ]
+        self.artist_results: list[dict] = [
+            {
+                "browseId": "UCfqe0XVm_zCjxFE51L8VSag",
+                "artist": "Knight Princess",
+                "title": "Knight Princess",
+            }
+        ]
+        self.artist: dict = {
+            "name": "Knight Princess",
+            "channelId": "UCfqe0XVm_zCjxFE51L8VSag",
+            "songs": {
+                "browseId": "FEmusic_song_radio",
+                "results": [
+                    {
+                        "videoId": "art1",
+                        "title": "Canción Destacada",
+                        "artists": [{"name": "Knight Princess"}],
+                        "duration": "3:30",
+                        "album": {"name": "Álbum Uno"},
+                    }
+                ],
+            },
+            "albums": {
+                "browseId": "MPREb_1",
+                "params": "6gOqkF0",
+                "results": [
+                    {
+                        "browseId": "MPREb_album1",
+                        "title": "Álbum Uno",
+                        "year": "2026",
+                        "type": "Album",
+                    }
+                ],
+            },
+            "singles": {
+                "browseId": "MPREb_2",
+                "params": "6gOqkF1",
+                "results": [
+                    {
+                        "browseId": "MPREb_single1",
+                        "title": "Single Uno",
+                        "year": "2026",
+                        "type": "Single",
+                    }
+                ],
+            },
+        }
+        self.albums: dict[str, dict] = {
+            "MPREb_album1": {
+                "title": "Álbum Uno",
+                "tracks": [
+                    {
+                        "videoId": "alb1",
+                        "title": "Canción del Álbum",
+                        "artists": [{"name": "Knight Princess"}],
+                        "duration": "3:45",
+                        "album": "Álbum Uno",
+                    }
+                ],
+            },
+            "MPREb_single1": {
+                "title": "Single Uno",
+                "tracks": [
+                    {
+                        "videoId": "sgl1",
+                        "title": "Canción del Single",
+                        "artists": [{"name": "Knight Princess"}],
+                        "duration": 200,
+                        "album": "Single Uno",
+                    }
+                ],
+            },
+        }
         self.library: list[dict] = [
             {
                 "videoId": "lib3",
@@ -99,7 +173,15 @@ class FakeYTMusic:
 
     def search(self, query: str, filter: str = "songs"):
         self.search_calls.append((query, filter))
+        if filter == "artists":
+            return self.artist_results
         return self.results
+
+    def get_artist(self, channel_id: str):
+        return self.artist
+
+    def get_album(self, browse_id: str):
+        return self.albums.get(browse_id, {"tracks": []})
 
     def add_playlist_items(self, playlist_id: str, song_ids: list[str]):
         self.added.append((playlist_id, song_ids))
@@ -338,6 +420,80 @@ def test_parse_duration_ytmusic():
     assert _parse_yt_duration("1:02:03") == 3723.0
     assert _parse_yt_duration(None) is None
     assert _parse_yt_duration("nope") is None
+
+
+# ---------------------------------------------------------------------------
+# Catálogo público de un artista/canal (import_channel)
+# ---------------------------------------------------------------------------
+
+
+async def test_search_artist(fake_ytmusic):
+    client = YouTubeMusicClient()
+    artist = await client.search_artist("Knight Princess")
+    assert artist is not None
+    assert artist["channel_id"] == "UCfqe0XVm_zCjxFE51L8VSag"
+    assert artist["name"] == "Knight Princess"
+    assert fake_ytmusic.search_calls[-1] == ("Knight Princess", "artists")
+
+
+async def test_search_artist_no_results(fake_ytmusic):
+    fake_ytmusic.artist_results = []
+    client = YouTubeMusicClient()
+    assert await client.search_artist("No Existe") is None
+
+
+async def test_import_channel(fake_ytmusic, tmp_path: Path):
+    db = MusicDatabase(tmp_path / "catalogo.db")
+    client = _authed_client(tmp_path, None)
+    summary = await import_channel("@KnightPrincessReal", client=client, db=db)
+    # songs (1) + álbum (1) + single (1) = 3
+    assert summary["artist"] == "Knight Princess"
+    assert summary["added"] == 3
+    assert "songs" in summary["sources"]
+    assert "albums" in summary["sources"]
+    assert "singles" in summary["sources"]
+    assert db.count() == 3
+
+    album_track = db.get_by_external_id(TrackSource.YOUTUBE, "alb1")
+    assert album_track is not None
+    assert album_track.title == "Canción del Álbum"
+    assert album_track.album == "Álbum Uno"
+    assert album_track.duration == 225.0  # "3:45"
+    assert album_track.artist == "Knight Princess"
+
+    single_track = db.get_by_external_id(TrackSource.YOUTUBE, "sgl1")
+    assert single_track is not None
+    assert single_track.duration == 200.0
+
+
+async def test_import_channel_idempotente(fake_ytmusic, tmp_path: Path):
+    db = MusicDatabase(tmp_path / "catalogo.db")
+    client = _authed_client(tmp_path, None)
+    first = await import_channel("@KnightPrincessReal", client=client, db=db)
+    assert first["added"] == 3
+    second = await import_channel("@KnightPrincessReal", client=client, db=db)
+    assert second["added"] == 0
+    assert second["skipped"] == 3
+    assert db.count() == 3
+
+
+async def test_import_channel_sin_albumes(fake_ytmusic, tmp_path: Path):
+    db = MusicDatabase(tmp_path / "catalogo.db")
+    client = _authed_client(tmp_path, None)
+    summary = await import_channel(
+        "@KnightPrincessReal", client=client, db=db, include_albums=False
+    )
+    # songs (1) + singles (1) = 2; sin álbumes.
+    assert summary["added"] == 2
+    assert "albums" not in summary["sources"]
+
+
+async def test_import_channel_no_encontrado(fake_ytmusic, tmp_path: Path):
+    fake_ytmusic.artist_results = []
+    db = MusicDatabase(tmp_path / "catalogo.db")
+    client = _authed_client(tmp_path, None)
+    with pytest.raises(ValueError, match="No se encontró"):
+        await import_channel("@NoExiste", client=client, db=db)
 
 
 async def test_get_song_info(fake_ytmusic):

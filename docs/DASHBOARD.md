@@ -62,9 +62,13 @@ configuración). La página:
   una vez.
 - Incluye **importación de tu biblioteca de YouTube Music** (gratis, sin
   API keys): botón «🎧 Importar mi biblioteca de YouTube Music» que trae
-  tus Me gusta, guardadas y playlists (opción de incluir playlists).
-  Requiere generar una vez `~/.youber/ytmusic_headers.json` (ver
-  docs/MUSIC.md).
+  tus Me gusta, guardadas, subidas y playlists (opción de incluir
+  playlists). Requiere generar una vez `~/.youber/ytmusic_headers.json`
+  (ver docs/MUSIC.md).
+- Incluye **importación del catálogo público de un artista/canal**: botón
+  «🎤 Importar catálogo del canal/artista» que trae la discografía
+  completa (canciones destacadas, álbumes y singles) — sin necesidad de
+  autenticación (datos públicos).
 - Expone `GET /api/data` (JSON de los widgets), `GET /api/search-cloud`
   (buscar en plataforma), `POST /api/import-cloud`, `POST
   /api/import-apple-library` (XML de Apple), `GET /api/ytmusic-status` y

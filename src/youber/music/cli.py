@@ -139,6 +139,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="No importar playlists (solo Me gusta y guardadas)",
     )
 
+    import_channel = sub.add_parser(
+        "import-channel",
+        help="Importa el catálogo público de un artista/canal de YouTube Music (álbumes + singles)",
+    )
+    import_channel.add_argument("handle", help="Nombre o handle del artista (p. ej. '@KnightPrincessReal')")
+    import_channel.add_argument(
+        "--no-albums",
+        action="store_true",
+        help="No importar canciones de álbumes",
+    )
+    import_channel.add_argument(
+        "--no-singles",
+        action="store_true",
+        help="No importar canciones de singles",
+    )
+
     register_audio_features(sub)
 
     return parser
@@ -228,6 +244,8 @@ def run(args: argparse.Namespace) -> None:
             asyncio.run(_run_import_apple_library(args, library))
         elif args.command == "import-ytmusic-library":
             asyncio.run(_run_import_ytmusic_library(args, library))
+        elif args.command == "import-channel":
+            asyncio.run(_run_import_channel(args, library))
     finally:
         library.close()
 
@@ -321,6 +339,25 @@ async def _run_import_ytmusic_library(args: argparse.Namespace, library: MusicLi
     )
     if summary["added"]:
         console.print("💡 Mira el dashboard (catalog-stats) o 'youber-music list' para verlas.")
+
+
+async def _run_import_channel(args: argparse.Namespace, library: MusicLibrary) -> None:
+    """Ejecuta ``import-channel``: importa el catálogo público del artista."""
+    from youber.music.youtube_music import import_channel
+
+    summary = await import_channel(
+        args.handle,
+        db=library.db,
+        include_albums=not args.no_albums,
+        include_singles=not args.no_singles,
+    )
+    console.print(
+        f"[green]Catálogo de {summary['artist']} importado:[/] +{summary['added']} nuevas, "
+        f"{summary['skipped']} ya existentes "
+        f"(fuentes: {', '.join(summary['sources'])})"
+    )
+    if summary["added"]:
+        console.print("💡 Mira el dashboard (catalog-stats o pestaña Canciones) para verlas.")
 
 
 def main() -> None:

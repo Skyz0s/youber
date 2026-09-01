@@ -71,6 +71,37 @@ class YouTubeMusicClient:
         """
         return await asyncio.to_thread(self.ytmusic.get_library_upload_songs, limit)
 
+    # -- Catálogo público de artistas/canales ------------------------------
+
+    async def search_artist(self, query: str) -> dict[str, Any] | None:
+        """Busca un artista por nombre/handle y devuelve su canal.
+
+        Args:
+            query: Nombre o handle del artista (p. ej. ``"Knight Princess"``
+                o ``"@KnightPrincessReal"``).
+
+        Returns:
+            Dict con ``channel_id`` y ``name``, o ``None`` si no hay
+            resultados.
+        """
+        results = await asyncio.to_thread(self.ytmusic.search, query, "artists")
+        if not results:
+            return None
+        artist = results[0]
+        return {
+            "channel_id": artist.get("browseId", ""),
+            "name": artist.get("artist", "") or artist.get("title", ""),
+        }
+
+    async def artist_catalog(self, channel_id: str) -> dict[str, Any]:
+        """Catálogo público de un artista: álbumes, singles y canciones."""
+        return await asyncio.to_thread(self.ytmusic.get_artist, channel_id)
+
+    async def album_tracks(self, browse_id: str) -> list[dict[str, Any]]:
+        """Canciones de un álbum/single (metadatos públicos)."""
+        album = await asyncio.to_thread(self.ytmusic.get_album, browse_id)
+        return album.get("tracks", [])
+
     async def library_playlists(self, limit: int = 100) -> list[dict[str, Any]]:
         """Playlists del usuario (propias y guardadas)."""
         return await asyncio.to_thread(self.ytmusic.get_library_playlists, limit)
@@ -191,7 +222,7 @@ def _track_from_ytmusic(item: dict[str, Any]) -> Track:
         genre=None,
         source=TrackSource.YOUTUBE,
         external_id=video_id,
-        album=album.get("name") if isinstance(album, dict) else None,
+        album=album.get("name") if isinstance(album, dict) else (album or None),
         file_hash=f"cloud:youtube:{video_id}",
     )
 
@@ -310,6 +341,136 @@ async def import_ytmusic_library(
             f"(fuentes: {', '.join(sources)})"
         )
         return {"added": added, "skipped": skipped, "total": added + skipped, "sources": sources}
+    finally:
+        if own_db:
+            database.close()
+            temp_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Catálogo público de un artista/canal
+# ---------------------------------------------------------------------------
+
+
+def _artist_section(catalog: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """Extrae los resultados de una sección del catálogo de artista.
+
+    ``get_artist`` devuelve secciones (``songs``, ``albums``, ``singles``…)
+    que pueden ser un dict con ``results`` o una lista directa según la
+    versión; normalizamos a lista.
+    """
+    section = catalog.get(key)
+    if isinstance(section, dict):
+        return section.get("results", []) or []
+    return section or []
+
+
+async def import_channel(
+    handle: str,
+    db: MusicDatabase | None = None,
+    client: YouTubeMusicClient | None = None,
+    include_albums: bool = True,
+    include_singles: bool = True,
+) -> dict[str, Any]:
+    """Importa el catálogo público de un artista/canal al catálogo local.
+
+    Resuelve el handle (p. ej. ``"@KnightPrincessReal"``) al canal del
+    artista, lee sus álbumes, singles y canciones destacadas (metadatos
+    públicos vía ytmusicapi, **sin descargar audio**) y añade todas las
+    pistas como ``source=youtube`` con su ``videoId``. Idempotente: no
+    duplica canciones ya importadas.
+
+    Args:
+        handle: Nombre o handle del artista (p. ej. ``"Knight Princess"``
+            o ``"@KnightPrincessReal"``).
+        db: Base de datos del catálogo (si es ``None``, temporal).
+        client: Cliente de YouTube Music (por defecto, uno nuevo).
+        include_albums: Importar las canciones de los álbumes.
+        include_singles: Importar las canciones de los singles.
+
+    Returns:
+        Resumen: ``artist``, ``added``, ``skipped``, ``total`` y
+        ``sources`` (``songs``, ``albums``, ``singles``).
+
+    Raises:
+        ValueError: si no se encuentra el artista/canal.
+    """
+    client = client or YouTubeMusicClient()
+    artist = await client.search_artist(handle)
+    if artist is None or not artist.get("channel_id"):
+        raise ValueError(f"No se encontró el artista/canal: {handle!r}")
+
+    catalog = await client.artist_catalog(str(artist["channel_id"]))
+
+    if db is None:
+        import tempfile
+
+        temp_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        temp_path = Path(temp_file.name)
+        temp_file.close()
+        database = MusicDatabase(temp_path)
+        own_db = True
+    else:
+        database = db
+        own_db = False
+
+    async def _import(items: list[dict[str, Any]]) -> tuple[int, int]:
+        added = skipped = 0
+        for item in items:
+            video_id = str(item.get("videoId", "")).strip()
+            if not video_id:
+                continue
+            if database.get_by_external_id(TrackSource.YOUTUBE, video_id):
+                skipped += 1
+                continue
+            track = _track_from_ytmusic(item)
+            track.id = database.new_id()
+            database.add_track(track)
+            added += 1
+        return added, skipped
+
+    try:
+        added = skipped = 0
+        sources: list[str] = []
+
+        # Canciones destacadas del artista (con videoId directo).
+        songs = _artist_section(catalog, "songs")
+        add, skip = await _import(songs)
+        added += add
+        skipped += skip
+        if songs:
+            sources.append("songs")
+
+        # Álbumes y singles: cada resultado tiene browseId -> get_album.
+        for label, include in (("albums", include_albums), ("singles", include_singles)):
+            if not include:
+                continue
+            for release in _artist_section(catalog, label):
+                browse_id = str(release.get("browseId", "")).strip()
+                if not browse_id:
+                    continue
+                try:
+                    items = await client.album_tracks(browse_id)
+                except Exception as exc:
+                    logger.warning(f"No se pudo leer {label[:-1]} {release.get('title', '?')}: {exc}")
+                    continue
+                add, skip = await _import(items)
+                added += add
+                skipped += skip
+            if _artist_section(catalog, label):
+                sources.append(label)
+
+        logger.info(
+            f"import_channel({artist['name']}): +{added} nuevas, {skipped} ya existentes "
+            f"(fuentes: {', '.join(sources)})"
+        )
+        return {
+            "artist": artist["name"],
+            "added": added,
+            "skipped": skipped,
+            "total": added + skipped,
+            "sources": sources,
+        }
     finally:
         if own_db:
             database.close()

@@ -386,6 +386,79 @@ def test_http_import_ytmusic_sin_auth(tmp_path: Path, monkeypatch):
         server.server_close()
 
 
+def test_http_import_channel(tmp_path: Path, monkeypatch):
+    """POST /api/import-channel importa el catálogo del canal al catálogo."""
+
+    async def fake_channel_import(self, handle, db=None):
+        assert handle == "@KnightPrincessReal"
+        return {
+            "artist": "Knight Princess",
+            "added": 3,
+            "skipped": 1,
+            "total": 4,
+            "sources": ["songs", "albums", "singles"],
+        }
+
+    monkeypatch.setattr("youber.dashboard.serve.DashboardApp.channel_import", fake_channel_import)
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps({"handle": "@KnightPrincessReal"}).encode("utf-8")
+        request = Request(
+            f"{base}/api/import-channel",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=5) as response:
+            assert response.status == 200
+            result = json.loads(response.read().decode("utf-8"))
+            assert result["ok"] is True
+            assert result["artist"] == "Knight Princess"
+            assert result["added"] == 3
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_import_channel_requiere_handle(tmp_path: Path, monkeypatch):
+    """POST /api/import-channel sin handle devuelve 400."""
+    from urllib.error import HTTPError
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS)
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps({"handle": ""}).encode("utf-8")
+        request = Request(
+            f"{base}/api/import-channel",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(request, timeout=5)
+        assert exc_info.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_http_tracks(tmp_path: Path, monkeypatch):
     """GET /api/tracks devuelve la lista de canciones del catálogo."""
     monkeypatch.setattr(

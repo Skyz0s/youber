@@ -37,6 +37,8 @@ youber-music import-apple-library "Music Library.xml"       # TODA tu biblioteca
 youber-music import-apple-library "Music Library.xml" --dry-run
 youber-music import-ytmusic-library                          # tu biblioteca de YouTube Music
 youber-music import-ytmusic-library --no-playlists           # solo Me gusta + guardadas
+youber-music import-channel "@KnightPrincessReal"            # catálogo público del artista (álbumes+singles)
+youber-music import-channel "Knight Princess" --no-singles   # solo álbumes
 ```
 
 ## Importar tu biblioteca de YouTube Music (gratis, sin API keys)
@@ -85,9 +87,26 @@ con opción de incluir playlists) o desde la CLI:
 youber-music import-ytmusic-library
 ```
 
-Importa «Me gusta», guardadas y playlists como pistas ``source=youtube``
-con su ``videoId`` como ``external_id``. **Idempotente**: si repites la
-importación (p. ej. tras añadir canciones nuevas), no duplica nada.
+Importa «Me gusta», guardadas, subidas y playlists como pistas
+``source=youtube`` con su ``videoId`` como ``external_id``. **Idempotente**:
+si repites la importación (p. ej. tras añadir canciones nuevas), no duplica
+nada. Si una fuente falla (p. ej. la sesión caducó), las demás siguen
+importándose.
+
+## Importar el catálogo público de un artista/canal
+
+Para traer **todas las canciones publicadas de un artista** (su discografía
+en YouTube Music, no tu biblioteca personal):
+
+```bash
+youber-music import-channel "@KnightPrincessReal"
+```
+
+Resuelve el handle al canal del artista, lee sus **canciones destacadas,
+álbumes y singles** (metadatos públicos vía ``ytmusicapi``, sin descargar
+audio) y los añade al catálogo como ``source=youtube``. Idempotente: no
+duplica canciones ya importadas. Desde el dashboard: botón **🎤 Importar
+catálogo del canal/artista** (endpoint ``POST /api/import-channel``).
 
 Nota: el conector de **Spotify** (``spotify_library.py``) está dormante —
 Spotify exige cuenta Premium para usar su Web API, así que no se activa
