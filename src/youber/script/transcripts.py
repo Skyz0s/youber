@@ -25,6 +25,9 @@ HOOK_SECONDS = 20.0
 CTA_SECONDS = 25.0
 
 # Stopwords es/en para extraer keywords del contenido real del vídeo.
+# Incluye palabras de CTA de YouTube (suscríbete, canal, like...) para que
+# NO contaminen la búsqueda de stock (Pexels devolvería botones de
+# suscripción en vez de contenido temático).
 _STOPWORDS = frozenset(
     """de la que el en y a los del se las por un para con no una su al lo como
     más pero sus le ya o este sí porque esta entre cuando muy sin sobre también
@@ -40,6 +43,15 @@ _STOPWORDS = frozenset(
     how why if then than so very too also only own same more less most some
     any each other another into over under about after before between during
     through porque como para sobre algo todo cada vez después además también
+    suscríbete suscribete suscribiros suscríbirse suscribirse suscripción
+    suscripcion suscribir canal canales like likes megusta me gusta comparte
+    compartir campana campanita sígueme sigueme sigue seguir dale deja deja
+    activa pulsa clic click enlace link abajo arriba gracias vídeo video
+    vídeos videos ver mirad mira nuevo nueva nuevos siguientes siguiente
+    próximo proximo última ultimo último episodio capítulo capitulo temporada
+    playlist lista reproducción reproduccion instagram twitter tiktok
+    facebook redes sociales merch tienda compra comprar libro apoyo apoya
+    patreon memberships miembros comunidad únete unete únanse unanse
     """.split()
 )
 CTA_MARKERS = (

@@ -437,10 +437,14 @@ class DashboardApp:
                     "PEXELS_API_KEY o PIXABAY_API_KEY (gratis en pexels.com/api)"
                 )
             scenes = [scene.model_dump() for scene in script.scenes]
+            # Varios clips DISTINTOS por escena: un clip corto en bucle se
+            # nota mucho, así que cada escena recibe 2-5 clips de ~6 s.
+            avg_scene = script.total_duration / max(1, len(scenes))
+            per_scene = max(2, min(5, max(1, round(avg_scene / 6))))
             fetched = await fetch_clips_for_scenes(
-                scenes, _Path("clips"), bank="auto", per_scene=1
+                scenes, _Path("clips"), bank="auto", per_scene=per_scene
             )
-            clips = [str(paths[0]) for paths in fetched.values() if paths]
+            clips = [str(p) for paths in fetched.values() for p in paths]
         if not clips:
             raise ValueError(
                 "Selecciona al menos un clip de vídeo propio (o activa los "

@@ -96,17 +96,29 @@ def build_project(
     project = editor.new_project(title=title or script.topic, resolution=resolution, fps=fps)
 
     clip_paths = [Path(clip) for clip in clips]
+    if not clip_paths:
+        raise ValueError("Necesitas al menos un clip de vídeo propio")
+    # Reparto de clips por escena: si hay más clips que escenas, cada escena
+    # usa varios clips DISTINTOS en lugar de repetir uno en bucle (evita que
+    # se vea el mismo vídeo varias veces seguidas dentro de una escena).
+    clips_per_scene = max(1, len(clip_paths) // max(1, len(script.scenes)))
+    cursor = 0
     start = 0.0
-    for index, scene in enumerate(script.scenes):
-        clip = clip_paths[index % len(clip_paths)]
-        editor.add_clip(project, clip, duration=scene.duration)
-        if index > 0:
-            editor.add_transition(
-                project,
-                clip_index=index,
-                type=scene.transition,
-                duration=min(scene.transition_duration, scene.duration / 2),
-            )
+    for scene in script.scenes:
+        n = min(clips_per_scene, len(clip_paths))
+        segment = scene.duration / n
+        for _sub in range(n):
+            clip = clip_paths[cursor % len(clip_paths)]
+            cursor += 1
+            editor.add_clip(project, clip, duration=segment)
+            clip_index = len(project.clips) - 1
+            if clip_index > 0:
+                editor.add_transition(
+                    project,
+                    clip_index=clip_index,
+                    type=scene.transition,
+                    duration=min(scene.transition_duration, segment / 2),
+                )
         if with_texts and scene.text:
             editor.add_text(
                 project,
