@@ -98,12 +98,20 @@ def _clean(text: str) -> str:
 
 
 def _first_words(snippets: list[TranscriptSnippet], seconds: float) -> str:
-    """Las primeras palabras dentro de los ``seconds`` primeros segundos."""
-    parts = [
-        _clean(s.text)
-        for s in snippets
-        if s.start <= seconds and _clean(s.text)
-    ]
+    """Las primeras palabras dentro de los ``seconds`` primeros segundos.
+
+    Los subtítulos de YouTube a veces repiten segmentos consecutivos;
+    se eliminan los duplicados contiguos para no repetir frases.
+    """
+    parts: list[str] = []
+    last = ""
+    for s in snippets:
+        if s.start > seconds:
+            break
+        clean = _clean(s.text)
+        if clean and clean != last:
+            parts.append(clean)
+            last = clean
     return " ".join(parts)[:280]
 
 
