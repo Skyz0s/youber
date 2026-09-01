@@ -498,6 +498,69 @@ def test_http_script_proposal_sin_url(tmp_path: Path, monkeypatch):
         server.server_close()
 
 
+def test_http_videos_lista_reports(tmp_path: Path, monkeypatch):
+    """GET /api/videos lista los MP4 del directorio reports/."""
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "demo.mp4").write_bytes(b"fake-mp4-bytes")
+    (reports / "nota.md").write_text("# no es vídeo", encoding="utf-8")
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS
+    )
+    server, base = _start_server(app)
+    try:
+        # El método usa "reports" relativo al cwd; redirigimos a tmp via monkeypatch
+        monkeypatch.setattr(
+            "youber.dashboard.serve.Path",
+            lambda *a, **k: __import__("pathlib").Path(*a, **k),
+        )
+        videos = app.videos(output_dir=str(reports))
+        assert len(videos) == 1
+        assert videos[0]["name"] == "demo.mp4"
+        assert videos[0]["url"] == "/media/demo.mp4"
+        assert videos[0]["size"] == len(b"fake-mp4-bytes")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_media_sirve_video(tmp_path: Path, monkeypatch):
+    """GET /media/<nombre> sirve el MP4 con content-type correcto."""
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    video_file = reports / "demo.mp4"
+    video_file.write_bytes(b"fake-mp4-bytes")
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS
+    )
+    server, base = _start_server(app)
+    try:
+        # _handle_media usa Path("reports") relativo al cwd del servidor:
+        # copiamos el vídeo a un reports/ real junto al cwd para el test.
+        real_reports = Path("reports")
+        real_reports.mkdir(exist_ok=True)
+        target = real_reports / "demo.mp4"
+        target.write_bytes(b"fake-mp4-bytes")
+        try:
+            with urlopen(f"{base}/media/demo.mp4", timeout=5) as response:
+                assert response.status == 200
+                assert response.headers["Content-Type"] == "video/mp4"
+                assert response.read() == b"fake-mp4-bytes"
+        finally:
+            target.unlink(missing_ok=True)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_http_script_render(tmp_path: Path, monkeypatch):
     """POST /api/script/render construye y renderiza el vídeo aprobado."""
     from youber.research.patterns import channel_overview

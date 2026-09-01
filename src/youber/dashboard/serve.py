@@ -393,6 +393,59 @@ class DashboardApp:
             "music_track_id": project.music_track_id,
         }
 
+    def videos(self, output_dir: str = "reports") -> list[dict[str, Any]]:
+        """Lista los vídeos renderizados (MP4/MKV/WebM/MOV) del directorio de salida.
+
+        Returns:
+            Lista de dicts con ``name``, ``url``, ``size``, ``modified`` y
+            ``duration`` (si ffprobe está disponible). Ordenados por fecha
+            de modificación descendente.
+        """
+        from pathlib import Path as _Path
+
+        out = _Path(output_dir)
+        if not out.exists():
+            return []
+        exts = (".mp4", ".mkv", ".webm", ".mov")
+        videos: list[dict[str, Any]] = []
+        for f in sorted(out.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            if not f.is_file() or f.suffix.lower() not in exts:
+                continue
+            duration: float | None = None
+            try:
+                import subprocess
+
+                result = subprocess.run(
+                    [
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-show_entries",
+                        "format=duration",
+                        "-of",
+                        "csv=p=0",
+                        str(f),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                raw = result.stdout.strip()
+                if raw:
+                    duration = round(float(raw), 1)
+            except Exception:
+                duration = None
+            videos.append(
+                {
+                    "name": f.name,
+                    "url": f"/media/{f.name}",
+                    "size": f.stat().st_size,
+                    "modified": f.stat().st_mtime,
+                    "duration": duration,
+                }
+            )
+        return videos
+
     # -- Catálogo (pestaña Canciones) --------------------------------------
 
     def _get_library(self) -> Any:
@@ -661,6 +714,7 @@ tr:hover{{background:#f7fafc}}
   <button class="tab-btn" id="tab-btn-tracks" onclick="switchTab('tracks')">🎵 Canciones</button>
   <button class="tab-btn" id="tab-btn-research" onclick="switchTab('research')">🔍 Research</button>
   <button class="tab-btn" id="tab-btn-script" onclick="switchTab('script')">🎬 Edición</button>
+  <button class="tab-btn" id="tab-btn-videos" onclick="switchTab('videos')">📼 Vídeos</button>
 </div>
 <div id="tab-dashboard">
 <div class="controls">
@@ -779,6 +833,15 @@ tr:hover{{background:#f7fafc}}
     <p class="status" style="margin-top:0.5rem">Analiza la estructura del canal (duración media, patrones de títulos, hashtags) y propone un guion + música de tu biblioteca local. Tú das el visto bueno antes de editar.</p>
   </div>
   <div id="script-results"></div>
+</div>
+<div id="tab-videos" style="display:none">
+  <div class="controls">
+    <strong>📼 Vídeos renderizados:</strong>
+    <button onclick="loadVideos()">↻</button>
+    <span id="videos-status" class="status"></span>
+    <p class="status" style="margin-top:0.5rem">Clips editados por la pestaña 🎬 Edición (directorio <code>reports/</code>).</p>
+  </div>
+  <div id="videos-list"></div>
 </div>
 <script>
 const REFRESH_MS = {refresh} * 1000;
@@ -923,11 +986,14 @@ function switchTab(name) {{
   document.getElementById('tab-tracks').style.display = name === 'tracks' ? '' : 'none';
   document.getElementById('tab-research').style.display = name === 'research' ? '' : 'none';
   document.getElementById('tab-script').style.display = name === 'script' ? '' : 'none';
+  document.getElementById('tab-videos').style.display = name === 'videos' ? '' : 'none';
   document.getElementById('tab-btn-dashboard').classList.toggle('active', name === 'dashboard');
   document.getElementById('tab-btn-tracks').classList.toggle('active', name === 'tracks');
   document.getElementById('tab-btn-research').classList.toggle('active', name === 'research');
   document.getElementById('tab-btn-script').classList.toggle('active', name === 'script');
+  document.getElementById('tab-btn-videos').classList.toggle('active', name === 'videos');
   if (name === 'tracks') loadTracks();
+  if (name === 'videos') loadVideos();
 }}
 
 // ---------------------------------------------------------------------------
@@ -949,9 +1015,38 @@ function sourceBadge(source) {{
   return '<span class="badge badge-' + esc(source) + '">' + esc(source) + '</span>';
 }}
 
-// ---------------------------------------------------------------------------
-// Pestaña Research
-// ---------------------------------------------------------------------------
+async function loadVideos() {{
+  const box = document.getElementById('videos-list');
+  const status = document.getElementById('videos-status');
+  status.textContent = 'Cargando…';
+  try {{
+    const res = await fetch('/api/videos');
+    const payload = await res.json();
+    if (payload.error) {{
+      status.textContent = '✗ ' + payload.error;
+      return;
+    }}
+    const videos = payload.videos || [];
+    status.textContent = videos.length + ' vídeo(s)';
+    if (!videos.length) {{
+      box.innerHTML = '<p class="status">Aún no hay vídeos renderizados. Usa la pestaña 🎬 Edición para generar el primero.</p>';
+      return;
+    }}
+    box.innerHTML = videos.map(v => {{
+      const mb = (v.size / 1048576).toFixed(1);
+      const dur = v.duration ? ' · ' + Math.round(v.duration) + ' s' : '';
+      return '<div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:0.8rem 1rem;margin-bottom:1rem">'
+        + '<strong>' + esc(v.name) + '</strong> <span class="status">(' + mb + ' MB' + dur + ')</span>'
+        + '<video controls preload="metadata" style="width:100%;max-width:720px;display:block;margin-top:0.6rem;background:#000;border-radius:6px">'
+        + '<source src="' + esc(v.url) + '">'
+        + 'Tu navegador no soporta la reproducción de vídeo.'
+        + '</video>'
+        + '</div>';
+    }}).join('');
+  }} catch (err) {{
+    status.textContent = '✗ Error: ' + esc(String(err));
+  }}
+}}
 document.getElementById('research-form').addEventListener('submit', async (e) => {{
   e.preventDefault();
   const url = document.getElementById('research-url').value.trim();
@@ -1430,6 +1525,12 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path.startswith("/api/script-proposal"):
                 self._handle_script_proposal()
                 return
+            if self.path == "/api/videos":
+                self._send_json({"videos": self.app.videos()})
+                return
+            if self.path.startswith("/media/"):
+                self._handle_media(self.path)
+                return
             body = self.app.render_page().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1527,6 +1628,40 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             except Exception as exc:
                 logger.warning(f"Error en POST /api/script/render: {exc}")
                 self._send_json({"error": str(exc)}, status=500)
+
+        def _handle_media(self, path: str) -> None:
+            """Sirve un vídeo renderizado desde el directorio de salida."""
+            from pathlib import Path as _Path
+            from urllib.parse import unquote
+
+            name = unquote(path.split("/media/", 1)[-1])
+            base = _Path("reports").resolve()
+            target = (base / name).resolve()
+            # Protección: solo dentro de reports/ y solo extensiones de vídeo.
+            if not str(target).startswith(str(base)) or target.suffix.lower() not in (
+                ".mp4",
+                ".mkv",
+                ".webm",
+                ".mov",
+            ):
+                self._send_json({"error": "no encontrado"}, status=404)
+                return
+            if not target.exists():
+                self._send_json({"error": "no encontrado"}, status=404)
+                return
+            content_type = {
+                ".mp4": "video/mp4",
+                ".mkv": "video/x-matroska",
+                ".webm": "video/webm",
+                ".mov": "video/quicktime",
+            }[target.suffix.lower()]
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            self.wfile.write(data)
 
         def _handle_create_playlist(self) -> None:
             """Crea una playlist (body: name, track_ids)."""
