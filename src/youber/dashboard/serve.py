@@ -298,6 +298,46 @@ class DashboardApp:
             logger.warning(f"No se pudieron cargar los perfiles de audio: {exc}")
             return []
 
+    def recommend(self, track_id: str, limit: int = 5) -> dict[str, Any]:
+        """Recomienda canciones similares por características de audio.
+
+        Args:
+            track_id: Canción de referencia.
+            limit: Máximo de recomendaciones.
+
+        Returns:
+            Dict con ``target`` y ``recommendations`` (o ``error`` si no hay
+            perfil de audio para la canción).
+        """
+        from youber.music.audio_features.recommender import FeatureRecommender
+
+        profiles = self._audio_profiles()
+        target = next((p for p in profiles if p.track_id == track_id), None)
+        if target is None:
+            return {"error": f"No hay perfil de audio para la canción «{track_id}»"}
+        recommendations = FeatureRecommender(limit=limit).recommend(target, profiles)
+        return {
+            "target": {
+                "track_id": target.track_id,
+                "track_title": target.track_title,
+                "artist": target.artist,
+            },
+            "recommendations": [
+                {
+                    "rank": item.rank,
+                    "track_id": item.track_id,
+                    "track_title": item.track_title,
+                    "artist": item.artist,
+                    "score": item.score,
+                    "energy": round(item.features.energy, 2),
+                    "danceability": round(item.features.danceability, 2),
+                    "valence": round(item.features.valence, 2),
+                    "tempo": round(item.features.tempo),
+                }
+                for item in recommendations
+            ],
+        }
+
     def toggle_favorite(self, track_id: str) -> dict[str, Any]:
         """Marca/desmarca una canción como favorita.
 
@@ -460,6 +500,7 @@ tr:hover{{background:#f7fafc}}
     <tbody id="tracks-body"><tr><td colspan="9" style="text-align:center;color:#888">Cargando…</td></tr></tbody>
   </table>
   </div>
+  <div id="recommend-results"></div>
 </div>
 <script>
 const REFRESH_MS = {refresh} * 1000;
@@ -733,8 +774,9 @@ function renderTracks() {{
       + '<td>' + sourceBadge(t.source) + '</td>'
       + '<td><button class="fav" data-id="' + esc(t.id) + '" title="Marcar favorita">' + fav + '</button></td>'
       + '<td>' + t.usage_count + '</td>'
+      + '<td><button class="sim" data-id="' + esc(t.id) + '" title="Recomendar similares por sonido">🎯</button></td>'
       + '</tr>';
-  }}).join('') || '<tr><td colspan="12" style="text-align:center;color:#888">Sin canciones en el catálogo</td></tr>';
+  }}).join('') || '<tr><td colspan="13" style="text-align:center;color:#888">Sin canciones en el catálogo</td></tr>';
 
   tbody.querySelectorAll('.fav').forEach(btn => {{
     btn.addEventListener('click', async () => {{
@@ -751,6 +793,48 @@ function renderTracks() {{
       loadTracks();
     }});
   }});
+  tbody.querySelectorAll('.sim').forEach(btn => {{
+    btn.addEventListener('click', () => recommendFor(btn.dataset.id));
+  }});
+}}
+
+async function recommendFor(trackId) {{
+  const box = document.getElementById('recommend-results');
+  box.innerHTML = '<span class="dim">Buscando similares…</span>';
+  try {{
+    const res = await fetch('/api/recommend?track_id=' + encodeURIComponent(trackId) + '&limit=5');
+    const payload = await res.json();
+    if (payload.error) {{
+      box.innerHTML = '<span style="color:#c62828">✗ ' + esc(payload.error) + '</span>';
+      return;
+    }}
+    const t = payload.target;
+    const rows = (payload.recommendations || []).map(r => {{
+      const bar = (v) => {{
+        if (v == null) return '-';
+        const pct = Math.round(v * 100);
+        const color = pct >= 70 ? '#2e7d32' : pct >= 40 ? '#f9a825' : '#c62828';
+        return '<span style="color:' + color + '">' + pct + '%</span>';
+      }};
+      return '<tr>'
+        + '<td>' + r.rank + '</td>'
+        + '<td>' + esc(r.track_title) + '</td>'
+        + '<td>' + esc(r.artist || '-') + '</td>'
+        + '<td>' + Math.round(r.score * 100) + '%</td>'
+        + '<td>' + bar(r.energy) + '</td>'
+        + '<td>' + bar(r.danceability) + '</td>'
+        + '<td>' + bar(r.valence) + '</td>'
+        + '<td>' + (r.tempo || '-') + '</td>'
+        + '</tr>';
+    }}).join('');
+    box.innerHTML = '<div class="controls" style="margin-top:1rem">'
+      + '<strong>🎯 Similares a «' + esc(t.track_title) + '»' + (t.artist ? ' — ' + esc(t.artist) : '') + ':</strong>'
+      + '<table><thead><tr><th>#</th><th>Título</th><th>Artista</th><th>Similitud</th><th>Energía</th><th>Baile</th><th>Ánimo</th><th>BPM</th></tr></thead>'
+      + '<tbody>' + (rows || '<tr><td colspan="8" style="text-align:center;color:#888">Sin coincidencias</td></tr>') + '</tbody></table>'
+      + '</div>';
+  }} catch (err) {{
+    box.innerHTML = '<span style="color:#c62828">✗ Error: ' + esc(String(err)) + '</span>';
+  }}
 }}
 
 function sortTracks(key) {{
@@ -800,6 +884,9 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path.startswith("/api/tracks"):
                 self._handle_tracks()
                 return
+            if self.path.startswith("/api/recommend"):
+                self._handle_recommend()
+                return
             body = self.app.render_page().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -819,6 +906,19 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             except Exception as exc:
                 logger.warning(f"Error en /api/tracks: {exc}")
                 self._send_json({"error": str(exc)}, status=400)
+
+        def _handle_recommend(self) -> None:
+            """Recomienda canciones similares por audio (?track_id=X&limit=N)."""
+            from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(self.path).query)
+            track_id = (query.get("track_id") or [""])[0]
+            limit = int((query.get("limit") or ["5"])[0])
+            try:
+                self._send_json(self.app.recommend(track_id, limit=limit))
+            except Exception as exc:
+                logger.warning(f"Error en /api/recommend: {exc}")
+                self._send_json({"error": str(exc)}, status=500)
 
         def _handle_search_cloud(self) -> None:
             """Busca en Apple/Spotify y devuelve resultados JSON (sin importar)."""
