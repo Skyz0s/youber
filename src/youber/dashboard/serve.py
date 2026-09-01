@@ -317,11 +317,15 @@ class DashboardApp:
         ]
         suggested = _pick_local_track(library, script) if local_tracks else None
 
+        from youber.video.stock import available as stock_available
+
+        stock = stock_available()
         return {
             "ok": True,
             "channel": channel.name,
             "channel_url": channel.url,
             "script": script.model_dump(mode="json"),
+            "stock": stock,
             "music": {
                 "suggested_track_id": suggested.id if suggested else None,
                 "suggested_mood": (
@@ -348,14 +352,20 @@ class DashboardApp:
         clips: list[str],
         music_track_id: str | None = None,
         output_dir: str = "reports",
+        use_stock: bool = False,
     ) -> dict[str, Any]:
         """Construye y renderiza el vídeo aprobado por el usuario.
 
         Args:
             script_data: Guion (dict, salida de ``script_proposal``).
             clips: Rutas de tus ficheros de vídeo (se reparten por escena).
+                Si viene vacío y ``use_stock`` es True, se descargan clips
+                de stock (Pexels/Pixabay) automáticamente por escena.
             music_track_id: Pista local del catálogo para la música.
             output_dir: Directorio del vídeo final.
+            use_stock: Si True y no hay clips, busca/descarga B-roll de
+                stock según las keywords de cada escena (requiere
+                ``PEXELS_API_KEY`` o ``PIXABAY_API_KEY``).
 
         Returns:
             Dict con ``ok``, ``output`` (ruta del MP4), número de clips y
@@ -369,8 +379,24 @@ class DashboardApp:
         from youber.video.editor import VideoEditor
 
         script = Script.model_validate(script_data)
+        if not clips and use_stock:
+            from youber.video.stock import available, fetch_clips_for_scenes
+
+            if not any(available().values()):
+                raise ValueError(
+                    "Clips de stock activados pero sin key: configura "
+                    "PEXELS_API_KEY o PIXABAY_API_KEY (gratis en pexels.com/api)"
+                )
+            scenes = [scene.model_dump() for scene in script.scenes]
+            fetched = await fetch_clips_for_scenes(
+                scenes, _Path("clips"), bank="auto", per_scene=1
+            )
+            clips = [str(paths[0]) for paths in fetched.values() if paths]
         if not clips:
-            raise ValueError("Selecciona al menos un clip de vídeo propio")
+            raise ValueError(
+                "Selecciona al menos un clip de vídeo propio (o activa los "
+                "clips de stock automáticos)"
+            )
         library = self._get_library()
         editor = VideoEditor(library=library)
         project = build_project(
@@ -1192,8 +1218,12 @@ function renderScriptProposal(payload) {{
     + (options.length
         ? '<div style="margin:0.4rem 0">' + musicOptions + '</div>'
         : '<p class="status">No hay pistas locales indexadas. Añade tus ficheros de audio a la carpeta music/ y vuelve a intentarlo (son metadatos cloud los que no sirven).</p>')
-    + '<label style="display:block;margin-top:0.5rem"><strong>🎞️ Tus clips de vídeo</strong> (rutas separadas por coma):</label>'
-    + '<input type="text" id="script-clips" placeholder="intro.mp4, escena1.mp4, escena2.mp4" style="min-width:320px;margin-top:0.3rem">'
+    + '<label style="display:block;margin-top:0.5rem"><strong>🎞️ Tus clips de vídeo</strong> (opcional — deja vacío para usar stock):</label>'
+    + '<input type="text" id="script-clips" placeholder="intro.mp4, escena1.mp4, escena2.mp4 (vacío = clips de stock)" style="min-width:320px;margin-top:0.3rem">'
+    + '<label style="display:block;margin-top:0.5rem"><input type="checkbox" id="script-stock"> '
+    + '🆓 Descargar clips de stock automáticamente (Pexels/Pixabay)'
+    + (payload.stock && (payload.stock.pexels || payload.stock.pixabay) ? '' : ' <em>(sin key: configura PEXELS_API_KEY en el entorno)</em>')
+    + '</label>'
     + '<div style="margin-top:0.8rem">'
     + '<button onclick="approveScript()">✅ Visto bueno — editar y renderizar</button>'
     + '<span id="script-render-status" class="status"></span>'
@@ -1206,13 +1236,16 @@ function renderScriptProposal(payload) {{
 
 async function approveScript() {{
   const status = document.getElementById('script-render-status');
+  const useStock = document.getElementById('script-stock') && document.getElementById('script-stock').checked;
   const clips = document.getElementById('script-clips').value
     .split(',').map(c => c.trim()).filter(Boolean);
-  if (!clips.length) {{
-    status.textContent = '✗ Indica al menos un clip de vídeo propio';
+  if (!clips.length && !useStock) {{
+    status.textContent = '✗ Indica al menos un clip de vídeo propio o marca clips de stock';
     return;
   }}
-  status.textContent = 'Renderizando… (puede tardar un rato)';
+  status.textContent = useStock && !clips.length
+    ? '🆓 Descargando clips de stock y renderizando… (puede tardar)'
+    : 'Renderizando… (puede tardar un rato)';
   try {{
     const res = await fetch('/api/script/render', {{
       method: 'POST',
@@ -1221,6 +1254,7 @@ async function approveScript() {{
         script: currentScript,
         clips: clips,
         music_track_id: scriptMusicTrack,
+        use_stock: useStock,
       }}),
     }});
     const result = await res.json();
@@ -1606,7 +1640,7 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 self._send_json({"error": str(exc)}, status=500)
 
         def _handle_script_render(self) -> None:
-            """Renderiza el vídeo aprobado (body: script, clips, music_track_id)."""
+            """Renderiza el vídeo aprobado (body: script, clips, music_track_id, use_stock)."""
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(length)
@@ -1614,12 +1648,15 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 script = body.get("script")
                 clips = [str(c) for c in body.get("clips", [])]
                 music_track_id = body.get("music_track_id")
+                use_stock = bool(body.get("use_stock", False))
                 if not script:
                     self._send_json({"error": "Parámetro script requerido"}, status=400)
                     return
                 self._send_json(
                     asyncio.run(
-                        self.app.script_render(script, clips, music_track_id)
+                        self.app.script_render(
+                            script, clips, music_track_id, use_stock=use_stock
+                        )
                     )
                 )
             except ValueError as exc:

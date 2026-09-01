@@ -38,6 +38,16 @@ _STRUCTURE: list[tuple[SceneType, float]] = [
     (SceneType.CTA, 0.05),
 ]
 
+# Términos de búsqueda de stock (B-roll) por tipo de escena. En inglés
+# porque Pexels/Pixabay indexan mejor el material audiovisual en inglés.
+_SCENE_KEYWORDS: dict[SceneType, list[str]] = {
+    SceneType.HOOK: ["dramatic", "suspense", "close up", "action"],
+    SceneType.INTRO: ["person talking", "introduction", "presenter", "studio"],
+    SceneType.CONTENT: ["working", "desk", "workspace", "laptop"],
+    SceneType.CLIMAX: ["epic", "reveal", "dramatic moment", "sunset"],
+    SceneType.CTA: ["subscribe", "hand gesture", "call to action", "thank you"],
+}
+
 DEFAULT_DURATION = 60.0  # duración objetivo si el canal no aporta datos
 
 
@@ -159,6 +169,7 @@ def generate_script(
                     text=text,
                     position=TextPosition.CENTER,
                     transition=TransitionType.FADE,
+                    keywords=_SCENE_KEYWORDS.get(scene_type, []),
                 )
             )
             continue
@@ -184,6 +195,7 @@ def generate_script(
                     if scene_type in (SceneType.HOOK, SceneType.INTRO)
                     else TransitionType.CROSSFADE
                 ),
+                keywords=_SCENE_KEYWORDS.get(scene_type, []),
             )
         )
 

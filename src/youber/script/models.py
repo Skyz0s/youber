@@ -37,6 +37,10 @@ class Scene(BaseModel):
     position: TextPosition = TextPosition.CENTER
     transition: TransitionType = TransitionType.FADE
     transition_duration: float = Field(default=1.0, gt=0)
+    keywords: list[str] = Field(
+        default_factory=list,
+        description="Términos de búsqueda para clips de stock (B-roll)",
+    )
 
 
 class Script(BaseModel):

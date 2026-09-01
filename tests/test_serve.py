@@ -474,6 +474,8 @@ def test_http_script_proposal(tmp_path: Path, monkeypatch):
             assert script["scenes"]
             assert payload["music"]["options"] == []
             assert payload["music"]["suggested_track_id"] is None
+            # stock: sin keys en el entorno → ambos desactivados
+            assert payload["stock"] == {"pexels": False, "pixabay": False}
     finally:
         server.shutdown()
         server.server_close()
@@ -663,6 +665,137 @@ def test_http_script_render_sin_clips(tmp_path: Path, monkeypatch):
                 "script": script.model_dump(mode="json"),
                 "clips": [],
                 "music_track_id": None,
+            }
+        ).encode("utf-8")
+        request = Request(
+            f"{base}/api/script/render",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(request, timeout=5)
+        assert exc_info.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_script_render_con_stock(tmp_path: Path, monkeypatch):
+    """POST /api/script/render con use_stock descarga clips de stock y renderiza."""
+    from youber.research.patterns import channel_overview
+    from youber.script.generator import generate_script
+    from youber.video.models import Clip, Project, TextOverlay
+
+    channel = _fake_channel_analyzer(monkeypatch)
+    script = generate_script(channel_overview(channel), topic="Mi reto", duration=30)
+
+    clip = tmp_path / "stock-pexels-1.mp4"
+    clip.write_bytes(b"fake")
+    fake_project = Project(
+        title="Mi reto",
+        clips=[Clip(file_path=clip)],
+        text_overlays=[TextOverlay(text="Hola")],
+    )
+
+    async def fake_render(project, output_path, music_path=None):
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"mp4")
+        return str(output_path)
+
+    async def fake_fetch(scenes, dest_dir, bank="auto", per_scene=1):
+        return {"escena1": [clip], "escena2": [clip]}
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    monkeypatch.setattr(
+        "youber.script.builder.build_project",
+        lambda *a, **k: fake_project,
+    )
+    monkeypatch.setattr(
+        "youber.video.editor.VideoEditor",
+        lambda **kwargs: type(
+            "Fake",
+            (),
+            {
+                "render": staticmethod(fake_render),
+                "set_music": lambda self, project, track_id, volume=0.25: None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "youber.video.stock.available", lambda: {"pexels": True, "pixabay": False}
+    )
+    monkeypatch.setattr(
+        "youber.video.stock.fetch_clips_for_scenes", fake_fetch
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps(
+            {
+                "script": script.model_dump(mode="json"),
+                "clips": [],
+                "music_track_id": None,
+                "use_stock": True,
+            }
+        ).encode("utf-8")
+        request = Request(
+            f"{base}/api/script/render",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            assert response.status == 200
+            result = json.loads(response.read().decode("utf-8"))
+            assert result["ok"] is True
+            assert result["clips"] == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_script_render_con_stock_sin_key(tmp_path: Path, monkeypatch):
+    """use_stock sin key configurada devuelve 400 con mensaje claro."""
+    from urllib.error import HTTPError
+
+    from youber.research.patterns import channel_overview
+    from youber.script.generator import generate_script
+
+    channel = _fake_channel_analyzer(monkeypatch)
+    script = generate_script(channel_overview(channel), topic="Mi reto", duration=30)
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    monkeypatch.setattr(
+        "youber.video.stock.available", lambda: {"pexels": False, "pixabay": False}
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps(
+            {
+                "script": script.model_dump(mode="json"),
+                "clips": [],
+                "music_track_id": None,
+                "use_stock": True,
             }
         ).encode("utf-8")
         request = Request(
