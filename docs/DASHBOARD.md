@@ -52,8 +52,17 @@ configuración). La página:
   cada 60 s; cambia con `--refresh`).
 - Permite **marcar/desmarcar widgets con checkboxes** y guardar la
   selección; queda persistida en `~/.youber/dashboard.json`.
-- Expone `GET /api/data` (JSON de los widgets) y `POST /api/config`
-  (guardar selección) para integrarse con otras herramientas.
+- Incluye un **buscador de música en plataformas** (Apple/iTunes o
+  Spotify): escribe un texto, marca los resultados que te interesen y
+  pulsa «Importar seleccionadas» para añadirlos al catálogo **sin salir
+  del navegador** (solo metadatos públicos, nunca audio).
+- Expone `GET /api/data` (JSON de los widgets), `GET /api/search-cloud`
+  (buscar en plataforma) y `POST /api/import-cloud` (importar al
+  catálogo) para integrarse con otras herramientas.
+
+El buscador importa al mismo catálogo que muestra el widget
+`catalog-stats` (`<music-dir>/.music.db`); al terminar, los widgets se
+refrescan solos. El directorio de música se elige con `--music-dir`.
 
 Configuración guardada (`~/.youber/dashboard.json`):
 

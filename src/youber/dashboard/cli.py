@@ -87,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--refresh", type=int, default=None, help="Segundos entre auto-refrescos")
     serve_parser.add_argument("--no-open", action="store_true", help="No abrir el navegador automáticamente")
     serve_parser.add_argument("--config", default=None, help="Fichero de configuración del dashboard")
+    serve_parser.add_argument("--music-dir", default=None, help="Directorio del catálogo de música (para importar y para catalog-stats)")
 
     return parser
 
@@ -162,6 +163,7 @@ def run(args: argparse.Namespace) -> None:
             refresh_seconds=args.refresh,
             port=args.port,
             open_browser=not args.no_open,
+            library_dir=args.music_dir or "music",
         )
     else:
         raise SystemExit(f"Comando desconocido: {args.command}")

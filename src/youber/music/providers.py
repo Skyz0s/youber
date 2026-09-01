@@ -209,6 +209,7 @@ async def import_cloud(
     limit: int = 10,
     db: MusicDatabase | None = None,
     spotify_client: SpotifyClient | None = None,
+    external_ids: list[str] | None = None,
 ) -> dict[str, int]:
     """Busca en una plataforma y añade las pistas al catálogo (idempotente).
 
@@ -220,8 +221,10 @@ async def import_cloud(
         source: ``apple`` (iTunes, sin API key) o ``spotify`` (credenciales).
         limit: Número máximo de resultados.
         db: Base de datos del catálogo. Si es ``None``, se crea una
-            temporal en memoria (solo para probar/validar).
+            temporal (solo para probar/validar).
         spotify_client: Cliente de Spotify (opcional).
+        external_ids: Si se indica, solo se importan los resultados con
+            esos ids externos (para seleccionar desde el dashboard).
 
     Returns:
         Resumen: ``added`` (nuevas), ``skipped`` (ya existentes) y ``total``.
@@ -242,6 +245,9 @@ async def import_cloud(
         own_db = False
     try:
         hits = await search(source, query, limit, spotify_client=spotify_client)
+        if external_ids is not None:
+            wanted = set(external_ids)
+            hits = [hit for hit in hits if hit.external_id in wanted]
         added = skipped = 0
         for hit in hits:
             if database.get_by_external_id(hit.source, hit.external_id):
