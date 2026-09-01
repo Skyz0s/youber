@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from youber.dashboard.cli import _widget_type, build_parser
+from youber.dashboard.cli import _parse_widgets, _widget_type, build_parser
 from youber.dashboard.data_sources import (
     list_reports,
     load_music_tracks,
@@ -300,6 +300,48 @@ def test_widget_manager_missing_source():
         manager.collect(widget)
 
 
+def test_widget_manager_create_widget_method():
+    manager = WidgetManager(
+        sources={
+            "tracks": [],
+            "reports": [],
+            "history": [],
+            "jobs": [],
+            "videos": [],
+            "channel": None,
+            "channels": [],
+        }
+    )
+    widget = manager.create_widget("catalog-stats", position=2)
+    assert widget.type == WidgetType.CATALOG_STATS
+    assert widget.position == 2
+    assert widget.title == WIDGET_REGISTRY[WidgetType.CATALOG_STATS].title
+
+
+def test_widget_manager_collect_types():
+    manager = WidgetManager(
+        sources={
+            "tracks": [make_track(usage=1)],
+            "reports": [],
+            "history": [],
+            "jobs": [],
+            "videos": [],
+            "channel": None,
+            "channels": [],
+        }
+    )
+    data = manager.collect_types(
+        ["catalog-stats", "scheduled-tasks", "upload-status"]
+    )
+    assert [item.type for item in data] == [
+        WidgetType.CATALOG_STATS,
+        WidgetType.SCHEDULED_TASKS,
+        WidgetType.UPLOAD_STATUS,
+    ]
+    assert [item.position for item in data] == [0, 1, 2]
+    assert data[0].data["total_tracks"] == 1
+
+
 def test_widget_manager_collect_many_skips_disabled():
     manager = WidgetManager(
         sources={
@@ -345,6 +387,28 @@ def test_render_widget_html():
     assert "Catálogo" in html
 
 
+def test_render_dashboard_respects_position():
+    first = WidgetData(
+        widget_id="b",
+        type=WidgetType.CATALOG_STATS,
+        title="Catálogo",
+        data={"total_tracks": 1},
+        position=0,
+    )
+    second = WidgetData(
+        widget_id="a",
+        type=WidgetType.SCHEDULED_TASKS,
+        title="Tareas",
+        data={"total": 1},
+        position=1,
+    )
+    # Se pasan desordenados; el render debe respetar la posición, no el id.
+    html = render_dashboard_html([second, first])
+    assert html.index("Catálogo") < html.index("Tareas")
+    md = render_dashboard_markdown([second, first])
+    assert md.index("Catálogo") < md.index("Tareas")
+
+
 def test_render_dashboard_formats():
     data = [_sample_widget_data()]
     assert "Dashboard" in render_dashboard_markdown(data)
@@ -369,6 +433,18 @@ def test_cli_widget_type():
     assert _widget_type("catalog-stats") == WidgetType.CATALOG_STATS
     with pytest.raises(argparse.ArgumentTypeError):
         _widget_type("nope")
+
+
+def test_cli_parse_widgets():
+    import argparse
+
+    assert _parse_widgets("catalog-stats,scheduled-tasks,upload-status") == [
+        WidgetType.CATALOG_STATS,
+        WidgetType.SCHEDULED_TASKS,
+        WidgetType.UPLOAD_STATUS,
+    ]
+    with pytest.raises(argparse.ArgumentTypeError):
+        _parse_widgets("catalog-stats,nope")
 
 
 def test_cli_parser():

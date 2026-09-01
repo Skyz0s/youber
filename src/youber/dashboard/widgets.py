@@ -74,6 +74,45 @@ class WidgetManager:
         """
         self.sources = sources or _default_sources()
 
+    def create_widget(
+        self,
+        widget_type: WidgetType | str,
+        title: str | None = None,
+        params: dict[str, Any] | None = None,
+        position: int = 0,
+        refresh_interval: int = 3600,
+        enabled: bool = True,
+    ) -> Widget:
+        """Crea un widget configurado (delega en :func:`create_widget`).
+
+        Es la versión como método de :class:`WidgetManager`, cómoda para
+        construir dashboards personalizados con una selección de widgets.
+        """
+        return create_widget(
+            widget_type,
+            title=title,
+            params=params,
+            position=position,
+            refresh_interval=refresh_interval,
+            enabled=enabled,
+        )
+
+    def collect_types(self, widget_types: list[WidgetType | str]) -> list[WidgetData]:
+        """Crea widgets de los tipos indicados y recolecta sus datos de una vez.
+
+        Args:
+            widget_types: Tipos de widget a incluir, en el orden deseado
+                (p. ej. ``["catalog-stats", "scheduled-tasks", "upload-status"]``).
+
+        Returns:
+            Los datos recolectados, listos para renderizar.
+        """
+        widgets = [
+            self.create_widget(widget_type, position=index)
+            for index, widget_type in enumerate(widget_types)
+        ]
+        return self.collect_many(widgets)
+
     def collect(self, widget: Widget) -> WidgetData:
         """Recolecta los datos de un widget (llama a su función de métricas).
 
@@ -104,6 +143,7 @@ class WidgetManager:
             type=widget.type,
             title=widget.title,
             data=data,
+            position=widget.position,
         )
 
     def collect_many(self, widgets: list[Widget]) -> list[WidgetData]:

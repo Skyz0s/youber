@@ -49,4 +49,5 @@ class WidgetData(BaseModel):
     type: WidgetType
     title: str
     data: dict  # Datos específicos del widget
+    position: int = 0  # Orden en el dashboard (hereda del Widget)
     rendered_at: datetime = Field(default_factory=datetime.now)

@@ -31,7 +31,62 @@ youber-dashboard render catalog-stats                # un widget (Markdown)
 youber-dashboard render music-usage -f json          # un widget en JSON
 youber-dashboard dashboard --format html -o dash.html  # dashboard completo
 youber-dashboard dashboard -f md                       # Markdown por consola
+youber-dashboard dashboard --widgets catalog-stats,scheduled-tasks,upload-status -f html -o custom.html  # selección
+youber-dashboard serve                                # dashboard en el navegador (puerto 8765)
+youber-dashboard serve --port 9000 --refresh 30       # otro puerto y refresco cada 30 s
 ```
+
+## Trabajar en el dashboard (modo servidor)
+
+Para **ver y manejar el dashboard directamente en el navegador** (sin
+comandos por cada cambio):
+
+```bash
+youber-dashboard serve
+```
+
+Abre `http://127.0.0.1:8787` (puerto configurable con `--port` o en la
+configuración). La página:
+
+- Muestra los widgets seleccionados con **auto-refresco** (por defecto
+  cada 60 s; cambia con `--refresh`).
+- Permite **marcar/desmarcar widgets con checkboxes** y guardar la
+  selección; queda persistida en `~/.youber/dashboard.json`.
+- Expone `GET /api/data` (JSON de los widgets) y `POST /api/config`
+  (guardar selección) para integrarse con otras herramientas.
+
+Configuración guardada (`~/.youber/dashboard.json`):
+
+```json
+{
+  "widgets": ["catalog-stats", "scheduled-tasks", "upload-status"],
+  "refresh_seconds": 60,
+  "port": 8787
+}
+```
+
+El servidor escucha solo en `127.0.0.1` (no expone datos fuera de la
+máquina) y usa únicamente la librería estándar.
+
+## Dashboard personalizado
+
+Puedes construir un dashboard con una **selección concreta de widgets** de
+dos formas: desde la CLI con `--widgets` (lista separada por comas) o desde
+código con `WidgetManager.create_widget()` / `WidgetManager.collect_types()`.
+
+```python
+from youber.dashboard import WidgetManager
+from youber.dashboard.renderer import render_dashboard_html
+
+manager = WidgetManager()
+data = manager.collect_types(["catalog-stats", "scheduled-tasks", "upload-status"])
+html = render_dashboard_html(data)
+Path("custom_dashboard.html").write_text(html, encoding="utf-8")
+```
+
+El orden en el HTML respeta la posición de cada widget (los creados juntos
+siguen el orden de la lista), no el id aleatorio. Ejemplo completo:
+`examples/custom_dashboard.py`.
 
 ## Uso desde código
 
@@ -51,12 +106,19 @@ O con fuentes inyectadas (para tests o fuentes personalizadas):
 manager = WidgetManager(sources={"tracks": [...], "reports": [...], ...})
 ```
 
+O crear y recolectar en un solo paso:
+
+```python
+manager = WidgetManager()
+data = manager.collect_types(["catalog-stats", "upload-status", "scheduled-tasks"])
+```
+
 ## Modelos
 
 - **`Widget`**: `id`, `type`, `title`, `params`, `position`,
   `refresh_interval` (s), `enabled`, `created_at`, `updated_at`.
 - **`WidgetData`**: `widget_id`, `type`, `title`, `data` (dict de métricas),
-  `rendered_at`.
+  `position` (ordena en el dashboard), `rendered_at`.
 
 ## Cómo funcionan las métricas
 

@@ -51,7 +51,7 @@ def render_widget_markdown(data: WidgetData) -> str:
 def render_dashboard_markdown(widgets: list[WidgetData]) -> str:
     """Renderiza un dashboard completo en Markdown."""
     lines = ["# Dashboard — Youber", ""]
-    for widget in sorted(widgets, key=lambda item: item.widget_id):
+    for widget in sorted(widgets, key=lambda item: (item.position, item.widget_id)):
         lines.append(render_widget_markdown(widget))
         lines.append("")
     return "\n".join(lines)
@@ -88,7 +88,7 @@ def render_dashboard_html(widgets: list[WidgetData]) -> str:
     """Renderiza un dashboard completo en HTML (página autocontenida)."""
     body = "\n".join(
         render_widget_html(widget)
-        for widget in sorted(widgets, key=lambda item: item.widget_id)
+        for widget in sorted(widgets, key=lambda item: (item.position, item.widget_id))
     )
     return (
         "<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n"

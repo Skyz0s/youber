@@ -1,7 +1,8 @@
 """CLI ``youber-dashboard``: dashboard de métricas del ecosistema Youber.
 
-Comandos: ``list`` (widgets disponibles), ``render`` (un widget concreto) y
-``dashboard`` (todos los widgets por defecto).
+Comandos: ``list`` (widgets disponibles), ``render`` (un widget concreto),
+``dashboard`` (todos los widgets por defecto) y ``serve`` (dashboard en
+el navegador con auto-refresco).
 
 Ejemplos:
 
@@ -11,6 +12,8 @@ Ejemplos:
     youber-dashboard render catalog-stats
     youber-dashboard dashboard --format html -o dashboard.html
     youber-dashboard dashboard --format json
+    youber-dashboard serve            # navegador en http://127.0.0.1:8787
+    youber-dashboard serve --port 9000 --refresh 30
 """
 
 from __future__ import annotations
@@ -57,9 +60,40 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard = sub.add_parser("dashboard", help="Renderiza el dashboard completo")
     dashboard.add_argument("-f", "--format", choices=["md", "html", "json"], default="md")
     dashboard.add_argument("-o", "--output", default=None, help="Fichero de salida")
+    dashboard.add_argument(
+        "--widgets",
+        type=_parse_widgets,
+        default=None,
+        help=(
+            "Widgets a incluir, separados por comas "
+            "(p. ej. catalog-stats,scheduled-tasks,upload-status). "
+            "Por defecto: todos los disponibles."
+        ),
+    )
     dashboard.add_argument("--music-dir", default="music", help="Directorio del catálogo de música")
 
+    serve_parser = sub.add_parser("serve", help="Sirve el dashboard en el navegador (auto-refresco)")
+    serve_parser.add_argument(
+        "--widgets",
+        type=_parse_widgets,
+        default=None,
+        help=(
+            "Widgets a mostrar, separados por comas "
+            "(p. ej. catalog-stats,scheduled-tasks,upload-status). "
+            "Por defecto: los de la configuración guardada."
+        ),
+    )
+    serve_parser.add_argument("--port", type=int, default=None, help="Puerto local (por defecto 8787)")
+    serve_parser.add_argument("--refresh", type=int, default=None, help="Segundos entre auto-refrescos")
+    serve_parser.add_argument("--no-open", action="store_true", help="No abrir el navegador automáticamente")
+    serve_parser.add_argument("--config", default=None, help="Fichero de configuración del dashboard")
+
     return parser
+
+
+def _parse_widgets(value: str) -> list[WidgetType]:
+    """Convierte una lista separada por comas en tipos de widget válidos."""
+    return [_widget_type(item) for item in value.split(",") if item.strip()]
 
 
 def _print_widgets() -> None:
@@ -103,14 +137,32 @@ def run(args: argparse.Namespace) -> None:
             renderer = render_widget_markdown if args.format == "md" else render_widget_html
             _emit(renderer(data), args.output)
     elif args.command == "dashboard":
-        widgets = [widget for widget in default_widgets() if widget.type not in {
-            WidgetType.CHANNEL_TRENDS,
-            WidgetType.CHANNEL_COMPARISON,
-            WidgetType.TOP_VIDEOS,
-            WidgetType.ENGAGEMENT_METRICS,
-        }]
+        if args.widgets:
+            widgets = [
+                create_widget(widget_type, position=index)
+                for index, widget_type in enumerate(args.widgets)
+            ]
+        else:
+            widgets = [widget for widget in default_widgets() if widget.type not in {
+                WidgetType.CHANNEL_TRENDS,
+                WidgetType.CHANNEL_COMPARISON,
+                WidgetType.TOP_VIDEOS,
+                WidgetType.ENGAGEMENT_METRICS,
+            }]
         collected = manager.collect_many(widgets)
         _emit(render_dashboard(collected, args.format), args.output)
+    elif args.command == "serve":
+        from youber.dashboard.serve import DEFAULT_CONFIG_PATH
+        from youber.dashboard.serve import serve as serve_dashboard
+
+        selected = [widget.value for widget in args.widgets] if args.widgets else None
+        serve_dashboard(
+            config_path=args.config or DEFAULT_CONFIG_PATH,
+            widgets=selected,
+            refresh_seconds=args.refresh,
+            port=args.port,
+            open_browser=not args.no_open,
+        )
     else:
         raise SystemExit(f"Comando desconocido: {args.command}")
 
