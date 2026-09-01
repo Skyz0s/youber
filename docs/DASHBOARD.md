@@ -56,9 +56,14 @@ configuración). La página:
   Spotify): escribe un texto, marca los resultados que te interesen y
   pulsa «Importar seleccionadas» para añadirlos al catálogo **sin salir
   del navegador** (solo metadatos públicos, nunca audio).
+- Incluye **importación de tu biblioteca completa de Apple**: pega la
+  ruta del XML exportado (Archivo → Biblioteca → Exportar biblioteca…)
+  y pulsa «Importar biblioteca» para registrar todas tus canciones de
+  una vez.
 - Expone `GET /api/data` (JSON de los widgets), `GET /api/search-cloud`
-  (buscar en plataforma) y `POST /api/import-cloud` (importar al
-  catálogo) para integrarse con otras herramientas.
+  (buscar en plataforma), `POST /api/import-cloud` (importar al
+  catálogo) y `POST /api/import-apple-library` (importar el XML de la
+  biblioteca de Apple) para integrarse con otras herramientas.
 
 El buscador importa al mismo catálogo que muestra el widget
 `catalog-stats` (`<music-dir>/.music.db`); al terminar, los widgets se

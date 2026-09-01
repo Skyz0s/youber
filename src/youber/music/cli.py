@@ -111,6 +111,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Solo busca y muestra resultados, sin guardar",
     )
 
+    import_library = sub.add_parser(
+        "import-apple-library",
+        help="Importa TODA tu biblioteca de Apple Music/iTunes desde su XML exportado",
+    )
+    import_library.add_argument(
+        "xml",
+        help=(
+            "Ruta del fichero XML exportado (Archivo → Biblioteca → Exportar "
+            "biblioteca…). Mac: ~/Music/Music/Music Library.xml; "
+            "Windows/iTunes: ~/Music/iTunes/iTunes Music Library.xml"
+        ),
+    )
+    import_library.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Solo lee y muestra el resumen, sin guardar",
+    )
+
     register_audio_features(sub)
 
     return parser
@@ -196,6 +214,8 @@ def run(args: argparse.Namespace) -> None:
             console.print(f"🗑️  Pista {args.id} eliminada")
         elif args.command == "import-cloud":
             asyncio.run(_run_import_cloud(args, library))
+        elif args.command == "import-apple-library":
+            asyncio.run(_run_import_apple_library(args, library))
     finally:
         library.close()
 
@@ -231,6 +251,33 @@ async def _run_import_cloud(args: argparse.Namespace, library: MusicLibrary) -> 
     )
     if summary["added"]:
         console.print("💡 Revisa el dashboard (catalog-stats) o 'youber-music list' para verlas.")
+
+
+async def _run_import_apple_library(args: argparse.Namespace, library: MusicLibrary) -> None:
+    """Ejecuta ``import-apple-library``: importa el XML de la biblioteca."""
+    from pathlib import Path
+
+    from youber.music.apple_library import import_apple_library, parse_apple_library
+
+    xml_path = Path(args.xml)
+    if not xml_path.exists():
+        console.print(f"[red]Fichero no encontrado: {args.xml}[/]")
+        console.print("ℹ️  En Apple Music: Archivo → Biblioteca → Exportar biblioteca…")
+        raise SystemExit(1)
+
+    if args.dry_run:
+        hits = parse_apple_library(xml_path)
+        console.print(f"ℹ️  El XML contiene {len(hits)} canciones.")
+        console.print("ℹ️  Usa sin --dry-run para importarlas al catálogo.")
+        return
+
+    summary = await import_apple_library(xml_path, library.db)
+    console.print(
+        f"[green]Biblioteca de Apple importada:[/] +{summary['added']} nuevas, "
+        f"{summary['skipped']} ya existentes ({summary['total']} canciones en el XML)"
+    )
+    if summary["added"]:
+        console.print("💡 Mira el dashboard (catalog-stats) o 'youber-music list' para verlas.")
 
 
 def main() -> None:

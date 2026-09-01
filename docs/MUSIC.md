@@ -14,6 +14,7 @@ sugerencias para elegir la música de fondo de tus vídeos.
 | `matcher.py` | Búsqueda por mood/género/texto y sugerencias |
 | `library.py` | `MusicLibrary`: orquesta todo |
 | `providers.py` | Importación desde plataformas (Apple/iTunes, Spotify) |
+| `apple_library.py` | Importación de la biblioteca completa de Apple (XML exportado) |
 | `cli.py` | Comando `youber-music` |
 
 ## CLI
@@ -30,7 +31,35 @@ youber-music --library ~/musica info <id>
 youber-music import-cloud "lofi beats" --source apple      # iTunes (sin API key)
 youber-music import-cloud "lofi beats" --source spotify -n 5  # Spotify (credenciales)
 youber-music import-cloud "piano" --source apple --dry-run  # solo busca, no guarda
+youber-music import-apple-library "Music Library.xml"       # TODA tu biblioteca de Apple
+youber-music import-apple-library "Music Library.xml" --dry-run
 ```
+
+## Registrar TODA tu biblioteca de Apple (exportación XML)
+
+Para importar **todas tus canciones de Apple Music/iTunes de una vez** (no
+una búsqueda a la vez):
+
+1. En la app Música/iTunes: **Archivo → Biblioteca → Exportar biblioteca…**
+   (en Windows/iTunes: **File → Library → Export Library**).
+2. Se genera un fichero plist XML con toda tu biblioteca:
+   - Mac: `~/Music/Music/Music Library.xml`
+   - Windows/iTunes: `~/Music/iTunes/iTunes Music Library.xml`
+3. Impórtalo (CLI o dashboard):
+
+```bash
+youber-music import-apple-library "C:/Users/tu/Music/iTunes/iTunes Music Library.xml"
+```
+
+El parser (`youber.music.apple_library`) lee el XML con ``plistlib``,
+extrae título, artista, álbum, duración y género de cada canción (omite
+vídeos, podcasts y entradas sin título) y las guarda como pistas
+``source=apple`` con su ``Persistent ID`` de Apple como ``external_id``
+(estable entre exportaciones: reimportar no duplica nada).
+
+**Solo metadatos: nunca se descarga ni copia audio** (legal/ético). Si tus
+canciones tienen ficheros locales, escanéalas con `scan` para tenerlas
+como pistas ``local`` editables en vídeo.
 
 ## Importar catálogo desde plataformas (metadatos públicos)
 

@@ -131,6 +131,16 @@ class DashboardApp:
             "hits": [hit.model_dump(mode="json") for hit in hits],
         }
 
+    async def import_apple_library(self, path: str) -> dict[str, int]:
+        """Importa el XML exportado de la biblioteca de Apple al catálogo."""
+        from youber.music.library import MusicLibrary
+
+        if self._library is None:
+            self._library = MusicLibrary(self.library_dir)
+        from youber.music.apple_library import import_apple_library as import_library
+
+        return await import_library(path, db=self._library.db)
+
     def data_payload(self) -> dict[str, Any]:
         """Payload JSON del endpoint ``/api/data`` (para el polling)."""
         from datetime import datetime
@@ -199,6 +209,12 @@ button{{margin-left:0.6rem;padding:0.25rem 1rem;cursor:pointer}}
     <span id="cloud-status" class="status"></span>
   </form>
   <div id="cloud-results"></div>
+  <form id="apple-library-form" style="margin-top:0.8rem;border-top:1px dashed #ccc;padding-top:0.7rem">
+    <strong>🍎 Importar TODA tu biblioteca de Apple:</strong>
+    <input type="text" id="apple-library-path" placeholder="ruta del XML exportado (p. ej. C:/Users/tu/Music/iTunes/iTunes Music Library.xml)" style="min-width:380px">
+    <button type="submit">Importar biblioteca</button>
+    <span id="apple-status" class="status"></span>
+  </form>
 </div>
 <div id="grid">{cards}</div>
 <p id="updated"></p>
@@ -216,6 +232,23 @@ async function loadData() {{
   document.getElementById('updated').textContent =
     'Última actualización: ' + payload.updated_at;
 }}
+document.getElementById('apple-library-form').addEventListener('submit', async (e) => {{
+  e.preventDefault();
+  const path = document.getElementById('apple-library-path').value.trim();
+  const status = document.getElementById('apple-status');
+  if (!path) {{ status.textContent = 'Escribe la ruta del XML'; return; }}
+  status.textContent = 'Importando…';
+  const res = await fetch('/api/import-apple-library', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{path}}),
+  }});
+  const result = await res.json();
+  status.textContent = result.error ? '✗ ' + result.error
+    : `✅ Biblioteca importada: ${{result.added}} nuevas, ${{result.skipped}} ya existían`;
+  loadData();
+}});
+
 document.getElementById('config-form').addEventListener('submit', async (e) => {{
   e.preventDefault();
   const selected = [...document.querySelectorAll('input[name=widget]:checked')]
@@ -341,7 +374,28 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path == "/api/import-cloud":
                 self._handle_import_cloud()
                 return
+            if self.path == "/api/import-apple-library":
+                self._handle_import_apple_library()
+                return
             self._send_json({"error": "no encontrado"}, status=404)
+
+        def _handle_import_apple_library(self) -> None:
+            """Importa un XML de biblioteca de Apple al catálogo."""
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                body = json.loads(raw.decode("utf-8"))
+                path = str(body.get("path", "")).strip()
+                if not path:
+                    self._send_json({"error": "Parámetro path (ruta del XML) requerido"}, status=400)
+                    return
+                summary = asyncio.run(self.app.import_apple_library(path))
+                self._send_json({"ok": True, **summary})
+            except FileNotFoundError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=404)
+            except Exception as exc:
+                logger.warning(f"Error en POST /api/import-apple-library: {exc}")
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
 
         def _handle_config(self) -> None:
             try:

@@ -167,7 +167,121 @@ def test_http_get_api_data(tmp_path: Path, monkeypatch):
         server.server_close()
 
 
-def test_http_post_config(tmp_path: Path, monkeypatch):
+def test_http_import_apple_library(tmp_path: Path, monkeypatch):
+    """POST /api/import-apple-library importa el XML al catálogo."""
+    import plistlib
+
+    xml_file = tmp_path / "Music Library.xml"
+    with xml_file.open("wb") as handle:
+        plistlib.dump(
+            {
+                "Tracks": {
+                    "1": {
+                        "Track ID": 1,
+                        "Name": "Canción Uno",
+                        "Artist": "Artista A",
+                        "Album": "Álbum Uno",
+                        "Total Time": 200000,
+                        "Persistent ID": "AAA111",
+                    }
+                }
+            },
+            handle,
+        )
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps({"path": str(xml_file)}).encode("utf-8")
+        request = Request(
+            f"{base}/api/import-apple-library",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=5) as response:
+            assert response.status == 200
+            result = json.loads(response.read().decode("utf-8"))
+            assert result["ok"] is True
+            assert result["added"] == 1
+
+        from youber.music.library import MusicLibrary
+
+        library = MusicLibrary(tmp_path / "music")
+        tracks = library.all()
+        assert len(tracks) == 1
+        assert tracks[0].external_id == "AAA111"
+        library.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_import_apple_library_no_encontrado(tmp_path: Path, monkeypatch):
+    from urllib.error import HTTPError
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps({"path": str(tmp_path / "no.xml")}).encode("utf-8")
+        request = Request(
+            f"{base}/api/import-apple-library",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(request, timeout=5)
+        assert exc_info.value.code == 404
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_import_apple_library_requiere_path(tmp_path: Path, monkeypatch):
+    from urllib.error import HTTPError
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS)
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps({"path": ""}).encode("utf-8")
+        request = Request(
+            f"{base}/api/import-apple-library",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(request, timeout=5)
+        assert exc_info.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
     monkeypatch.setattr(
         "youber.dashboard.serve.WidgetManager",
         lambda: _FakeCollectManager(),
