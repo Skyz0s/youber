@@ -26,17 +26,38 @@ import httpx
 PEXELS_SEARCH = "https://api.pexels.com/videos/search"
 PIXABAY_SEARCH = "https://pixabay.com/api/videos/"
 
+# Las keys también se pueden guardar en ficheros fuera del repo
+# (~/.youber/pexels_key.txt, ~/.youber/pixabay_key.txt) para que el
+# servidor del dashboard las lea sin variables de entorno.
+PEXELS_KEY_FILE = Path.home() / ".youber" / "pexels_key.txt"
+PIXABAY_KEY_FILE = Path.home() / ".youber" / "pixabay_key.txt"
+
+
+def _read_key_file(path: Path) -> str | None:
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return value or None
+
 
 def _safe(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "-", text).strip("-").lower() or "clip"
 
 
 def _pexels_key() -> str | None:
-    return os.getenv("PEXELS_API_KEY")
+    return os.getenv("PEXELS_API_KEY") or _read_key_file(PEXELS_KEY_FILE)
 
 
 def _pixabay_key() -> str | None:
-    return os.getenv("PIXABAY_API_KEY")
+    return os.getenv("PIXABAY_API_KEY") or _read_key_file(PIXABAY_KEY_FILE)
+
+
+def save_pexels_key(key: str) -> Path:
+    """Guarda la key de Pexels en ~/.youber/pexels_key.txt (fuera del repo)."""
+    PEXELS_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PEXELS_KEY_FILE.write_text(key.strip(), encoding="utf-8")
+    return PEXELS_KEY_FILE
 
 
 def available() -> dict[str, bool]:

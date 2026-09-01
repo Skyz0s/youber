@@ -453,6 +453,13 @@ def test_http_script_proposal(tmp_path: Path, monkeypatch):
         "youber.dashboard.serve.WidgetManager",
         lambda: _FakeCollectManager(),
     )
+    # stock: sin keys → ambos desactivados (evita leer la key real de ~/.youber)
+    monkeypatch.setattr(
+        "youber.video.stock.PEXELS_KEY_FILE", tmp_path / "pexels.txt"
+    )
+    monkeypatch.setattr(
+        "youber.video.stock.PIXABAY_KEY_FILE", tmp_path / "pixabay.txt"
+    )
     app = DashboardApp(
         config_path=tmp_path / "dash.json",
         widgets=DEFAULT_WIDGETS,

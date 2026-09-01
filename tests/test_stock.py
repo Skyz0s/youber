@@ -15,20 +15,46 @@ from youber.video.stock import (
 )
 
 
-def test_available_sin_keys(monkeypatch):
+def test_available_sin_keys(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("PEXELS_API_KEY", raising=False)
     monkeypatch.delenv("PIXABAY_API_KEY", raising=False)
+    monkeypatch.setattr("youber.video.stock.PEXELS_KEY_FILE", tmp_path / "pexels.txt")
+    monkeypatch.setattr("youber.video.stock.PIXABAY_KEY_FILE", tmp_path / "pixabay.txt")
     assert available() == {"pexels": False, "pixabay": False}
 
 
-def test_available_con_keys(monkeypatch):
+def test_available_con_keys(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("PEXELS_API_KEY", "abc")
     monkeypatch.setenv("PIXABAY_API_KEY", "xyz")
+    monkeypatch.setattr("youber.video.stock.PEXELS_KEY_FILE", tmp_path / "pexels.txt")
+    monkeypatch.setattr("youber.video.stock.PIXABAY_KEY_FILE", tmp_path / "pixabay.txt")
     assert available() == {"pexels": True, "pixabay": True}
 
 
-def test_search_pexels_sin_key(monkeypatch):
+def test_available_desde_fichero(monkeypatch, tmp_path: Path):
+    """La key también se lee de ~/.youber/pexels_key.txt (sin env)."""
     monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+    monkeypatch.delenv("PIXABAY_API_KEY", raising=False)
+    key_file = tmp_path / "pexels.txt"
+    key_file.write_text("clave-secreta\n", encoding="utf-8")
+    monkeypatch.setattr("youber.video.stock.PEXELS_KEY_FILE", key_file)
+    monkeypatch.setattr("youber.video.stock.PIXABAY_KEY_FILE", tmp_path / "pixabay.txt")
+    assert available() == {"pexels": True, "pixabay": False}
+
+
+def test_save_pexels_key(monkeypatch, tmp_path: Path):
+    key_file = tmp_path / "pexels.txt"
+    monkeypatch.setattr("youber.video.stock.PEXELS_KEY_FILE", key_file)
+    from youber.video.stock import save_pexels_key
+
+    path = save_pexels_key("nueva-key")
+    assert path == key_file
+    assert key_file.read_text(encoding="utf-8").strip() == "nueva-key"
+
+
+def test_search_pexels_sin_key(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("PEXELS_API_KEY", raising=False)
+    monkeypatch.setattr("youber.video.stock.PEXELS_KEY_FILE", tmp_path / "no.txt")
     with pytest.raises(ValueError):
         # no puede ejecutarse sin key (es async)
         import asyncio
@@ -36,8 +62,9 @@ def test_search_pexels_sin_key(monkeypatch):
         asyncio.run(search_pexels("test"))
 
 
-def test_search_pixabay_sin_key(monkeypatch):
+def test_search_pixabay_sin_key(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("PIXABAY_API_KEY", raising=False)
+    monkeypatch.setattr("youber.video.stock.PIXABAY_KEY_FILE", tmp_path / "no.txt")
     with pytest.raises(ValueError):
         import asyncio
 
@@ -136,9 +163,11 @@ def test_download_clip(tmp_path: Path, monkeypatch):
     assert path2 == path
 
 
-def test_fetch_clips_for_scenes_sin_key(monkeypatch):
+def test_fetch_clips_for_scenes_sin_key(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("PEXELS_API_KEY", raising=False)
     monkeypatch.delenv("PIXABAY_API_KEY", raising=False)
+    monkeypatch.setattr("youber.video.stock.PEXELS_KEY_FILE", tmp_path / "pexels.txt")
+    monkeypatch.setattr("youber.video.stock.PIXABAY_KEY_FILE", tmp_path / "pixabay.txt")
     import asyncio
 
     with pytest.raises(ValueError):
