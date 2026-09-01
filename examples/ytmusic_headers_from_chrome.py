@@ -79,29 +79,30 @@ def parse_chrome_headers(lines: list[str]) -> dict[str, str]:
 
 
 def ensure_authorization(headers: dict[str, str]) -> dict[str, str]:
-    """Genera el header ``authorization`` (SAPISIDHASH) si falta.
+    """Garantiza el header ``authorization`` (SAPISIDHASH) y el origin correcto.
 
     ytmusicapi 1.12+ solo reconoce las cabeceras como autenticación de
     navegador si incluyen ``authorization: SAPISIDHASH…``. Ese valor se
     calcula a partir de la cookie ``__Secure-3PAPISID`` y el origen, así
     que podemos generarlo sin que el usuario tenga que copiar de una
     petición concreta.
+
+    Además, las llamadas de BARF van a ``music.youtube.com``: el origin
+    debe ser siempre ese (aunque el pegado venga de studio/www), porque
+    el SAPISIDHASH se firma con el origin.
     """
+    origin = "https://music.youtube.com"
+    headers["origin"] = origin
     if "authorization" in headers:
         return headers
     from ytmusicapi.helpers import get_authorization, sapisid_from_cookie
 
-    # El hash se firma con el origen del sitio: las llamadas de BARF van a
-    # music.youtube.com, así que forzamos ese origen aunque el pegado sea
-    # de www.youtube.com.
-    origin = "https://music.youtube.com"
     try:
         sapisid = sapisid_from_cookie(headers.get("cookie", ""))
     except Exception:
         sapisid = None
     if sapisid:
         headers["authorization"] = get_authorization(f"{sapisid} {origin}")
-        headers["origin"] = origin
     return headers
 
 

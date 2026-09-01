@@ -78,20 +78,30 @@ class YouTubeMusicClient:
 
         Args:
             query: Nombre o handle del artista (p. ej. ``"Knight Princess"``
-                o ``"@KnightPrincessReal"``).
+                o ``"@KnightPrincessReal"``), o un channelId (``UC...``).
 
         Returns:
             Dict con ``channel_id`` y ``name``, o ``None`` si no hay
             resultados.
         """
-        results = await asyncio.to_thread(self.ytmusic.search, query, "artists")
-        if not results:
-            return None
-        artist = results[0]
-        return {
-            "channel_id": artist.get("browseId", ""),
-            "name": artist.get("artist", "") or artist.get("title", ""),
-        }
+        # Si es un channelId directo, no hace falta buscar.
+        stripped = query.strip()
+        if stripped.startswith("UC") and len(stripped) == 24:
+            return {"channel_id": stripped, "name": stripped}
+        # ytmusicapi no busca con la @ del handle: probamos ambas variantes.
+        candidates = [stripped, stripped.lstrip("@")]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            results = await asyncio.to_thread(self.ytmusic.search, candidate, "artists")
+            if not results:
+                continue
+            artist = results[0]
+            return {
+                "channel_id": artist.get("browseId", ""),
+                "name": artist.get("artist", "") or artist.get("title", ""),
+            }
+        return None
 
     async def artist_catalog(self, channel_id: str) -> dict[str, Any]:
         """Catálogo público de un artista: álbumes, singles y canciones."""
