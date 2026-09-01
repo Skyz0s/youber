@@ -153,11 +153,9 @@ def main() -> None:
     """Lee el pegado (stdin o fichero) y genera el fichero de headers."""
     if len(sys.argv) > 1:
         lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
-        source = sys.argv[1]
     else:
         print("Pega las cabeceras (Copy request headers) y pulsa Enter, Ctrl+Z, Enter:")
         lines = sys.stdin.read().splitlines()
-        source = "stdin"
 
     try:
         headers = build_headers_file(lines)

@@ -208,6 +208,75 @@ class DashboardApp:
             include_playlists=include_playlists,
         )
 
+    # -- Catálogo (pestaña Canciones) --------------------------------------
+
+    def _get_library(self) -> Any:
+        """Devuelve la biblioteca de música del dashboard (creándola si falta)."""
+        from youber.music.library import MusicLibrary
+
+        if self._library is None:
+            self._library = MusicLibrary(self.library_dir)
+        return self._library
+
+    def tracks(self, query: str | None = None) -> list[dict[str, Any]]:
+        """Lista las canciones del catálogo con sus datos principales.
+
+        Args:
+            query: Texto opcional para filtrar por título/artista/álbum/género.
+
+        Returns:
+            Lista de dicts con ``id``, ``title``, ``artist``, ``album``,
+            ``duration``, ``genre``, ``source``, ``favorite``, ``usage_count``
+            y ``bpm``.
+        """
+        tracks = self._get_library().all()
+        needle = (query or "").strip().lower()
+        result: list[dict[str, Any]] = []
+        for track in sorted(tracks, key=lambda item: item.title.lower()):
+            parts = [
+                part
+                for part in (
+                    track.title,
+                    track.artist,
+                    track.album,
+                    track.genre,
+                    track.source.value,
+                )
+                if part
+            ]
+            if needle and needle not in " ".join(parts).lower():
+                continue
+            result.append(
+                {
+                    "id": track.id,
+                    "title": track.title,
+                    "artist": track.artist,
+                    "album": track.album,
+                    "duration": track.duration,
+                    "genre": track.genre,
+                    "source": track.source.value,
+                    "favorite": track.favorite,
+                    "usage_count": track.usage_count,
+                    "bpm": track.bpm,
+                }
+            )
+        return result
+
+    def toggle_favorite(self, track_id: str) -> dict[str, Any]:
+        """Marca/desmarca una canción como favorita.
+
+        Returns:
+            Dict con ``id`` y ``favorite`` (nuevo estado); o ``error`` si la
+            canción no existe.
+        """
+        library = self._get_library()
+        track = library.get(track_id)
+        if track is None:
+            return {"error": f"Canción no encontrada: {track_id}"}
+        new_state = not track.favorite
+        library.mark_favorite(track_id, new_state)
+        return {"id": track_id, "favorite": new_state}
+
     def data_payload(self) -> dict[str, Any]:
         """Payload JSON del endpoint ``/api/data`` (para el polling)."""
         from datetime import datetime
@@ -252,11 +321,26 @@ button{{margin-left:0.6rem;padding:0.25rem 1rem;cursor:pointer}}
 #grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem}}
 .widget{{background:#fff;border:1px solid #ddd;border-radius:8px;padding:1rem 1.5rem}}
 .widget h3{{margin-top:0}}li{{margin:0.2rem 0}}
+.tabs{{margin-bottom:1rem}}
+.tab-btn{{background:#fff;border:1px solid #ddd;border-radius:8px 8px 0 0;padding:0.5rem 1.2rem;cursor:pointer;margin-right:0.3rem;font-size:1rem}}
+.tab-btn.active{{background:#1a73e8;color:#fff;border-color:#1a73e8}}
+table{{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden}}
+th,td{{padding:0.5rem 0.8rem;text-align:left;border-bottom:1px solid #eee;font-size:0.9rem}}
+th{{cursor:pointer;background:#f0f4f8;user-select:none;white-space:nowrap}}
+tr:hover{{background:#f7fafc}}
+.fav{{background:none;border:none;cursor:pointer;font-size:1.1rem}}
+.badge{{display:inline-block;padding:0.1rem 0.5rem;border-radius:10px;font-size:0.75rem;color:#fff}}
+.badge-local{{background:#5f6368}}.badge-youtube{{background:#c5221f}}.badge-apple{{background:#a50e2c}}.badge-spotify{{background:#1db954}}
 </style>
 </head>
 <body>
 <h1>📊 Dashboard — Youber</h1>
 <p class="sub">Auto-refresco cada {refresh}s · configuración guardada en {self.config_path}</p>
+<div class="tabs">
+  <button class="tab-btn active" id="tab-btn-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
+  <button class="tab-btn" id="tab-btn-tracks" onclick="switchTab('tracks')">🎵 Canciones</button>
+</div>
+<div id="tab-dashboard">
 <div class="controls">
   <form id="config-form">
     {checkboxes}
@@ -291,6 +375,33 @@ button{{margin-left:0.6rem;padding:0.25rem 1rem;cursor:pointer}}
 </div>
 <div id="grid">{cards}</div>
 <p id="updated"></p>
+</div>
+<div id="tab-tracks" style="display:none">
+  <div class="controls">
+    <strong>🎵 Catálogo de canciones:</strong>
+    <input type="text" id="tracks-q" placeholder="Buscar por título/artista/álbum/género…" style="min-width:280px" oninput="loadTracks()">
+    <button onclick="loadTracks()">↻</button>
+    <span id="tracks-count" class="status"></span>
+  </div>
+  <div style="overflow-x:auto;background:#fff;border:1px solid #ddd;border-radius:8px">
+  <table>
+    <thead>
+      <tr>
+        <th onclick="sortTracks('title')">Título</th>
+        <th onclick="sortTracks('artist')">Artista</th>
+        <th onclick="sortTracks('album')">Álbum</th>
+        <th onclick="sortTracks('duration')">Duración</th>
+        <th onclick="sortTracks('genre')">Género</th>
+        <th onclick="sortTracks('source')">Fuente</th>
+        <th onclick="sortTracks('favorite')">⭐</th>
+        <th onclick="sortTracks('usage_count')">Usos</th>
+        <th onclick="sortTracks('bpm')">BPM</th>
+      </tr>
+    </thead>
+    <tbody id="tracks-body"><tr><td colspan="9" style="text-align:center;color:#888">Cargando…</td></tr></tbody>
+  </table>
+  </div>
+</div>
 <script>
 const REFRESH_MS = {refresh} * 1000;
 async function loadData() {{
@@ -408,6 +519,103 @@ document.getElementById('cloud-form').addEventListener('submit', async (e) => {{
 }});
 setInterval(loadData, REFRESH_MS);
 loadData();
+
+// ---------------------------------------------------------------------------
+// Pestañas
+// ---------------------------------------------------------------------------
+function switchTab(name) {{
+  document.getElementById('tab-dashboard').style.display = name === 'dashboard' ? '' : 'none';
+  document.getElementById('tab-tracks').style.display = name === 'tracks' ? '' : 'none';
+  document.getElementById('tab-btn-dashboard').classList.toggle('active', name === 'dashboard');
+  document.getElementById('tab-btn-tracks').classList.toggle('active', name === 'tracks');
+  if (name === 'tracks') loadTracks();
+}}
+
+// ---------------------------------------------------------------------------
+// Pestaña Canciones
+// ---------------------------------------------------------------------------
+let tracksAll = [];
+let tracksSort = {{key: 'title', dir: 1}};
+
+function fmtDuration(s) {{
+  if (s == null || isNaN(s)) return '-';
+  const m = Math.floor(s / 60);
+  const sec = Math.round(s % 60);
+  return m + ':' + String(sec).padStart(2, '0');
+}}
+
+function sourceBadge(source) {{
+  return '<span class="badge badge-' + esc(source) + '">' + esc(source) + '</span>';
+}}
+
+async function loadTracks() {{
+  const q = document.getElementById('tracks-q').value.trim();
+  const res = await fetch('/api/tracks' + (q ? '?q=' + encodeURIComponent(q) : ''));
+  const payload = await res.json();
+  if (payload.error) {{
+    document.getElementById('tracks-count').textContent = '✗ ' + payload.error;
+    return;
+  }}
+  tracksAll = payload.tracks || [];
+  renderTracks();
+}}
+
+function renderTracks() {{
+  const key = tracksSort.key, dir = tracksSort.dir;
+  const sorted = [...tracksAll].sort((a, b) => {{
+    let va = a[key], vb = b[key];
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va == null) va = '';
+    if (vb == null) vb = '';
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  }});
+  const tbody = document.getElementById('tracks-body');
+  document.getElementById('tracks-count').textContent =
+    sorted.length + ' canción(es)' + (tracksSort.key !== 'title' ? ' · orden: ' + tracksSort.key : '');
+  tbody.innerHTML = sorted.map(t => {{
+    const fav = t.favorite ? '⭐' : '☆';
+    return '<tr>'
+      + '<td>' + esc(t.title) + '</td>'
+      + '<td>' + esc(t.artist || '-') + '</td>'
+      + '<td>' + esc(t.album || '-') + '</td>'
+      + '<td>' + fmtDuration(t.duration) + '</td>'
+      + '<td>' + esc(t.genre || '-') + '</td>'
+      + '<td>' + sourceBadge(t.source) + '</td>'
+      + '<td><button class="fav" data-id="' + esc(t.id) + '" title="Marcar favorita">' + fav + '</button></td>'
+      + '<td>' + t.usage_count + '</td>'
+      + '<td>' + (t.bpm || '-') + '</td>'
+      + '</tr>';
+  }}).join('') || '<tr><td colspan="9" style="text-align:center;color:#888">Sin canciones en el catálogo</td></tr>';
+
+  tbody.querySelectorAll('.fav').forEach(btn => {{
+    btn.addEventListener('click', async () => {{
+      const res = await fetch('/api/tracks/favorite', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{track_id: btn.dataset.id}}),
+      }});
+      const result = await res.json();
+      if (result.error) {{
+        alert('✗ ' + result.error);
+        return;
+      }}
+      loadTracks();
+    }});
+  }});
+}}
+
+function sortTracks(key) {{
+  if (tracksSort.key === key) {{
+    tracksSort.dir *= -1;
+  }} else {{
+    tracksSort.key = key;
+    tracksSort.dir = 1;
+  }}
+  renderTracks();
+}}
 </script>
 </body>
 </html>
@@ -443,12 +651,28 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path == "/api/ytmusic-status":
                 self._send_json(self.app.ytmusic_status())
                 return
+            if self.path.startswith("/api/tracks"):
+                self._handle_tracks()
+                return
             body = self.app.render_page().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _handle_tracks(self) -> None:
+            """Lista las canciones del catálogo (filtro opcional ``?q=``)."""
+            from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(self.path).query)
+            values = query.get("q")
+            q = values[0] if values else None
+            try:
+                self._send_json({"tracks": self.app.tracks(query=q)})
+            except Exception as exc:
+                logger.warning(f"Error en /api/tracks: {exc}")
+                self._send_json({"error": str(exc)}, status=400)
 
         def _handle_search_cloud(self) -> None:
             """Busca en Apple/Spotify y devuelve resultados JSON (sin importar)."""
@@ -478,10 +702,32 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path == "/api/import-ytmusic":
                 self._handle_import_ytmusic()
                 return
+            if self.path == "/api/tracks/favorite":
+                self._handle_toggle_favorite()
+                return
             if self.path == "/api/import-apple-library":
                 self._handle_import_apple_library()
                 return
             self._send_json({"error": "no encontrado"}, status=404)
+
+        def _handle_toggle_favorite(self) -> None:
+            """Marca/desmarca una canción como favorita (body: track_id)."""
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                body = json.loads(raw.decode("utf-8"))
+                track_id = str(body.get("track_id", "")).strip()
+                if not track_id:
+                    self._send_json({"error": "track_id requerido"}, status=400)
+                    return
+                result = self.app.toggle_favorite(track_id)
+                if "error" in result:
+                    self._send_json(result, status=404)
+                    return
+                self._send_json(result)
+            except Exception as exc:
+                logger.warning(f"Error en POST /api/tracks/favorite: {exc}")
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
 
         def _handle_import_ytmusic(self) -> None:
             """Importa la biblioteca de YouTube Music (Me gusta + guardadas + playlists)."""

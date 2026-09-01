@@ -384,6 +384,141 @@ def test_http_import_ytmusic_sin_auth(tmp_path: Path, monkeypatch):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_http_tracks(tmp_path: Path, monkeypatch):
+    """GET /api/tracks devuelve la lista de canciones del catálogo."""
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    # Poblar el catálogo con una pista.
+    from youber.music.library import MusicLibrary
+    from youber.music.models import Track
+
+    library = MusicLibrary(tmp_path / "music")
+    library.db.add_track(
+        Track(
+            id="t1",
+            file_path=tmp_path / "cancion.mp3",
+            title="Mi Canción",
+            artist="Artista",
+            duration=180.0,
+            genre="pop",
+            file_hash="abc",
+        )
+    )
+    library.close()
+
+    server, base = _start_server(app)
+    try:
+        with urlopen(f"{base}/api/tracks", timeout=5) as response:
+            assert response.status == 200
+            payload = json.loads(response.read().decode("utf-8"))
+            assert len(payload["tracks"]) == 1
+            track = payload["tracks"][0]
+            assert track["title"] == "Mi Canción"
+            assert track["artist"] == "Artista"
+            assert track["duration"] == 180.0
+            assert track["source"] == "local"
+            assert "favorite" in track
+        # Filtro por texto.
+        with urlopen(f"{base}/api/tracks?q=artista", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            assert len(payload["tracks"]) == 1
+        with urlopen(f"{base}/api/tracks?q=zzz", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            assert payload["tracks"] == []
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_toggle_favorite(tmp_path: Path, monkeypatch):
+    """POST /api/tracks/favorite marca/desmarca favorita."""
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    from youber.music.library import MusicLibrary
+    from youber.music.models import Track
+
+    library = MusicLibrary(tmp_path / "music")
+    library.db.add_track(
+        Track(
+            id="t1",
+            file_path=tmp_path / "cancion.mp3",
+            title="Mi Canción",
+            artist="Artista",
+            duration=180.0,
+            file_hash="abc",
+        )
+    )
+    library.close()
+
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps({"track_id": "t1"}).encode("utf-8")
+        request = Request(
+            f"{base}/api/tracks/favorite",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=5) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            assert result == {"id": "t1", "favorite": True}
+        # Segundo toggle: vuelve a False.
+        with urlopen(request, timeout=5) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            assert result == {"id": "t1", "favorite": False}
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_toggle_favorite_no_existe(tmp_path: Path, monkeypatch):
+    """Marcar favorita una pista inexistente devuelve 404."""
+    from urllib.error import HTTPError
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps({"track_id": "nope"}).encode("utf-8")
+        request = Request(
+            f"{base}/api/tracks/favorite",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(request, timeout=5)
+        assert exc_info.value.code == 404
+    finally:
+        server.shutdown()
+        server.server_close()
     monkeypatch.setattr(
         "youber.dashboard.serve.WidgetManager",
         lambda: _FakeCollectManager(),
