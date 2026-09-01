@@ -134,6 +134,11 @@ def build_headers_file(lines: list[str], target: Path = TARGET) -> dict[str, str
     if "x-goog-authuser" not in headers:
         # ytmusicapi lo añade por defecto; lo ponemos explícito.
         headers["x-goog-authuser"] = "0"
+        print(
+            "⚠️  El pegado no traía 'x-goog-authuser'. Se usa 0 (perfil principal).\n"
+            "   Si tu música está en otro perfil de Google, repite la copia con esa "
+            "cuenta activa y verifica que el pegado incluya x-goog-authuser."
+        )
     if missing:
         raise ValueError(
             "Faltan cabeceras necesarias: " + ", ".join(missing)
