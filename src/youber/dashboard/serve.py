@@ -141,6 +141,73 @@ class DashboardApp:
 
         return await import_library(path, db=self._library.db)
 
+    # -- Spotify (OAuth) ----------------------------------------------------
+
+    def _spotify_client(self):
+        from youber.music.spotify_library import SpotifyLibraryClient
+
+        return SpotifyLibraryClient(
+            redirect_uri=f"http://127.0.0.1:{self.port}/callback"
+        )
+
+    def spotify_auth_url(self) -> str:
+        """URL de autorización de Spotify para abrir en el navegador."""
+        return self._spotify_client().authorization_url()
+
+    async def spotify_exchange(self, code: str) -> dict[str, Any]:
+        """Intercambia el código de autorización y guarda la sesión."""
+        return await self._spotify_client().exchange_code(code)
+
+    async def spotify_import(self, include_playlists: bool = False) -> dict[str, Any]:
+        """Importa la biblioteca de Spotify (Liked Songs + playlists) al catálogo."""
+        from youber.music.library import MusicLibrary
+
+        if self._library is None:
+            self._library = MusicLibrary(self.library_dir)
+        from youber.music.spotify_library import import_spotify_library
+
+        return await import_spotify_library(
+            client=self._spotify_client(),
+            db=self._library.db,
+            include_playlists=include_playlists,
+        )
+
+    def spotify_status(self) -> dict[str, Any]:
+        """Estado de la conexión con Spotify (sin secretos)."""
+        client = self._spotify_client()
+        return {
+            "available": client.available,
+            "connected": client.connected,
+        }
+
+    # -- YouTube Music (biblioteca personal) -------------------------------
+
+    def ytmusic_status(self) -> dict[str, Any]:
+        """Estado de la autenticación de YouTube Music (headers presentes)."""
+        from youber.music.youtube_music import DEFAULT_HEADERS_FILE
+
+        return {
+            "headers": DEFAULT_HEADERS_FILE.exists(),
+            "headers_path": str(DEFAULT_HEADERS_FILE),
+        }
+
+    async def ytmusic_import(self, include_playlists: bool = True) -> dict[str, Any]:
+        """Importa la biblioteca de YouTube Music (Me gusta + guardadas + playlists)."""
+        from youber.music.library import MusicLibrary
+
+        if self._library is None:
+            self._library = MusicLibrary(self.library_dir)
+        from youber.music.youtube_music import (
+            YouTubeMusicClient,
+            import_ytmusic_library,
+        )
+
+        return await import_ytmusic_library(
+            client=YouTubeMusicClient(),
+            db=self._library.db,
+            include_playlists=include_playlists,
+        )
+
     def data_payload(self) -> dict[str, Any]:
         """Payload JSON del endpoint ``/api/data`` (para el polling)."""
         from datetime import datetime
@@ -215,6 +282,12 @@ button{{margin-left:0.6rem;padding:0.25rem 1rem;cursor:pointer}}
     <button type="submit">Importar biblioteca</button>
     <span id="apple-status" class="status"></span>
   </form>
+  <form id="ytmusic-form" style="margin-top:0.8rem;border-top:1px dashed #ccc;padding-top:0.7rem">
+    <strong>🎧 Importar mi biblioteca de YouTube Music:</strong>
+    <label><input type="checkbox" id="ytmusic-playlists" checked> incluir playlists</label>
+    <button type="submit">Importar</button>
+    <span id="ytmusic-status" class="status"></span>
+  </form>
 </div>
 <div id="grid">{cards}</div>
 <p id="updated"></p>
@@ -248,6 +321,31 @@ document.getElementById('apple-library-form').addEventListener('submit', async (
     : `✅ Biblioteca importada: ${{result.added}} nuevas, ${{result.skipped}} ya existían`;
   loadData();
 }});
+
+document.getElementById('ytmusic-form').addEventListener('submit', async (e) => {{
+  e.preventDefault();
+  const status = document.getElementById('ytmusic-status');
+  status.textContent = 'Importando…';
+  const includePlaylists = document.getElementById('ytmusic-playlists').checked;
+  const res = await fetch('/api/import-ytmusic', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{include_playlists: includePlaylists}}),
+  }});
+  const result = await res.json();
+  status.textContent = result.error ? '✗ ' + result.error
+    : `✅ YouTube Music: ${{result.added}} nuevas, ${{result.skipped}} ya existían`;
+  loadData();
+}});
+
+(async () => {{
+  const res = await fetch('/api/ytmusic-status');
+  const status = await res.json();
+  const el = document.getElementById('ytmusic-status');
+  el.textContent = status.headers
+    ? '🔓 autenticado (headers listos)'
+    : '🔒 sin autenticar: genera ~/.youber/ytmusic_headers.json (ver docs/MUSIC.md)';
+}})();
 
 document.getElementById('config-form').addEventListener('submit', async (e) => {{
   e.preventDefault();
@@ -342,6 +440,9 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path.startswith("/api/search-cloud"):
                 self._handle_search_cloud()
                 return
+            if self.path == "/api/ytmusic-status":
+                self._send_json(self.app.ytmusic_status())
+                return
             body = self.app.render_page().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -374,10 +475,28 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path == "/api/import-cloud":
                 self._handle_import_cloud()
                 return
+            if self.path == "/api/import-ytmusic":
+                self._handle_import_ytmusic()
+                return
             if self.path == "/api/import-apple-library":
                 self._handle_import_apple_library()
                 return
             self._send_json({"error": "no encontrado"}, status=404)
+
+        def _handle_import_ytmusic(self) -> None:
+            """Importa la biblioteca de YouTube Music (Me gusta + guardadas + playlists)."""
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                body = json.loads(raw.decode("utf-8")) if raw else {}
+                include_playlists = bool(body.get("include_playlists", True))
+                summary = asyncio.run(
+                    self.app.ytmusic_import(include_playlists=include_playlists)
+                )
+                self._send_json({"ok": True, **summary})
+            except Exception as exc:
+                logger.warning(f"Error en POST /api/import-ytmusic: {exc}")
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
 
         def _handle_import_apple_library(self) -> None:
             """Importa un XML de biblioteca de Apple al catálogo."""

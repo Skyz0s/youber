@@ -129,6 +129,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Solo lee y muestra el resumen, sin guardar",
     )
 
+    import_yt = sub.add_parser(
+        "import-ytmusic-library",
+        help="Importa tu biblioteca de YouTube Music (Me gusta + guardadas + playlists)",
+    )
+    import_yt.add_argument(
+        "--no-playlists",
+        action="store_true",
+        help="No importar playlists (solo Me gusta y guardadas)",
+    )
+
     register_audio_features(sub)
 
     return parser
@@ -216,6 +226,8 @@ def run(args: argparse.Namespace) -> None:
             asyncio.run(_run_import_cloud(args, library))
         elif args.command == "import-apple-library":
             asyncio.run(_run_import_apple_library(args, library))
+        elif args.command == "import-ytmusic-library":
+            asyncio.run(_run_import_ytmusic_library(args, library))
     finally:
         library.close()
 
@@ -275,6 +287,37 @@ async def _run_import_apple_library(args: argparse.Namespace, library: MusicLibr
     console.print(
         f"[green]Biblioteca de Apple importada:[/] +{summary['added']} nuevas, "
         f"{summary['skipped']} ya existentes ({summary['total']} canciones en el XML)"
+    )
+    if summary["added"]:
+        console.print("💡 Mira el dashboard (catalog-stats) o 'youber-music list' para verlas.")
+
+
+async def _run_import_ytmusic_library(args: argparse.Namespace, library: MusicLibrary) -> None:
+    """Ejecuta ``import-ytmusic-library``: importa la biblioteca personal."""
+    from youber.music.youtube_music import (
+        YouTubeMusicClient,
+        import_ytmusic_library,
+    )
+
+    client = YouTubeMusicClient()
+    if not client.authenticated:
+        console.print("[red]YouTube Music sin autenticar.[/]")
+        console.print(
+            "ℹ️  Genera ~/.youber/ytmusic_headers.json (instrucciones en docs/MUSIC.md): "
+            "python -c \"from ytmusicapi import setup; setup('headers.json')\" "
+            "y muévelo a ~/.youber/"
+        )
+        raise SystemExit(1)
+
+    summary = await import_ytmusic_library(
+        client=client,
+        db=library.db,
+        include_playlists=not args.no_playlists,
+    )
+    console.print(
+        f"[green]Biblioteca de YouTube Music importada:[/] +{summary['added']} nuevas, "
+        f"{summary['skipped']} ya existentes "
+        f"(fuentes: {', '.join(summary['sources'])})"
     )
     if summary["added"]:
         console.print("💡 Mira el dashboard (catalog-stats) o 'youber-music list' para verlas.")

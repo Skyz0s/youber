@@ -4,19 +4,28 @@ from pathlib import Path
 
 import pytest
 
+from youber.music.database import MusicDatabase
 from youber.music.importers import (
     ImportResult,
     _parse_duration,
     import_csv,
     read_csv,
 )
-from youber.music.youtube_music import YouTubeMusicClient
+from youber.music.models import TrackSource
+from youber.music.youtube_music import (
+    YouTubeMusicClient,
+    _track_from_ytmusic,
+    import_ytmusic_library,
+)
+from youber.music.youtube_music import (
+    _parse_duration as _parse_yt_duration,
+)
 
 SONG_ID = "dQw4w9WgXcQ"
 
 
 class FakeYTMusic:
-    """Fake de ytmusicapi.YTMusic: search/get_song/add_playlist_items."""
+    """Fake de ytmusicapi.YTMusic: search/get_song/add_playlist_items/biblioteca."""
 
     def __init__(self, headers_file=None):
         self.headers_file = headers_file
@@ -30,6 +39,46 @@ class FakeYTMusic:
                 "duration": 213,
                 "album": {"name": "Whenever You Need Somebody"},
                 "thumbnails": [{"url": "https://i.ytimg.com/vi/x/hqdefault.jpg"}],
+            }
+        ]
+        self.library: list[dict] = [
+            {
+                "videoId": "lib3",
+                "title": "Guardada Solo",
+                "artists": [{"name": "Artista E"}],
+                "duration": 210,
+            },
+            {
+                "videoId": "lib4",
+                "title": "Otra Guardada",
+                "artists": [{"name": "Artista F"}],
+                "duration": 195,
+            },
+        ]
+        self.liked: list[dict] = [
+            {
+                "videoId": "lib1",
+                "title": "Canción Guardada",
+                "artists": [{"name": "Artista B"}],
+                "duration": "3:45",
+                "album": {"name": "Álbum B"},
+            },
+            {
+                "videoId": "lib2",
+                "title": "Otra Guardada",
+                "artists": [{"name": "Artista C"}],
+                "duration": 200,
+            },
+        ]
+        self.playlists: list[dict] = [
+            {"playlistId": "pl1", "title": "Mi Playlist"},
+        ]
+        self.playlist_songs: list[dict] = [
+            {
+                "videoId": "plsong1",
+                "title": "Canción de Playlist",
+                "artists": [{"name": "Artista D"}],
+                "duration": 180,
             }
         ]
 
@@ -48,6 +97,18 @@ class FakeYTMusic:
             "duration": 213,
             "album": {"name": "Whenever You Need Somebody"},
         }
+
+    def get_liked_songs(self, limit=500):
+        return self.liked
+
+    def get_library_songs(self, limit=500):
+        return self.library
+
+    def get_library_playlists(self, limit=100):
+        return self.playlists
+
+    def get_playlist(self, playlist_id: str):
+        return {"id": playlist_id, "title": "Mi Playlist", "tracks": self.playlist_songs}
 
 
 @pytest.fixture
@@ -127,6 +188,103 @@ async def test_add_to_library_fails(fake_ytmusic, monkeypatch):
     fake_ytmusic.add_playlist_items = boom
     client = YouTubeMusicClient()
     assert await client.add_to_library(SONG_ID) is False
+
+
+# ---------------------------------------------------------------------------
+# Biblioteca personal (requiere headers) + importación
+# ---------------------------------------------------------------------------
+
+
+def _authed_client(tmp_path: Path, monkeypatch) -> YouTubeMusicClient:
+    headers = tmp_path / "headers.json"
+    headers.write_text("{}", encoding="utf-8")
+    return YouTubeMusicClient(headers_file=str(headers))
+
+
+async def test_ytmusic_library_methods(fake_ytmusic, tmp_path: Path):
+    client = _authed_client(tmp_path, None)
+    assert client.authenticated is True
+    liked = await client.liked_songs()
+    assert len(liked) == 2
+    assert liked[0]["videoId"] == "lib1"
+    library = await client.library_songs()
+    assert len(library) == 2
+    assert library[0]["videoId"] == "lib3"
+    playlists = await client.library_playlists()
+    assert playlists[0]["playlistId"] == "pl1"
+    tracks = await client.playlist_tracks("pl1")
+    assert tracks[0]["videoId"] == "plsong1"
+
+
+async def test_ytmusic_anonymous(fake_ytmusic, tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "youber.music.youtube_music.DEFAULT_HEADERS_FILE", tmp_path / "no.json"
+    )
+    client = YouTubeMusicClient()
+    assert client.authenticated is False
+
+
+async def test_import_ytmusic_library(fake_ytmusic, tmp_path: Path):
+    db = MusicDatabase(tmp_path / "catalogo.db")
+    client = _authed_client(tmp_path, None)
+    summary = await import_ytmusic_library(client=client, db=db)
+    # liked (2) + library (2) + playlist (1) = 5, sin duplicados entre fuentes.
+    assert summary["added"] == 5
+    assert summary["total"] == 5
+    assert "liked" in summary["sources"]
+    assert "playlists" in summary["sources"]
+    assert db.count() == 5
+
+    track = db.get_by_external_id(TrackSource.YOUTUBE, "lib1")
+    assert track is not None
+    assert track.title == "Canción Guardada"
+    assert track.artist == "Artista B"
+    assert track.album == "Álbum B"
+    assert track.duration == 225.0  # "3:45" -> segundos
+    assert track.source == TrackSource.YOUTUBE
+
+
+async def test_import_ytmusic_library_idempotente(fake_ytmusic, tmp_path: Path):
+    db = MusicDatabase(tmp_path / "catalogo.db")
+    client = _authed_client(tmp_path, None)
+    first = await import_ytmusic_library(client=client, db=db)
+    assert first["added"] == 5
+    second = await import_ytmusic_library(client=client, db=db)
+    assert second["added"] == 0
+    assert second["skipped"] == 5
+    assert db.count() == 5
+
+
+async def test_import_ytmusic_library_sin_headers(fake_ytmusic, tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "youber.music.youtube_music.DEFAULT_HEADERS_FILE", tmp_path / "no.json"
+    )
+    client = YouTubeMusicClient()
+    with pytest.raises(RuntimeError, match="autenticar"):
+        await import_ytmusic_library(client=client)
+
+
+def test_track_from_ytmusic():
+    track = _track_from_ytmusic(
+        {
+            "videoId": "abc123",
+            "title": "Canción",
+            "artists": [{"name": "Artista"}],
+            "album": {"name": "Álbum"},
+            "duration": "2:30",
+        }
+    )
+    assert track.external_id == "abc123"
+    assert track.duration == 150.0
+    assert track.file_hash == "cloud:youtube:abc123"
+
+
+def test_parse_duration_ytmusic():
+    assert _parse_yt_duration("3:45") == 225.0
+    assert _parse_yt_duration(200) == 200.0
+    assert _parse_yt_duration("1:02:03") == 3723.0
+    assert _parse_yt_duration(None) is None
+    assert _parse_yt_duration("nope") is None
 
 
 async def test_get_song_info(fake_ytmusic):

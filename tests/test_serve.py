@@ -88,6 +88,9 @@ def test_dashboard_app_render_page(tmp_path: Path, monkeypatch):
     assert "upload-status" in html
     assert "REFRESH_MS" in html
     assert "/api/config" in html
+    assert "cloud-form" in html
+    assert "apple-library-form" in html
+    assert "ytmusic-form" in html
 
 
 def test_dashboard_app_data_payload(tmp_path: Path, monkeypatch):
@@ -272,6 +275,105 @@ def test_http_import_apple_library_requiere_path(tmp_path: Path, monkeypatch):
         body = json.dumps({"path": ""}).encode("utf-8")
         request = Request(
             f"{base}/api/import-apple-library",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(request, timeout=5)
+        assert exc_info.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_ytmusic_status(tmp_path: Path, monkeypatch):
+    """GET /api/ytmusic-status refleja si hay headers de YT Music."""
+    headers_file = tmp_path / "ytmusic_headers.json"
+    monkeypatch.setattr(
+        "youber.music.youtube_music.DEFAULT_HEADERS_FILE", headers_file
+    )
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS)
+    server, base = _start_server(app)
+    try:
+        with urlopen(f"{base}/api/ytmusic-status", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            assert payload["headers"] is False
+        headers_file.write_text("{}", encoding="utf-8")
+        with urlopen(f"{base}/api/ytmusic-status", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            assert payload["headers"] is True
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_import_ytmusic(tmp_path: Path, monkeypatch):
+    """POST /api/import-ytmusic importa la biblioteca al catálogo."""
+
+    async def fake_import(client=None, db=None, include_playlists=True):
+        assert include_playlists is True
+        return {"added": 3, "skipped": 1, "total": 4, "sources": ["liked", "library", "playlists"]}
+
+    monkeypatch.setattr(
+        "youber.music.youtube_music.import_ytmusic_library", fake_import
+    )
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps({"include_playlists": True}).encode("utf-8")
+        request = Request(
+            f"{base}/api/import-ytmusic",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=5) as response:
+            assert response.status == 200
+            result = json.loads(response.read().decode("utf-8"))
+            assert result["ok"] is True
+            assert result["added"] == 3
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_import_ytmusic_sin_auth(tmp_path: Path, monkeypatch):
+    """Sin headers de YT Music, el endpoint devuelve 400 con mensaje claro."""
+    from urllib.error import HTTPError
+
+    async def fake_import(client=None, db=None, include_playlists=True):
+        raise RuntimeError("YouTube Music sin autenticar")
+
+    monkeypatch.setattr(
+        "youber.music.youtube_music.import_ytmusic_library", fake_import
+    )
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS)
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = b"{}"
+        request = Request(
+            f"{base}/api/import-ytmusic",
             data=body,
             headers={"Content-Type": "application/json"},
             method="POST",

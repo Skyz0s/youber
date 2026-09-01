@@ -15,6 +15,8 @@ sugerencias para elegir la música de fondo de tus vídeos.
 | `library.py` | `MusicLibrary`: orquesta todo |
 | `providers.py` | Importación desde plataformas (Apple/iTunes, Spotify) |
 | `apple_library.py` | Importación de la biblioteca completa de Apple (XML exportado) |
+| `spotify_library.py` | Conector OAuth de Spotify (requiere Premium; dormante) |
+| `youtube_music.py` | Cliente YouTube Music + importación de biblioteca personal |
 | `cli.py` | Comando `youber-music` |
 
 ## CLI
@@ -33,7 +35,53 @@ youber-music import-cloud "lofi beats" --source spotify -n 5  # Spotify (credenc
 youber-music import-cloud "piano" --source apple --dry-run  # solo busca, no guarda
 youber-music import-apple-library "Music Library.xml"       # TODA tu biblioteca de Apple
 youber-music import-apple-library "Music Library.xml" --dry-run
+youber-music import-ytmusic-library                          # tu biblioteca de YouTube Music
+youber-music import-ytmusic-library --no-playlists           # solo Me gusta + guardadas
 ```
+
+## Importar tu biblioteca de YouTube Music (gratis, sin API keys)
+
+BARF puede importar **toda tu biblioteca personal de YouTube Music** (Me
+gusta, canciones guardadas y playlists) usando ``ytmusicapi`` — sin API
+keys, sin cuentas de pago. **Solo metadatos: nunca se descarga audio**.
+
+### 1. Generar los headers de autenticación (una vez)
+
+La biblioteca personal requiere autenticación. Genera el fichero de
+headers con la herramienta oficial:
+
+```bash
+python -c "from ytmusicapi import setup; setup(filepath='headers.json')"
+```
+
+Se abre una ventana del navegador: inicia sesión en tu cuenta de Google
+(en music.youtube.com) y el script guarda el fichero. Después muévelo a su
+sitio:
+
+```bash
+mkdir -p ~/.youber && mv headers.json ~/.youber/ytmusic_headers.json
+```
+
+(Alternativa manual: en music.youtube.com logueado, DevTools → Network →
+recargar → clic en cualquier petición → copiar las cabeceras a un JSON
+con las claves `User-Agent`, `Accept`, `Accept-Language`, `Cookie`…)
+
+### 2. Importar la biblioteca
+
+Desde el dashboard (botón **🎧 Importar mi biblioteca de YouTube Music**,
+con opción de incluir playlists) o desde la CLI:
+
+```bash
+youber-music import-ytmusic-library
+```
+
+Importa «Me gusta», guardadas y playlists como pistas ``source=youtube``
+con su ``videoId`` como ``external_id``. **Idempotente**: si repites la
+importación (p. ej. tras añadir canciones nuevas), no duplica nada.
+
+Nota: el conector de **Spotify** (``spotify_library.py``) está dormante —
+Spotify exige cuenta Premium para usar su Web API, así que no se activa
+hasta tener credenciales de una cuenta Premium.
 
 ## Registrar TODA tu biblioteca de Apple (exportación XML)
 
