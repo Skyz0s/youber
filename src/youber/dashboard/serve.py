@@ -906,7 +906,7 @@ function exportTracks(fmt) {{
       t.valence != null ? Math.round(t.valence * 100) + '%' : '',
       t.tempo ?? '', t.source || '', t.favorite ? 'sí' : 'no']
       .map(c => '"' + String(c).replace(/"/g, '""') + '"'));
-    const csv = '\uFEFF' + [head, ...rows].map(r => r.join(';')).join('\r\n');
+    const csv = '\\uFEFF' + [head, ...rows].map(r => r.join(';')).join('\\r\\n');
     downloadFile('canciones.csv', csv, 'text/csv;charset=utf-8');
   }} else {{
     const out = list.map(t => ({{
@@ -1093,7 +1093,7 @@ async function loadPlaylists() {{
       + (t.tempo ? ' · ' + t.tempo + ' BPM' : '') + '</li>').join('');
     return '<div style="border:1px solid #ddd;border-radius:8px;padding:0.6rem 1rem;margin-top:0.6rem">'
       + '<strong>' + esc(p.name) + '</strong> <span class="dim">(' + p.track_count + ' canciones)</span>'
-      + '<button class="fav" onclick="deletePlaylist(\'' + esc(p.id) + '\')" title="Eliminar playlist">🗑</button>'
+      + '<button class="fav" onclick="deletePlaylist(\\'' + esc(p.id) + '\\')" title="Eliminar playlist">🗑</button>'
       + (tracks ? '<ul style="margin:0.4rem 0 0 1.2rem">' + tracks + '</ul>' : '')
       + '</div>';
   }}).join('') || '<p class="dim" style="margin-top:0.5rem">Aún no hay playlists guardadas.</p>';
