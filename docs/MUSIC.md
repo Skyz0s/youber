@@ -8,11 +8,12 @@ sugerencias para elegir la música de fondo de tus vídeos.
 
 | Módulo | Responsabilidad |
 |---|---|
-| `models.py` | `Mood` (enum) y `Track` (pydantic v2) |
+| `models.py` | `Mood`, `TrackSource` (enum) y `Track` (pydantic v2) |
 | `database.py` | Persistencia SQLite (`MusicDatabase`) |
 | `scanner.py` | Escaneo de ficheros + metadatos con ffprobe |
 | `matcher.py` | Búsqueda por mood/género/texto y sugerencias |
 | `library.py` | `MusicLibrary`: orquesta todo |
+| `providers.py` | Importación desde plataformas (Apple/iTunes, Spotify) |
 | `cli.py` | Comando `youber-music` |
 
 ## CLI
@@ -25,6 +26,43 @@ youber-music --library ~/musica search --text piano --favorite
 youber-music --library ~/musica suggest --mood energética -n 5
 youber-music --library ~/musica favorite <id>
 youber-music --library ~/musica info <id>
+
+youber-music import-cloud "lofi beats" --source apple      # iTunes (sin API key)
+youber-music import-cloud "lofi beats" --source spotify -n 5  # Spotify (credenciales)
+youber-music import-cloud "piano" --source apple --dry-run  # solo busca, no guarda
+```
+
+## Importar catálogo desde plataformas (metadatos públicos)
+
+`youber-music import-cloud` busca canciones en **Apple/iTunes** (Search
+API pública, sin API key) o **Spotify** (Web API, requiere credenciales
+gratuitas de desarrollador: `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` o
+`~/.youber/spotify_credentials.json`) y las añade al catálogo con sus
+metadatos: título, artista, álbum, duración, género, carátula y URL de
+preview.
+
+**Solo metadatos públicos: nunca se descarga audio** (legal/ético,
+conforme a ToS). Las pistas importadas se marcan con su origen
+(`source` = `apple`/`spotify`) y un `external_id`; repetir la importación
+no duplica nada. Aparecen en el dashboard (widget `catalog-stats`, con
+desglose `by_source`) y en las búsquedas por mood/género.
+
+Las pistas cloud **no** se pueden usar como música de un vídeo (no hay
+fichero local): el editor lo rechaza con un mensaje claro. Para editar
+vídeos necesitas ficheros de audio propios (escaneados con `scan`).
+
+```python
+import asyncio
+from youber.music.providers import import_cloud
+from youber.music.database import MusicDatabase
+
+async def main():
+    db = MusicDatabase("music/.music.db")
+    summary = await import_cloud("lofi beats", "apple", limit=10, db=db)
+    print(summary)  # {'added': ..., 'skipped': ..., 'total': ...}
+    db.close()
+
+asyncio.run(main())
 ```
 
 Moods disponibles: `energética`, `relajante`, `épica`, `productiva`,

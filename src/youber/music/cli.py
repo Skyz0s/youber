@@ -93,6 +93,24 @@ def build_parser() -> argparse.ArgumentParser:
     remove = sub.add_parser("remove", help="Elimina una pista del catálogo")
     remove.add_argument("id", help="Id de la pista")
 
+    import_cloud = sub.add_parser(
+        "import-cloud",
+        help="Importa pistas desde una plataforma (apple/spotify) por metadatos públicos",
+    )
+    import_cloud.add_argument("query", help="Texto de búsqueda (p. ej. 'lofi beats')")
+    import_cloud.add_argument(
+        "--source",
+        choices=["apple", "spotify"],
+        default="apple",
+        help="Plataforma (apple = iTunes Search API, sin API key; spotify = Web API con credenciales)",
+    )
+    import_cloud.add_argument("-n", "--limit", type=int, default=10, help="Número máximo de resultados")
+    import_cloud.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Solo busca y muestra resultados, sin guardar",
+    )
+
     register_audio_features(sub)
 
     return parser
@@ -176,8 +194,43 @@ def run(args: argparse.Namespace) -> None:
                 console.print(f"[red]Pista no encontrada: {args.id}[/]")
                 raise SystemExit(1)
             console.print(f"🗑️  Pista {args.id} eliminada")
+        elif args.command == "import-cloud":
+            asyncio.run(_run_import_cloud(args, library))
     finally:
         library.close()
+
+
+async def _run_import_cloud(args: argparse.Namespace, library: MusicLibrary) -> None:
+    """Ejecuta ``import-cloud``: busca en la plataforma y añade al catálogo."""
+    from youber.music.models import TrackSource
+    from youber.music.providers import import_cloud, search
+
+    source = TrackSource.APPLE if args.source == "apple" else TrackSource.SPOTIFY
+    if args.dry_run:
+        hits = await search(source, args.query, args.limit)
+        table = Table(title=f"Resultados en {source.value} para «{args.query}»")
+        table.add_column("Título")
+        table.add_column("Artista")
+        table.add_column("Álbum")
+        table.add_column("Duración", justify="right")
+        for hit in hits:
+            table.add_row(
+                hit.title,
+                hit.artist or "-",
+                hit.album or "-",
+                f"{hit.duration_s:.0f}s" if hit.duration_s else "-",
+            )
+        console.print(table)
+        console.print(f"ℹ️  Dry run: {len(hits)} resultado(s). Usa sin --dry-run para importar.")
+        return
+
+    summary = await import_cloud(args.query, source, args.limit, library.db)
+    console.print(
+        f"[green]Importación desde {source.value}:[/] +{summary['added']} nuevas, "
+        f"{summary['skipped']} ya existentes ({summary['total']} encontradas)"
+    )
+    if summary["added"]:
+        console.print("💡 Revisa el dashboard (catalog-stats) o 'youber-music list' para verlas.")
 
 
 def main() -> None:

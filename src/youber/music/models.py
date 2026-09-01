@@ -27,8 +27,28 @@ class Mood(StrEnum):
     CUSTOM = "personalizada"
 
 
+class TrackSource(StrEnum):
+    """Origen de una pista del catálogo.
+
+    ``local`` son ficheros de audio propios (escaneados con ffprobe);
+    el resto son metadatos públicos importados desde plataformas
+    (``spotify``, ``apple``/iTunes, ``youtube``) — **sin descargar audio**.
+    """
+
+    LOCAL = "local"
+    SPOTIFY = "spotify"
+    APPLE = "apple"
+    YOUTUBE = "youtube"
+
+
 class Track(BaseModel):
-    """Pista musical del catálogo local."""
+    """Pista musical del catálogo.
+
+    Las pistas ``local`` apuntan a un fichero de audio real; las pistas
+    importadas desde plataformas (``source`` != ``local``) usan una ruta
+    sintética ``cloud:<source>:<external_id>`` y solo guardan metadatos
+    públicos (título, artista, álbum, carátula, preview) — nunca audio.
+    """
 
     id: str
     file_path: Path
@@ -44,3 +64,8 @@ class Track(BaseModel):
     last_used: datetime | None = None
     added_at: datetime = Field(default_factory=datetime.now)
     file_hash: str
+    source: TrackSource = TrackSource.LOCAL
+    external_id: str | None = None
+    album: str | None = None
+    artwork_url: str | None = None
+    preview_url: str | None = None

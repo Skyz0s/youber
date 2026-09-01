@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from youber.music.library import MusicLibrary
+from youber.music.models import TrackSource
 from youber.video.models import (
     Clip,
     ImageOverlay,
@@ -160,6 +161,12 @@ class VideoEditor:
         track = self.library.get(project.music_track_id)
         if track is None:
             raise ValueError(f"Pista de música no encontrada: {project.music_track_id}")
+        if track.source != TrackSource.LOCAL:
+            raise ValueError(
+                f"La pista «{track.title}» es de {track.source.value} (sin fichero "
+                "local): no se puede usar como música en el vídeo. "
+                "Solo las pistas locales (ficheros de audio) son editables."
+            )
         return str(track.file_path)
 
     async def render(

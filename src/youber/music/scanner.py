@@ -13,7 +13,7 @@ from pathlib import Path
 from loguru import logger
 
 from youber.audio._ffmpeg import probe_duration, run_command
-from youber.music.models import Track
+from youber.music.models import Track, TrackSource
 
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac"}
 
@@ -147,8 +147,12 @@ async def scan_library(
         else:
             summary["unchanged"] += 1
 
-    # Pistas que ya no están en disco: se retiran del catálogo.
+    # Pistas locales que ya no están en disco: se retiran del catálogo.
+    # Las pistas importadas de plataformas (source != local) no se tocan:
+    # su ruta sintética no existe en disco por diseño.
     for track in db.list_tracks():
+        if track.source != TrackSource.LOCAL:
+            continue
         if str(track.file_path) not in seen:
             db.delete_track(track.id)
             summary["removed"] += 1

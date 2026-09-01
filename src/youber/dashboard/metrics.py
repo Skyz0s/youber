@@ -25,9 +25,11 @@ def catalog_stats(tracks: list[Track]) -> dict[str, Any]:
     """Estadísticas del catálogo de música."""
     moods: dict[str, int] = {}
     genres: dict[str, int] = {}
+    by_source: dict[str, int] = {}
     total_duration = 0.0
     for track in tracks:
         total_duration += track.duration
+        by_source[track.source.value] = by_source.get(track.source.value, 0) + 1
         for mood in track.moods:
             moods[mood.value] = moods.get(mood.value, 0) + 1
         if track.genre:
@@ -36,6 +38,7 @@ def catalog_stats(tracks: list[Track]) -> dict[str, Any]:
         "total_tracks": len(tracks),
         "total_duration_s": round(total_duration, 1),
         "favorites": sum(1 for track in tracks if track.favorite),
+        "by_source": dict(sorted(by_source.items())),
         "moods": dict(sorted(moods.items(), key=lambda item: item[1], reverse=True)),
         "genres": dict(sorted(genres.items(), key=lambda item: item[1], reverse=True)),
     }

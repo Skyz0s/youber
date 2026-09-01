@@ -60,11 +60,26 @@ class SpotifyClient:
     # -- API pública --------------------------------------------------------
 
     async def search_track(self, title: str, artist: str | None = None) -> dict[str, Any] | None:
-        """Busca una canción por título y artista.
+        """Busca una canción por título y artista (primer resultado).
 
         Returns:
             Dict con ``track_id``, ``title``, ``artist``, ``album``,
             ``duration_ms`` y ``popularity``; o ``None`` si no hay resultados.
+        """
+        results = await self.search_tracks(title, artist=artist, limit=5)
+        return results[0] if results else None
+
+    async def search_tracks(
+        self,
+        title: str,
+        artist: str | None = None,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Busca canciones por título (y artista opcional) y devuelve varias.
+
+        Returns:
+            Lista de dicts con ``track_id``, ``title``, ``artist``, ``album``,
+            ``duration_ms`` y ``popularity`` (vacía si no hay resultados).
         """
         if not self.available:
             raise RuntimeError("SpotifyClient sin credenciales (SPOTIFY_CLIENT_ID/SECRET)")
@@ -74,7 +89,7 @@ class SpotifyClient:
         params: dict[str, Any] = {
             "q": query,
             "type": "track",
-            "limit": 5,
+            "limit": max(1, min(limit, 50)),
             "market": "ES",
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -83,20 +98,22 @@ class SpotifyClient:
             response = await client.get(f"{API_URL}/search", params=params, headers=headers)
             response.raise_for_status()
             items = response.json().get("tracks", {}).get("items", [])
-            if not items:
-                return None
-            track = items[0]
+        results: list[dict[str, Any]] = []
+        for track in items:
             artists = ", ".join(
                 item.get("name", "") for item in track.get("artists", [])
             )
-            return {
-                "track_id": track.get("id", ""),
-                "title": track.get("name", ""),
-                "artist": artists,
-                "album": track.get("album", {}).get("name", ""),
-                "duration_ms": track.get("duration_ms", 0),
-                "popularity": track.get("popularity", 0),
-            }
+            results.append(
+                {
+                    "track_id": track.get("id", ""),
+                    "title": track.get("name", ""),
+                    "artist": artists,
+                    "album": track.get("album", {}).get("name", ""),
+                    "duration_ms": track.get("duration_ms", 0),
+                    "popularity": track.get("popularity", 0),
+                }
+            )
+        return results
 
     async def get_audio_features(self, track_id: str) -> AudioFeatures | None:
         """Obtiene las características de audio de una canción.
