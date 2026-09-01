@@ -270,6 +270,121 @@ class DashboardApp:
             "views_summary": summary,
         }
 
+    async def script_proposal(
+        self,
+        url: str,
+        topic: str = "Mi vídeo",
+        duration: float | None = None,
+        max_videos: int = 10,
+    ) -> dict[str, Any]:
+        """Analiza un canal y propone guion + música local para tu vídeo.
+
+        Args:
+            url: URL del canal (``@handle``, ``channel/UC...``).
+            topic: Tema de tu vídeo.
+            duration: Duración total deseada (s); si es ``None`` se usa la
+                media del canal.
+            max_videos: Vídeos del canal a analizar para los insights.
+
+        Returns:
+            Dict con el guion (``script``), el canal y las opciones de
+            música local (``music.options``) + la sugerida
+            (``music.suggested_track_id``). Lanza ``ValueError`` si el canal
+            no se puede analizar.
+        """
+        from youber.research.channel_analyzer import ChannelAnalyzer
+        from youber.research.patterns import channel_overview
+        from youber.script.builder import _pick_local_track
+        from youber.script.generator import generate_script
+
+        channel = await ChannelAnalyzer().analyze(
+            url, max_videos=max_videos, mode="html"
+        )
+        insights = channel_overview(channel)
+        script = generate_script(insights, topic=topic, duration=duration)
+
+        library = self._get_library()
+        local_tracks = [
+            track for track in library.all() if track.source == TrackSource.LOCAL
+        ]
+        suggested = _pick_local_track(library, script) if local_tracks else None
+
+        return {
+            "ok": True,
+            "channel": channel.name,
+            "channel_url": channel.url,
+            "script": script.model_dump(mode="json"),
+            "music": {
+                "suggested_track_id": suggested.id if suggested else None,
+                "suggested_mood": (
+                    script.music_mood.value if script.music_mood else None
+                ),
+                "options": [
+                    {
+                        "id": track.id,
+                        "title": track.title,
+                        "artist": track.artist,
+                        "genre": track.genre,
+                        "duration": round(track.duration, 1) if track.duration else None,
+                        "favorite": track.favorite,
+                        "usage_count": track.usage_count,
+                    }
+                    for track in local_tracks
+                ],
+            },
+        }
+
+    async def script_render(
+        self,
+        script_data: dict[str, Any],
+        clips: list[str],
+        music_track_id: str | None = None,
+        output_dir: str = "reports",
+    ) -> dict[str, Any]:
+        """Construye y renderiza el vídeo aprobado por el usuario.
+
+        Args:
+            script_data: Guion (dict, salida de ``script_proposal``).
+            clips: Rutas de tus ficheros de vídeo (se reparten por escena).
+            music_track_id: Pista local del catálogo para la música.
+            output_dir: Directorio del vídeo final.
+
+        Returns:
+            Dict con ``ok``, ``output`` (ruta del MP4), número de clips y
+            textos del proyecto. Lanza ``ValueError`` si faltan clips o la
+            pista no es local.
+        """
+        from pathlib import Path as _Path
+
+        from youber.script.builder import build_project
+        from youber.script.models import Script
+        from youber.video.editor import VideoEditor
+
+        script = Script.model_validate(script_data)
+        if not clips:
+            raise ValueError("Selecciona al menos un clip de vídeo propio")
+        library = self._get_library()
+        editor = VideoEditor(library=library)
+        project = build_project(
+            script, clips=clips, library=library, editor=editor, title=script.topic
+        )
+        if music_track_id:
+            editor.set_music(project, music_track_id, volume=0.25)
+        out_dir = _Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        slug = "".join(
+            c if c.isalnum() and ord(c) < 128 else "-" for c in script.topic
+        ).strip("-").lower() or "video"
+        output = out_dir / f"{slug}_final.mp4"
+        await editor.render(project, output)
+        return {
+            "ok": True,
+            "output": str(output),
+            "clips": len(project.clips),
+            "texts": len(project.text_overlays),
+            "music_track_id": project.music_track_id,
+        }
+
     # -- Catálogo (pestaña Canciones) --------------------------------------
 
     def _get_library(self) -> Any:
@@ -537,6 +652,7 @@ tr:hover{{background:#f7fafc}}
   <button class="tab-btn active" id="tab-btn-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
   <button class="tab-btn" id="tab-btn-tracks" onclick="switchTab('tracks')">🎵 Canciones</button>
   <button class="tab-btn" id="tab-btn-research" onclick="switchTab('research')">🔍 Research</button>
+  <button class="tab-btn" id="tab-btn-script" onclick="switchTab('script')">🎬 Edición</button>
 </div>
 <div id="tab-dashboard">
 <div class="controls">
@@ -641,6 +757,20 @@ tr:hover{{background:#f7fafc}}
     <p class="status" style="margin-top:0.5rem">Solo datos públicos, con rate-limit (1.5 s por petición) y sin login. Ordena los vídeos por vistas (los más virales primero).</p>
   </div>
   <div id="research-results"></div>
+</div>
+<div id="tab-script" style="display:none">
+  <div class="controls">
+    <form id="script-form">
+      <strong>🎬 Edición: guion desde la estructura del canal + tu música:</strong>
+      <input type="text" id="script-url" placeholder="URL del canal de referencia (p. ej. https://www.youtube.com/@MrBeast)" style="min-width:320px">
+      <input type="text" id="script-topic" placeholder="Tema de tu vídeo" style="min-width:160px" value="Mi vídeo">
+      <label>Duración (s, opcional) <input type="number" id="script-duration" placeholder="auto" style="width:80px"></label>
+      <button type="submit">🎬 Generar propuesta</button>
+      <span id="script-status" class="status"></span>
+    </form>
+    <p class="status" style="margin-top:0.5rem">Analiza la estructura del canal (duración media, patrones de títulos, hashtags) y propone un guion + música de tu biblioteca local. Tú das el visto bueno antes de editar.</p>
+  </div>
+  <div id="script-results"></div>
 </div>
 <script>
 const REFRESH_MS = {refresh} * 1000;
@@ -784,9 +914,11 @@ function switchTab(name) {{
   document.getElementById('tab-dashboard').style.display = name === 'dashboard' ? '' : 'none';
   document.getElementById('tab-tracks').style.display = name === 'tracks' ? '' : 'none';
   document.getElementById('tab-research').style.display = name === 'research' ? '' : 'none';
+  document.getElementById('tab-script').style.display = name === 'script' ? '' : 'none';
   document.getElementById('tab-btn-dashboard').classList.toggle('active', name === 'dashboard');
   document.getElementById('tab-btn-tracks').classList.toggle('active', name === 'tracks');
   document.getElementById('tab-btn-research').classList.toggle('active', name === 'research');
+  document.getElementById('tab-btn-script').classList.toggle('active', name === 'script');
   if (name === 'tracks') loadTracks();
 }}
 
@@ -882,6 +1014,123 @@ function renderResearchChannel(payload) {{
     + '<table><thead><tr><th>#</th><th></th><th>Título</th><th>Vistas</th><th>Duración</th><th>Publicado</th></tr></thead>'
     + '<tbody>' + (rows || '<tr><td colspan="6" style="text-align:center;color:#888">Sin vídeos</td></tr>') + '</tbody></table>'
     + '</div>';
+}}
+
+// ---------------------------------------------------------------------------
+// Pestaña Edición
+// ---------------------------------------------------------------------------
+document.getElementById('script-form').addEventListener('submit', async (e) => {{
+  e.preventDefault();
+  const url = document.getElementById('script-url').value.trim();
+  const topic = document.getElementById('script-topic').value.trim() || 'Mi vídeo';
+  const duration = document.getElementById('script-duration').value.trim();
+  const status = document.getElementById('script-status');
+  const box = document.getElementById('script-results');
+  if (!url) {{ status.textContent = 'Escribe la URL del canal de referencia'; return; }}
+  status.textContent = 'Analizando estructura y generando propuesta…';
+  box.innerHTML = '';
+  try {{
+    let q = '/api/script-proposal?url=' + encodeURIComponent(url) + '&topic=' + encodeURIComponent(topic);
+    if (duration) q += '&duration=' + encodeURIComponent(duration);
+    const res = await fetch(q);
+    const payload = await res.json();
+    if (payload.error) {{
+      status.textContent = '✗ ' + payload.error;
+      return;
+    }}
+    status.textContent = '';
+    renderScriptProposal(payload);
+  }} catch (err) {{
+    status.textContent = '✗ Error: ' + esc(String(err));
+  }}
+}});
+
+let currentScript = null;
+let scriptMusicTrack = null;
+
+function renderScriptProposal(payload) {{
+  currentScript = payload.script;
+  const box = document.getElementById('script-results');
+  const music = payload.music || {{}};
+  const options = music.options || [];
+  const suggested = music.suggested_track_id;
+  scriptMusicTrack = suggested || null;
+  const scenes = (currentScript.scenes || []).map((s, i) =>
+    '<tr>'
+    + '<td>' + (i + 1) + '</td>'
+    + '<td>' + esc(s.type) + '</td>'
+    + '<td>' + esc(s.title) + '</td>'
+    + '<td>' + s.duration + ' s</td>'
+    + '<td>' + esc(s.text) + '</td>'
+    + '<td>' + esc(s.transition) + '</td>'
+    + '</tr>').join('');
+  const musicOptions = options.map(t => {{
+    const label = esc(t.title) + (t.artist ? ' — ' + esc(t.artist) : '')
+      + (t.genre ? ' · ' + esc(t.genre) : '')
+      + (t.duration ? ' · ' + t.duration + ' s' : '')
+      + (t.id === suggested ? ' ⭐ sugerida' : '');
+    return '<label style="display:block;margin:0.2rem 0">'
+      + '<input type="radio" name="script-music" value="' + esc(t.id) + '"'
+      + (t.id === suggested ? ' checked' : '') + '> '
+      + label + '</label>';
+  }}).join('');
+  box.innerHTML = '<div class="controls">'
+    + '<strong>🎬 Propuesta para: ' + esc(currentScript.topic) + '</strong>'
+    + (payload.channel ? ' · canal de referencia: ' + esc(payload.channel) : '')
+    + ' · duración total: ' + currentScript.total_duration + ' s'
+    + (music.suggested_mood ? ' · música sugerida: ' + esc(music.suggested_mood) : '')
+    + '</div>'
+    + '<div style="overflow-x:auto;background:#fff;border:1px solid #ddd;border-radius:8px;margin-bottom:1rem">'
+    + '<table><thead><tr><th>#</th><th>Tipo</th><th>Título</th><th>Duración</th><th>Texto</th><th>Transición</th></tr></thead>'
+    + '<tbody>' + (scenes || '<tr><td colspan="6" style="text-align:center;color:#888">Sin escenas</td></tr>') + '</tbody></table>'
+    + '</div>'
+    + '<div class="controls">'
+    + '<strong>🎵 Música (solo pistas locales de tu catálogo):</strong>'
+    + (options.length
+        ? '<div style="margin:0.4rem 0">' + musicOptions + '</div>'
+        : '<p class="status">No hay pistas locales indexadas. Añade tus ficheros de audio a la carpeta music/ y vuelve a intentarlo (son metadatos cloud los que no sirven).</p>')
+    + '<label style="display:block;margin-top:0.5rem"><strong>🎞️ Tus clips de vídeo</strong> (rutas separadas por coma):</label>'
+    + '<input type="text" id="script-clips" placeholder="intro.mp4, escena1.mp4, escena2.mp4" style="min-width:320px;margin-top:0.3rem">'
+    + '<div style="margin-top:0.8rem">'
+    + '<button onclick="approveScript()">✅ Visto bueno — editar y renderizar</button>'
+    + '<span id="script-render-status" class="status"></span>'
+    + '</div>'
+    + '</div>';
+  box.querySelectorAll('input[name="script-music"]').forEach(r => {{
+    r.addEventListener('change', () => {{ scriptMusicTrack = r.value; }});
+  }});
+}}
+
+async function approveScript() {{
+  const status = document.getElementById('script-render-status');
+  const clips = document.getElementById('script-clips').value
+    .split(',').map(c => c.trim()).filter(Boolean);
+  if (!clips.length) {{
+    status.textContent = '✗ Indica al menos un clip de vídeo propio';
+    return;
+  }}
+  status.textContent = 'Renderizando… (puede tardar un rato)';
+  try {{
+    const res = await fetch('/api/script/render', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{
+        script: currentScript,
+        clips: clips,
+        music_track_id: scriptMusicTrack,
+      }}),
+    }});
+    const result = await res.json();
+    if (result.error) {{
+      status.textContent = '✗ ' + result.error;
+      return;
+    }}
+    status.textContent = '✅ Vídeo final: ' + esc(result.output)
+      + ' (' + result.clips + ' clips, ' + result.texts + ' textos'
+      + (result.music_track_id ? ', música incluida' : ', sin música local') + ')';
+  }} catch (err) {{
+    status.textContent = '✗ Error: ' + esc(String(err));
+  }}
 }}
 
 async function loadTracks() {{
@@ -1170,6 +1419,9 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path.startswith("/api/research"):
                 self._handle_research()
                 return
+            if self.path.startswith("/api/script-proposal"):
+                self._handle_script_proposal()
+                return
             body = self.app.render_page().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1217,6 +1469,55 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 self._send_json(asyncio.run(self.app.research(url, max_videos=n)))
             except Exception as exc:
                 logger.warning(f"Error en /api/research: {exc}")
+                self._send_json({"error": str(exc)}, status=500)
+
+        def _handle_script_proposal(self) -> None:
+            """Propone guion + música local (?url=...&topic=...&duration=...)."""
+            from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(self.path).query)
+            url = (query.get("url") or [""])[0].strip()
+            topic = (query.get("topic") or ["Mi vídeo"])[0].strip()
+            duration_raw = (query.get("duration") or [""])[0]
+            n = int((query.get("n") or ["10"])[0])
+            duration = float(duration_raw) if duration_raw else None
+            if not url:
+                self._send_json({"error": "Parámetro url requerido"}, status=400)
+                return
+            try:
+                self._send_json(
+                    asyncio.run(
+                        self.app.script_proposal(
+                            url, topic=topic, duration=duration, max_videos=n
+                        )
+                    )
+                )
+            except Exception as exc:
+                logger.warning(f"Error en /api/script-proposal: {exc}")
+                self._send_json({"error": str(exc)}, status=500)
+
+        def _handle_script_render(self) -> None:
+            """Renderiza el vídeo aprobado (body: script, clips, music_track_id)."""
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                body = json.loads(raw.decode("utf-8"))
+                script = body.get("script")
+                clips = [str(c) for c in body.get("clips", [])]
+                music_track_id = body.get("music_track_id")
+                if not script:
+                    self._send_json({"error": "Parámetro script requerido"}, status=400)
+                    return
+                self._send_json(
+                    asyncio.run(
+                        self.app.script_render(script, clips, music_track_id)
+                    )
+                )
+            except ValueError as exc:
+                logger.warning(f"Error en POST /api/script/render: {exc}")
+                self._send_json({"error": str(exc)}, status=400)
+            except Exception as exc:
+                logger.warning(f"Error en POST /api/script/render: {exc}")
                 self._send_json({"error": str(exc)}, status=500)
 
         def _handle_create_playlist(self) -> None:
@@ -1291,6 +1592,9 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 return
             if self.path == "/api/playlists":
                 self._handle_create_playlist()
+                return
+            if self.path == "/api/script/render":
+                self._handle_script_render()
                 return
             if self.path == "/api/playlists/delete":
                 self._handle_delete_playlist()

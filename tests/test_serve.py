@@ -411,6 +411,211 @@ def test_http_import_apple_library_requiere_path(tmp_path: Path, monkeypatch):
         server.server_close()
 
 
+def _fake_channel_analyzer(monkeypatch):
+    """Mockea ChannelAnalyzer con un canal sintético de 2 vídeos."""
+    from youber.research.data_models import ChannelData, VideoData
+
+    videos = [
+        VideoData(
+            title=f"Vídeo {i}",
+            url=f"https://www.youtube.com/watch?v=vid{i}",
+            video_id=f"vid{i}",
+            views="10 K de visualizaciones",
+            duration="10:00",
+            publish_date=f"hace {i} días",
+            channel_name="Canal Demo",
+            channel_url="https://www.youtube.com/@canaldemo",
+        )
+        for i in range(1, 3)
+    ]
+    channel = ChannelData(
+        name="Canal Demo",
+        url="https://www.youtube.com/@canaldemo",
+        handle="canaldemo",
+        subscribers="12,3 K suscriptores",
+        videos=videos,
+    )
+
+    async def fake_analyze(url, max_videos=10, mode="html"):
+        return channel
+
+    monkeypatch.setattr(
+        "youber.research.channel_analyzer.ChannelAnalyzer",
+        lambda **kwargs: type("Fake", (), {"analyze": staticmethod(fake_analyze)})(),
+    )
+    return channel
+
+
+def test_http_script_proposal(tmp_path: Path, monkeypatch):
+    """GET /api/script-proposal devuelve guion + opciones de música local."""
+    _fake_channel_analyzer(monkeypatch)
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",  # sin pistas locales
+    )
+    server, base = _start_server(app)
+    try:
+        with urlopen(
+            f"{base}/api/script-proposal?url=@canaldemo&topic=Mi%20reto&duration=45",
+            timeout=5,
+        ) as response:
+            assert response.status == 200
+            payload = json.loads(response.read().decode("utf-8"))
+            assert payload["ok"] is True
+            assert payload["channel"] == "Canal Demo"
+            script = payload["script"]
+            assert script["topic"] == "Mi reto"
+            assert script["total_duration"] == 45.0
+            assert script["scenes"]
+            assert payload["music"]["options"] == []
+            assert payload["music"]["suggested_track_id"] is None
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_script_proposal_sin_url(tmp_path: Path, monkeypatch):
+    """GET /api/script-proposal sin url devuelve 400."""
+    from urllib.error import HTTPError
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(config_path=tmp_path / "dash.json", widgets=DEFAULT_WIDGETS)
+    server, base = _start_server(app)
+    try:
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(f"{base}/api/script-proposal", timeout=5)
+        assert exc_info.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_script_render(tmp_path: Path, monkeypatch):
+    """POST /api/script/render construye y renderiza el vídeo aprobado."""
+    from youber.research.patterns import channel_overview
+    from youber.script.generator import generate_script
+    from youber.video.models import Clip, Project, TextOverlay
+
+    channel = _fake_channel_analyzer(monkeypatch)
+    script = generate_script(channel_overview(channel), topic="Mi reto", duration=30)
+
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"fake")
+    fake_project = Project(
+        title="Mi reto",
+        clips=[Clip(file_path=clip)],
+        text_overlays=[TextOverlay(text="Hola")],
+    )
+
+    async def fake_render(project, output_path, music_path=None):
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_bytes(b"mp4")
+        return str(output_path)
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    monkeypatch.setattr(
+        "youber.script.builder.build_project",
+        lambda *a, **k: fake_project,
+    )
+    monkeypatch.setattr(
+        "youber.video.editor.VideoEditor",
+        lambda **kwargs: type(
+            "Fake",
+            (),
+            {
+                "render": staticmethod(fake_render),
+                "set_music": lambda self, project, track_id, volume=0.25: None,
+            },
+        )(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps(
+            {
+                "script": script.model_dump(mode="json"),
+                "clips": [str(clip)],
+                "music_track_id": None,
+            }
+        ).encode("utf-8")
+        request = Request(
+            f"{base}/api/script/render",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            assert response.status == 200
+            result = json.loads(response.read().decode("utf-8"))
+            assert result["ok"] is True
+            assert result["output"].endswith("_final.mp4")
+            assert result["clips"] == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_script_render_sin_clips(tmp_path: Path, monkeypatch):
+    """POST /api/script/render sin clips devuelve 400."""
+    from urllib.error import HTTPError
+
+    from youber.research.patterns import channel_overview
+    from youber.script.generator import generate_script
+
+    channel = _fake_channel_analyzer(monkeypatch)
+    script = generate_script(channel_overview(channel), topic="Mi reto", duration=30)
+
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.request import Request
+
+        body = json.dumps(
+            {
+                "script": script.model_dump(mode="json"),
+                "clips": [],
+                "music_track_id": None,
+            }
+        ).encode("utf-8")
+        request = Request(
+            f"{base}/api/script/render",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as exc_info:
+            urlopen(request, timeout=5)
+        assert exc_info.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_http_ytmusic_status(tmp_path: Path, monkeypatch):
     """GET /api/ytmusic-status refleja si hay headers de YT Music."""
     headers_file = tmp_path / "ytmusic_headers.json"

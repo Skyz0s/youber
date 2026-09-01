@@ -17,6 +17,7 @@ ser tuyos o con licencia, y la música de tu biblioteca local.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from youber.music.library import MusicLibrary
@@ -58,7 +59,7 @@ def _pick_local_track(
 
 def build_project(
     script: Script,
-    clips: list[str | Path],
+    clips: Sequence[str | Path],
     library: MusicLibrary | None = None,
     editor: VideoEditor | None = None,
     title: str | None = None,
