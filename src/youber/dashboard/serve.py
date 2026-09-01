@@ -338,6 +338,73 @@ class DashboardApp:
             ],
         }
 
+    def list_playlists(self) -> list[dict[str, Any]]:
+        """Lista las playlists guardadas con sus pistas enriquecidas."""
+        from youber.music.playlists import PlaylistStore
+
+        store = PlaylistStore()
+        profiles = {p.track_id: p for p in self._audio_profiles()}
+        tracks_by_id = {t.id: t for t in self._get_library().all()}
+        result: list[dict[str, Any]] = []
+        for playlist in store.all():
+            tracks: list[dict[str, Any]] = []
+            for track_id in playlist.track_ids:
+                track = tracks_by_id.get(track_id)
+                if track is None:
+                    continue
+                item: dict[str, Any] = {
+                    "id": track.id,
+                    "title": track.title,
+                    "artist": track.artist,
+                    "genre": track.genre,
+                }
+                profile = profiles.get(track_id)
+                if profile is not None:
+                    item.update(
+                        {
+                            "energy": round(profile.features.energy, 2),
+                            "danceability": round(profile.features.danceability, 2),
+                            "valence": round(profile.features.valence, 2),
+                            "tempo": round(profile.features.tempo),
+                        }
+                    )
+                tracks.append(item)
+            result.append(
+                {
+                    "id": playlist.id,
+                    "name": playlist.name,
+                    "description": playlist.description,
+                    "created_at": playlist.created_at,
+                    "track_count": len(tracks),
+                    "tracks": tracks,
+                }
+            )
+        return result
+
+    def create_playlist(
+        self, name: str, track_ids: list[str], description: str = ""
+    ) -> dict[str, Any]:
+        """Crea una playlist con las pistas indicadas."""
+        from youber.music.playlists import PlaylistStore
+
+        store = PlaylistStore()
+        playlist = store.create(name, track_ids, description)
+        return {
+            "ok": True,
+            "id": playlist.id,
+            "name": playlist.name,
+            "track_count": len(playlist.track_ids),
+        }
+
+    def delete_playlist(self, playlist_id: str) -> dict[str, Any]:
+        """Elimina una playlist por id."""
+        from youber.music.playlists import PlaylistStore
+
+        store = PlaylistStore()
+        if not store.delete(playlist_id):
+            return {"ok": False, "error": "Playlist no encontrada"}
+        return {"ok": True}
+
     def toggle_favorite(self, track_id: str) -> dict[str, Any]:
         """Marca/desmarca una canción como favorita.
 
@@ -501,6 +568,13 @@ tr:hover{{background:#f7fafc}}
   </table>
   </div>
   <div id="recommend-results"></div>
+  <div class="controls" style="margin-top:1rem" id="playlist-controls">
+    <strong>📋 Guardar como playlist:</strong>
+    <input type="text" id="playlist-name" placeholder="Nombre de la playlist" style="min-width:200px">
+    <button onclick="savePlaylist()">💾 Guardar selección actual</button>
+    <span id="playlists-count" class="status"></span>
+  </div>
+  <div id="playlists-list"></div>
 </div>
 <script>
 const REFRESH_MS = {refresh} * 1000;
@@ -680,17 +754,7 @@ async function loadTracks() {{
 }}
 
 function exportTracks(fmt) {{
-  const key = tracksSort.key, dir = tracksSort.dir;
-  const list = [...tracksAll].sort((a, b) => {{
-    let va = a[key], vb = b[key];
-    if (typeof va === 'string') va = va.toLowerCase();
-    if (typeof vb === 'string') vb = vb.toLowerCase();
-    if (va == null) va = '';
-    if (vb == null) vb = '';
-    if (va < vb) return -1 * dir;
-    if (va > vb) return 1 * dir;
-    return 0;
-  }});
+  const list = currentTracks();
   if (fmt === 'csv') {{
     const head = ['Título','Artista','Álbum','Duración (s)','Género','Energía','Baile','Ánimo','Tempo','Fuente','Favorita'];
     const rows = list.map(t => [t.title, t.artist || '', t.album || '', t.duration ?? '', t.genre || '',
@@ -729,7 +793,7 @@ function setTrackFilter(f) {{
   renderTracks();
 }}
 
-function renderTracks() {{
+function currentTracks() {{
   let list = tracksAll;
   if (tracksFilter === 'energetic') list = list.filter(t => (t.energy || 0) >= 0.7);
   else if (tracksFilter === 'danceable') list = list.filter(t => (t.danceability || 0) >= 0.6);
@@ -738,7 +802,7 @@ function renderTracks() {{
   else if (tracksFilter === 'intense') list = list.filter(t => (t.valence || 0) < 0.4);
   else if (tracksFilter === 'favorites') list = list.filter(t => t.favorite);
   const key = tracksSort.key, dir = tracksSort.dir;
-  const sorted = [...list].sort((a, b) => {{
+  return [...list].sort((a, b) => {{
     let va = a[key], vb = b[key];
     if (typeof va === 'string') va = va.toLowerCase();
     if (typeof vb === 'string') vb = vb.toLowerCase();
@@ -748,6 +812,10 @@ function renderTracks() {{
     if (va > vb) return 1 * dir;
     return 0;
   }});
+}}
+
+function renderTracks() {{
+  const sorted = currentTracks();
   const tbody = document.getElementById('tracks-body');
   document.getElementById('tracks-count').textContent =
     sorted.length + ' canción(es)'
@@ -837,6 +905,72 @@ async function recommendFor(trackId) {{
   }}
 }}
 
+async function savePlaylist() {{
+  const input = document.getElementById('playlist-name');
+  const name = input.value.trim();
+  if (!name) {{
+    alert('Escribe un nombre para la playlist');
+    return;
+  }}
+  const ids = currentTracks().map(t => t.id);
+  if (!ids.length) {{
+    alert('La selección actual está vacía');
+    return;
+  }}
+  const res = await fetch('/api/playlists', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{name: name, track_ids: ids}}),
+  }});
+  const result = await res.json();
+  if (result.error) {{
+    alert('✗ ' + result.error);
+    return;
+  }}
+  input.value = '';
+  loadPlaylists();
+}}
+
+async function loadPlaylists() {{
+  const box = document.getElementById('playlists-list');
+  const res = await fetch('/api/playlists');
+  const payload = await res.json();
+  if (payload.error) {{
+    box.innerHTML = '<span style="color:#c62828">✗ ' + esc(payload.error) + '</span>';
+    return;
+  }}
+  const playlists = payload.playlists || [];
+  document.getElementById('playlists-count').textContent =
+    playlists.length + ' playlist(s)';
+  box.innerHTML = playlists.map(p => {{
+    const tracks = (p.tracks || []).map(t =>
+      '<li>' + esc(t.title) + (t.artist ? ' — ' + esc(t.artist) : '')
+      + (t.genre ? ' <span class="dim">(' + esc(t.genre) + ')</span>' : '')
+      + (t.energy != null ? ' · ⚡' + Math.round(t.energy * 100) + '%' : '')
+      + (t.tempo ? ' · ' + t.tempo + ' BPM' : '') + '</li>').join('');
+    return '<div style="border:1px solid #ddd;border-radius:8px;padding:0.6rem 1rem;margin-top:0.6rem">'
+      + '<strong>' + esc(p.name) + '</strong> <span class="dim">(' + p.track_count + ' canciones)</span>'
+      + '<button class="fav" onclick="deletePlaylist(\'' + esc(p.id) + '\')" title="Eliminar playlist">🗑</button>'
+      + (tracks ? '<ul style="margin:0.4rem 0 0 1.2rem">' + tracks + '</ul>' : '')
+      + '</div>';
+  }}).join('') || '<p class="dim" style="margin-top:0.5rem">Aún no hay playlists guardadas.</p>';
+}}
+
+async function deletePlaylist(id) {{
+  if (!confirm('¿Eliminar esta playlist?')) return;
+  const res = await fetch('/api/playlists/delete', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{playlist_id: id}}),
+  }});
+  const result = await res.json();
+  if (result.error) {{
+    alert('✗ ' + result.error);
+    return;
+  }}
+  loadPlaylists();
+}}
+
 function sortTracks(key) {{
   if (tracksSort.key === key) {{
     tracksSort.dir *= -1;
@@ -887,6 +1021,9 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
             if self.path.startswith("/api/recommend"):
                 self._handle_recommend()
                 return
+            if self.path == "/api/playlists":
+                self._send_json({"playlists": self.app.list_playlists()})
+                return
             body = self.app.render_page().encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -918,6 +1055,39 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 self._send_json(self.app.recommend(track_id, limit=limit))
             except Exception as exc:
                 logger.warning(f"Error en /api/recommend: {exc}")
+                self._send_json({"error": str(exc)}, status=500)
+
+        def _handle_create_playlist(self) -> None:
+            """Crea una playlist (body: name, track_ids)."""
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                body = json.loads(raw.decode("utf-8"))
+                name = str(body.get("name", "")).strip()
+                track_ids = [str(x) for x in body.get("track_ids", [])]
+                if not name or not track_ids:
+                    self._send_json(
+                        {"error": "Parámetros name y track_ids requeridos"}, status=400
+                    )
+                    return
+                self._send_json(self.app.create_playlist(name, track_ids))
+            except Exception as exc:
+                logger.warning(f"Error en POST /api/playlists: {exc}")
+                self._send_json({"error": str(exc)}, status=500)
+
+        def _handle_delete_playlist(self) -> None:
+            """Elimina una playlist (body: playlist_id)."""
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length)
+                body = json.loads(raw.decode("utf-8"))
+                playlist_id = str(body.get("playlist_id", "")).strip()
+                if not playlist_id:
+                    self._send_json({"error": "Parámetro playlist_id requerido"}, status=400)
+                    return
+                self._send_json(self.app.delete_playlist(playlist_id))
+            except Exception as exc:
+                logger.warning(f"Error en POST /api/playlists/delete: {exc}")
                 self._send_json({"error": str(exc)}, status=500)
 
         def _handle_search_cloud(self) -> None:
@@ -956,6 +1126,12 @@ def make_handler(dashboard_app: DashboardApp) -> type[BaseHTTPRequestHandler]:
                 return
             if self.path == "/api/import-apple-library":
                 self._handle_import_apple_library()
+                return
+            if self.path == "/api/playlists":
+                self._handle_create_playlist()
+                return
+            if self.path == "/api/playlists/delete":
+                self._handle_delete_playlist()
                 return
             self._send_json({"error": "no encontrado"}, status=404)
 
