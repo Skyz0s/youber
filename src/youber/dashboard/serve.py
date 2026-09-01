@@ -236,10 +236,15 @@ class DashboardApp:
 
         Returns:
             Lista de dicts con ``id``, ``title``, ``artist``, ``album``,
-            ``duration``, ``genre``, ``source``, ``favorite``, ``usage_count``
-            y ``bpm``.
+            ``duration``, ``genre``, ``source``, ``favorite``, ``usage_count``,
+            ``bpm`` y propiedades de audio (``energy``, ``danceability``,
+            ``valence``, ``tempo``, ``confidence``) si hay perfil.
         """
         tracks = self._get_library().all()
+        profiles = {
+            profile.track_id: profile
+            for profile in self._audio_profiles()
+        }
         needle = (query or "").strip().lower()
         result: list[dict[str, Any]] = []
         for track in sorted(tracks, key=lambda item: item.title.lower()):
@@ -256,21 +261,42 @@ class DashboardApp:
             ]
             if needle and needle not in " ".join(parts).lower():
                 continue
-            result.append(
-                {
-                    "id": track.id,
-                    "title": track.title,
-                    "artist": track.artist,
-                    "album": track.album,
-                    "duration": track.duration,
-                    "genre": track.genre,
-                    "source": track.source.value,
-                    "favorite": track.favorite,
-                    "usage_count": track.usage_count,
-                    "bpm": track.bpm,
-                }
-            )
+            item: dict[str, Any] = {
+                "id": track.id,
+                "title": track.title,
+                "artist": track.artist,
+                "album": track.album,
+                "duration": track.duration,
+                "genre": track.genre,
+                "source": track.source.value,
+                "favorite": track.favorite,
+                "usage_count": track.usage_count,
+                "bpm": track.bpm,
+            }
+            profile = profiles.get(track.id)
+            if profile is not None:
+                features = profile.features
+                item.update(
+                    {
+                        "energy": round(features.energy, 2),
+                        "danceability": round(features.danceability, 2),
+                        "valence": round(features.valence, 2),
+                        "tempo": round(features.tempo),
+                        "confidence": features.confidence,
+                    }
+                )
+            result.append(item)
         return result
+
+    def _audio_profiles(self) -> list[Any]:
+        """Carga los perfiles de audio guardados (vacío si no hay)."""
+        from youber.music.audio_features.enricher import AudioFeatureStore
+
+        try:
+            return AudioFeatureStore().all()
+        except Exception as exc:
+            logger.warning(f"No se pudieron cargar los perfiles de audio: {exc}")
+            return []
 
     def toggle_favorite(self, track_id: str) -> dict[str, Any]:
         """Marca/desmarca una canción como favorita.
@@ -408,10 +434,13 @@ tr:hover{{background:#f7fafc}}
         <th onclick="sortTracks('album')">Álbum</th>
         <th onclick="sortTracks('duration')">Duración</th>
         <th onclick="sortTracks('genre')">Género</th>
+        <th onclick="sortTracks('energy')">Energía</th>
+        <th onclick="sortTracks('danceability')">Baile</th>
+        <th onclick="sortTracks('valence')">Ánimo</th>
+        <th onclick="sortTracks('tempo')">BPM</th>
         <th onclick="sortTracks('source')">Fuente</th>
         <th onclick="sortTracks('favorite')">⭐</th>
         <th onclick="sortTracks('usage_count')">Usos</th>
-        <th onclick="sortTracks('bpm')">BPM</th>
       </tr>
     </thead>
     <tbody id="tracks-body"><tr><td colspan="9" style="text-align:center;color:#888">Cargando…</td></tr></tbody>
@@ -610,18 +639,27 @@ function renderTracks() {{
     sorted.length + ' canción(es)' + (tracksSort.key !== 'title' ? ' · orden: ' + tracksSort.key : '');
   tbody.innerHTML = sorted.map(t => {{
     const fav = t.favorite ? '⭐' : '☆';
+    const bar = (v) => {{
+      if (v == null) return '<span class="dim">-</span>';
+      const pct = Math.round(v * 100);
+      const color = pct >= 70 ? '#2e7d32' : pct >= 40 ? '#f9a825' : '#c62828';
+      return '<span style="color:' + color + '">' + pct + '%</span>';
+    }};
     return '<tr>'
       + '<td>' + esc(t.title) + '</td>'
       + '<td>' + esc(t.artist || '-') + '</td>'
       + '<td>' + esc(t.album || '-') + '</td>'
       + '<td>' + fmtDuration(t.duration) + '</td>'
       + '<td>' + esc(t.genre || '-') + '</td>'
+      + '<td>' + bar(t.energy) + '</td>'
+      + '<td>' + bar(t.danceability) + '</td>'
+      + '<td>' + bar(t.valence) + '</td>'
+      + '<td>' + (t.tempo || '-') + '</td>'
       + '<td>' + sourceBadge(t.source) + '</td>'
       + '<td><button class="fav" data-id="' + esc(t.id) + '" title="Marcar favorita">' + fav + '</button></td>'
       + '<td>' + t.usage_count + '</td>'
-      + '<td>' + (t.bpm || '-') + '</td>'
       + '</tr>';
-  }}).join('') || '<tr><td colspan="9" style="text-align:center;color:#888">Sin canciones en el catálogo</td></tr>';
+  }}).join('') || '<tr><td colspan="12" style="text-align:center;color:#888">Sin canciones en el catálogo</td></tr>';
 
   tbody.querySelectorAll('.fav').forEach(btn => {{
     btn.addEventListener('click', async () => {{

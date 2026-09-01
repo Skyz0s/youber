@@ -17,6 +17,8 @@ Fuentes:
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -266,3 +268,80 @@ async def import_cloud(
         if own_db:
             database.close()
             temp_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Enriquecimiento automático de género (iTunes Search API)
+# ---------------------------------------------------------------------------
+
+
+def _best_genre(track: Track, hits: list[CloudHit]) -> str | None:
+    """Elige el género del resultado de iTunes que mejor coincide con la pista.
+
+    Prioriza un resultado cuyo título coincida de forma normalizada; si no
+    hay coincidencia clara, usa el género del primer resultado que lo tenga.
+    """
+    import re
+
+    def normalize(text: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+    wanted = normalize(track.title)
+    for hit in hits:
+        if hit.genre and wanted and normalize(hit.title) == wanted:
+            return hit.genre
+    for hit in hits:
+        if hit.genre:
+            return hit.genre
+    return None
+
+
+async def enrich_genres(
+    db: MusicDatabase,
+    progress: Callable[[str], None] | None = None,
+) -> dict[str, int]:
+    """Asigna género a las pistas sin género buscándolas en iTunes Search API.
+
+    Recorre el catálogo, busca cada pista en iTunes (título + artista) y
+    guarda el ``primaryGenreName`` del resultado que mejor coincide. Solo
+    metadatos públicos; no descarga nada. Idempotente: las pistas que ya
+    tienen género se saltan.
+
+    Args:
+        db: Base de datos del catálogo.
+        progress: Callback opcional para reportar progreso (título).
+
+    Returns:
+        Resumen: ``total`` (pendientes), ``updated``, ``not_found`` y
+        ``errors``.
+    """
+    pending = [track for track in db.list_tracks() if not track.genre]
+    updated = not_found = errors = 0
+    for track in pending:
+        query = track.title
+        if track.artist:
+            query = f"{track.title} {track.artist}"
+        try:
+            hits = await search_itunes(query, limit=5)
+        except Exception as exc:
+            logger.warning(f"Error buscando «{track.title}» en iTunes: {exc}")
+            errors += 1
+            if progress:
+                progress(track.title)
+            # Pequeña pausa también tras un error (rate-limit de iTunes).
+            await asyncio.sleep(0.4)
+            continue
+        genre = _best_genre(track, hits)
+        if genre:
+            db.set_genre(track.id, genre)
+            updated += 1
+        else:
+            not_found += 1
+        if progress:
+            progress(track.title)
+        # Pausa entre peticiones para no chocar con el rate-limit de iTunes.
+        await asyncio.sleep(0.4)
+    logger.info(
+        f"enrich_genres: {updated} actualizadas, {not_found} sin encontrar, {errors} errores"
+    )
+    return {"total": len(pending), "updated": updated, "not_found": not_found, "errors": errors}

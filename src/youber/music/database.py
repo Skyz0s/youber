@@ -238,6 +238,14 @@ class MusicDatabase:
             )
         return cursor.rowcount > 0
 
+    def set_genre(self, track_id: str, genre: str | None) -> bool:
+        """Actualiza el género de una pista; ``True`` si existía."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE tracks SET genre=? WHERE id=?", (genre, track_id)
+            )
+        return cursor.rowcount > 0
+
     def record_usage(self, track_id: str) -> bool:
         """Incrementa el contador de uso y actualiza ``last_used``."""
         with self._connect() as conn:

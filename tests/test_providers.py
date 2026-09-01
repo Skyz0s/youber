@@ -180,6 +180,82 @@ def test_cloud_path_and_to_track():
     assert not Path(track.file_path).exists()  # ruta sintética, no un fichero
 
 
+def test_set_genre_y_best_genre(tmp_path: Path):
+    from youber.music.providers import _best_genre
+
+    db = MusicDatabase(tmp_path / "c.db")
+    db.add_track(
+        Track(
+            id="t1",
+            file_path=Path("/tmp/x.mp3"),
+            title="Canción Uno",
+            artist="Artista A",
+            duration=200.0,
+            file_hash="h",
+        )
+    )
+    assert db.set_genre("t1", "pop") is True
+    assert db.get_track("t1").genre == "pop"
+    assert db.set_genre("no-existe", "pop") is False
+
+    hit = CloudHit(
+        source=TrackSource.APPLE,
+        external_id="1",
+        title="Canción Uno",
+        artist="Artista A",
+        genre="rock",
+    )
+    track = to_track(hit)
+    track.id = "t2"
+    assert _best_genre(track, [hit]) == "rock"
+
+
+@pytest.mark.asyncio
+async def test_enrich_genres_actualiza(monkeypatch, tmp_path: Path):
+    """enrich_genres asigna género automático desde iTunes (fakes)."""
+    from youber.music.providers import enrich_genres
+
+    db = MusicDatabase(tmp_path / "c.db")
+    db.add_track(
+        Track(
+            id="t1",
+            file_path=Path("/tmp/a.mp3"),
+            title="Canción Uno",
+            artist="Artista A",
+            duration=200.0,
+            file_hash="h",
+        )
+    )
+    db.add_track(
+        Track(
+            id="t2",
+            file_path=Path("/tmp/b.mp3"),
+            title="Ya Con Género",
+            artist="Artista B",
+            duration=180.0,
+            file_hash="h2",
+            genre="pop",
+        )
+    )
+
+    async def fake_search_itunes(query, limit=10):
+        return [
+            CloudHit(
+                source=TrackSource.APPLE,
+                external_id="1",
+                title="Canción Uno",
+                artist="Artista A",
+                genre="rock",
+            )
+        ]
+
+    monkeypatch.setattr("youber.music.providers.search_itunes", fake_search_itunes)
+    summary = await enrich_genres(db)
+    assert summary["total"] == 1  # solo la pendiente (t2 ya tiene género)
+    assert summary["updated"] == 1
+    assert db.get_track("t1").genre == "rock"
+
+
 # ---------------------------------------------------------------------------
 # Importación (idempotente)
 # ---------------------------------------------------------------------------

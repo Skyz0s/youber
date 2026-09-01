@@ -155,6 +155,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="No importar canciones de singles",
     )
 
+    sub.add_parser(
+        "enrich-genres",
+        help="Asigna género a cada pista automáticamente (iTunes Search API, sin API key)",
+    )
+
     register_audio_features(sub)
 
     return parser
@@ -246,6 +251,8 @@ def run(args: argparse.Namespace) -> None:
             asyncio.run(_run_import_ytmusic_library(args, library))
         elif args.command == "import-channel":
             asyncio.run(_run_import_channel(args, library))
+        elif args.command == "enrich-genres":
+            asyncio.run(_run_enrich_genres(library))
     finally:
         library.close()
 
@@ -358,6 +365,20 @@ async def _run_import_channel(args: argparse.Namespace, library: MusicLibrary) -
     )
     if summary["added"]:
         console.print("💡 Mira el dashboard (catalog-stats o pestaña Canciones) para verlas.")
+
+
+async def _run_enrich_genres(library: MusicLibrary) -> None:
+    """Ejecuta ``enrich-genres``: asigna género automático desde iTunes."""
+    from youber.music.providers import enrich_genres
+
+    with console.status("Buscando géneros en iTunes…") as status:
+        summary = await enrich_genres(library.db, progress=lambda title: status.update(f"Buscando géneros en iTunes… {title}"))
+    console.print(
+        f"[green]Géneros asignados:[/] {summary['updated']} actualizadas, "
+        f"{summary['not_found']} sin encontrar, {summary['errors']} errores "
+        f"({summary['total']} pendientes)"
+    )
+    console.print("💡 Ejecuta ahora 'youber-music analyze --all' para recalcular las propiedades de audio.")
 
 
 def main() -> None:
