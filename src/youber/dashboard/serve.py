@@ -296,12 +296,20 @@ class DashboardApp:
         from youber.research.patterns import channel_overview
         from youber.script.builder import _pick_local_track
         from youber.script.generator import generate_script
+        from youber.script.transcripts import analyze_channel as analyze_transcripts
 
         channel = await ChannelAnalyzer().analyze(
             url, max_videos=max_videos, mode="html"
         )
         insights = channel_overview(channel)
-        script = generate_script(insights, topic=topic, duration=duration)
+        # Transcripciones públicas del canal patrón → instrucciones reales.
+        transcripts = analyze_transcripts(channel.videos, max_videos=3)
+        script = generate_script(
+            insights,
+            topic=topic,
+            duration=duration,
+            transcripts=transcripts if transcripts.video_count else None,
+        )
 
         library = self._get_library()
         local_tracks = [

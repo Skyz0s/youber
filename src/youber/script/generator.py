@@ -24,6 +24,7 @@ from typing import Any
 
 from youber.music.models import Mood
 from youber.script.models import Scene, SceneType, Script
+from youber.script.transcripts import TranscriptAnalysis, hook_template
 from youber.video.models import TextPosition, TransitionType
 
 # Proporción de la duración total para cada tipo de escena.
@@ -77,11 +78,43 @@ def _scene_titles(topic: str, patterns: dict[str, Any]) -> dict[SceneType, str]:
     return titles
 
 
+def _content_instructions(
+    topic: str, index: int, total: int, analysis: TranscriptAnalysis | None
+) -> str:
+    """Instrucción de una escena de contenido.
+
+    Si hay transcripción del canal patrón, usa una frase real como
+    referencia del estilo; si no, cae a la plantilla con el tema.
+    """
+    if analysis and analysis.samples:
+        reference = analysis.samples[(index - 1) % len(analysis.samples)]
+        return (
+            f"Bloque {index}/{total}: desarrolla «{topic}» — "
+            f"estilo del patrón: «{reference[:100]}»"
+        )
+    return f"{topic} — punto {index} de {total}"
+
+
+def _cta_instruction(topic: str, analysis: TranscriptAnalysis | None) -> str:
+    """Instrucción de CTA: referencia real del patrón o plantilla."""
+    if analysis and analysis.ctas:
+        return f"CTA: «{analysis.ctas[0][:120]}» — adapta a «{topic}»"
+    return f"¿Te ha servido {topic}? Comenta 👇"
+
+
+def _climax_instruction(topic: str, analysis: TranscriptAnalysis | None) -> str:
+    """Instrucción del clímax: momento fuerte con el tema."""
+    if analysis and analysis.hooks:
+        return f"Clímax: revela lo mejor de «{topic}» (el patrón abre con «{analysis.hooks[0][:80]}»)"
+    return f"El momento clave de {topic}"
+
+
 def generate_script(
     insights: dict[str, Any],
     topic: str,
     duration: float | None = None,
     music_mood: Mood | None = None,
+    transcripts: TranscriptAnalysis | None = None,
 ) -> Script:
     """Genera un guion con estructura viral a partir de los insights.
 
@@ -90,6 +123,9 @@ def generate_script(
         topic: Tema del vídeo propio.
         duration: Duración total en segundos (por defecto: media del canal).
         music_mood: Estado de ánimo para la música (por defecto: se infiere).
+        transcripts: Análisis de transcripciones públicas del canal patrón
+            (opcional). Si se aporta, las escenas incluyen instrucciones
+            reales del estilo del canal en lugar de plantillas.
 
     Returns:
         Un :class:`Script` listo para construir el proyecto de edición.
@@ -107,11 +143,14 @@ def generate_script(
     for scene_type, ratio in _STRUCTURE:
         scene_duration = max(2.0, round(total * ratio, 1))
         if scene_type == SceneType.HOOK:
-            text = _hook_text(patterns, topic)
+            if transcripts is not None:
+                text = hook_template(topic, transcripts)
+            else:
+                text = _hook_text(patterns, topic)
         elif scene_type == SceneType.CONTENT:
             content_index += 1
             base = titles.get(SceneType.CONTENT, f"Punto {content_index}")
-            text = f"{base} ({content_index}/{content_count})"
+            text = _content_instructions(topic, content_index, content_count, transcripts)
             scenes.append(
                 Scene(
                     type=scene_type,
@@ -123,6 +162,10 @@ def generate_script(
                 )
             )
             continue
+        elif scene_type == SceneType.CLIMAX:
+            text = _climax_instruction(topic, transcripts)
+        elif scene_type == SceneType.CTA:
+            text = _cta_instruction(topic, transcripts)
         else:
             text = titles.get(scene_type, f"{scene_type.value}: {topic}")
         scenes.append(

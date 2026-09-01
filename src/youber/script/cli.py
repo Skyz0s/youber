@@ -99,6 +99,7 @@ def _print_script(script: Script) -> None:
 
 async def _run(args: argparse.Namespace) -> None:
     """Flujo principal."""
+    analysis = None
     if args.demo:
         from youber.cli.workflow_cli import demo_channel
 
@@ -119,8 +120,20 @@ async def _run(args: argparse.Namespace) -> None:
             f"{len(channel.videos)} vídeos · "
             f"patrones: {insights.get('title_patterns', {}).get('with_numbers', 0)} con números"
         )
+        # Transcripciones públicas del canal patrón (instrucciones reales).
+        from youber.script.transcripts import analyze_channel
 
-    script = generate_script(insights, topic=args.topic, duration=args.duration)
+        console.print("🎙️  Extrayendo transcripciones públicas (estilo del canal)...")
+        analysis = analyze_channel(channel.videos, max_videos=3)
+        if analysis and analysis.video_count:
+            hook = (analysis.hooks[0] if analysis.hooks else "-")[:60]
+            console.print(f"   ✓ {analysis.video_count} transcripción(es) · hook: «{hook}»")
+        else:
+            console.print("   ℹ️  Sin transcripciones disponibles (plantillas genéricas)")
+
+    script = generate_script(
+        insights, topic=args.topic, duration=args.duration, transcripts=analysis
+    )
     _print_script(script)
 
     if args.json_out:

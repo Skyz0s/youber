@@ -20,12 +20,26 @@ ser tuyos o con licencia, y la música de tu biblioteca local.
 from youber.script.builder import build_project, default_font_file
 from youber.script.generator import generate_script
 from youber.script.models import Scene, SceneType, Script
+from youber.script.transcripts import (
+    TranscriptAnalysis,
+    TranscriptSnippet,
+    analyze_channel,
+    analyze_video,
+    fetch_transcript,
+    hook_template,
+)
 
 __all__ = [
     "Scene",
     "SceneType",
     "Script",
+    "TranscriptAnalysis",
+    "TranscriptSnippet",
+    "analyze_channel",
+    "analyze_video",
     "build_project",
     "default_font_file",
+    "fetch_transcript",
     "generate_script",
+    "hook_template",
 ]
