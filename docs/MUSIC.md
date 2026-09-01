@@ -47,16 +47,26 @@ keys, sin cuentas de pago. **Solo metadatos: nunca se descarga audio**.
 
 ### 1. Generar los headers de autenticación (una vez)
 
-La biblioteca personal requiere autenticación. Genera el fichero de
-headers con la herramienta oficial:
+La biblioteca personal requiere autenticación. En ytmusicapi 1.12+ el
+`setup()` ya no abre el navegador solo: espera en la terminal a que
+**pegues las cabeceras** de una petición de music.youtube.com:
+
+1. Abre **https://music.youtube.com** en Chrome/Edge e inicia sesión con
+   tu cuenta de Google.
+2. Pulsa **F12** → pestaña **Network** → recarga la página (F5).
+3. Haz clic en la primera petición (p. ej. `browse`) y en el panel
+   derecho, en **Request Headers**, clic derecho → **Copy → Copy request
+   headers**.
+4. En la terminal, lanza:
 
 ```bash
 python -c "from ytmusicapi import setup; setup(filepath='headers.json')"
 ```
 
-Se abre una ventana del navegador: inicia sesión en tu cuenta de Google
-(en music.youtube.com) y el script guarda el fichero. Después muévelo a su
-sitio:
+5. Cuando diga *"Please paste the request headers…"*, pega lo copiado,
+   pulsa **Enter**, luego **Ctrl+Z** y **Enter** (fin de entrada en
+   Windows). El script guarda `headers.json`.
+6. Muévelo a su sitio:
 
 ```bash
 mkdir -p ~/.youber && mv headers.json ~/.youber/ytmusic_headers.json
