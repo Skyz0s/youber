@@ -182,10 +182,14 @@ async def fetch_clips_for_scenes(
     # de la misma búsqueda (así los clips guardan relación entre sí).
     groups: dict[str, list[int]] = {}
     for index, scene in enumerate(scenes):
-        query = (
-            scene.get("keywords") or scene.get("text") or scene.get("title") or ""
-        )[:100]
-        if not query:
+        keywords = scene.get("keywords")
+        if isinstance(keywords, list):
+            query = " ".join(str(k) for k in keywords)[:100]
+        else:
+            query = str(
+                keywords or scene.get("text") or scene.get("title") or ""
+            )[:100]
+        if not query.strip():
             continue
         groups.setdefault(query, []).append(index)
 
