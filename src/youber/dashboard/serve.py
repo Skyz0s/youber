@@ -349,6 +349,8 @@ h1{{margin-bottom:0.2rem}}
 .controls{{background:#fff;border:1px solid #ddd;border-radius:8px;padding:0.8rem 1.2rem;margin-bottom:1.2rem}}
 .chk{{margin-right:0.9rem;white-space:nowrap}}
 button{{margin-left:0.6rem;padding:0.25rem 1rem;cursor:pointer}}
+.filter-btn{{background:#fff;border:1px solid #ccc;border-radius:16px;padding:0.2rem 0.9rem;cursor:pointer;font-size:0.85rem;margin-left:0.4rem}}
+.filter-btn.active{{background:#1a73e8;border-color:#1a73e8;color:#fff}}
 .status{{margin-left:0.8rem;color:#555;font-size:0.85rem}}
 #cloud-results{{margin-top:0.6rem}}
 .hit{{display:block;padding:0.25rem 0;cursor:pointer}}
@@ -424,6 +426,13 @@ tr:hover{{background:#f7fafc}}
     <input type="text" id="tracks-q" placeholder="Buscar por título/artista/álbum/género…" style="min-width:280px" oninput="loadTracks()">
     <button onclick="loadTracks()">↻</button>
     <span id="tracks-count" class="status"></span>
+  </div>
+  <div class="controls" id="tracks-filters">
+    <strong>Filtros:</strong>
+    <button class="filter-btn active" data-filter="all" onclick="setTrackFilter('all')">🎵 Todas</button>
+    <button class="filter-btn" data-filter="energetic" onclick="setTrackFilter('energetic')">⚡ Energética</button>
+    <button class="filter-btn" data-filter="danceable" onclick="setTrackFilter('danceable')">💃 Bailable</button>
+    <button class="filter-btn" data-filter="relaxed" onclick="setTrackFilter('relaxed')">😌 Relajada</button>
   </div>
   <div style="overflow-x:auto;background:#fff;border:1px solid #ddd;border-radius:8px">
   <table>
@@ -598,6 +607,8 @@ function switchTab(name) {{
 // ---------------------------------------------------------------------------
 let tracksAll = [];
 let tracksSort = {{key: 'title', dir: 1}};
+let tracksFilter = 'all';
+const FILTER_LABELS = {{all: 'todas', energetic: '⚡ energéticas', danceable: '💃 bailables', relaxed: '😌 relajadas'}};
 
 function fmtDuration(s) {{
   if (s == null || isNaN(s)) return '-';
@@ -622,9 +633,21 @@ async function loadTracks() {{
   renderTracks();
 }}
 
+function setTrackFilter(f) {{
+  tracksFilter = f;
+  document.querySelectorAll('#tracks-filters .filter-btn').forEach(btn => {{
+    btn.classList.toggle('active', btn.dataset.filter === f);
+  }});
+  renderTracks();
+}}
+
 function renderTracks() {{
+  let list = tracksAll;
+  if (tracksFilter === 'energetic') list = list.filter(t => (t.energy || 0) >= 0.7);
+  else if (tracksFilter === 'danceable') list = list.filter(t => (t.danceability || 0) >= 0.6);
+  else if (tracksFilter === 'relaxed') list = list.filter(t => (t.energy || 0) < 0.5 && (t.tempo || 0) < 110);
   const key = tracksSort.key, dir = tracksSort.dir;
-  const sorted = [...tracksAll].sort((a, b) => {{
+  const sorted = [...list].sort((a, b) => {{
     let va = a[key], vb = b[key];
     if (typeof va === 'string') va = va.toLowerCase();
     if (typeof vb === 'string') vb = vb.toLowerCase();
@@ -636,7 +659,9 @@ function renderTracks() {{
   }});
   const tbody = document.getElementById('tracks-body');
   document.getElementById('tracks-count').textContent =
-    sorted.length + ' canción(es)' + (tracksSort.key !== 'title' ? ' · orden: ' + tracksSort.key : '');
+    sorted.length + ' canción(es)'
+    + (tracksFilter !== 'all' ? ' · filtro: ' + FILTER_LABELS[tracksFilter] : '')
+    + (tracksSort.key !== 'title' ? ' · orden: ' + tracksSort.key : '');
   tbody.innerHTML = sorted.map(t => {{
     const fav = t.favorite ? '⭐' : '☆';
     const bar = (v) => {{
