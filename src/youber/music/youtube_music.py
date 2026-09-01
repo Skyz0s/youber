@@ -62,6 +62,15 @@ class YouTubeMusicClient:
             return list(data.get("tracks", []))
         return list(data)
 
+    async def upload_songs(self, limit: int = 500) -> list[dict[str, Any]]:
+        """Canciones SUBIDAS por el usuario (sección «Subidas» de YT Music).
+
+        La biblioteca personal de muchos usuarios vive aquí (música propia
+        subida a la nube), así que es clave para importar el catálogo
+        completo. Requiere autenticación.
+        """
+        return await asyncio.to_thread(self.ytmusic.get_library_upload_songs, limit)
+
     async def library_playlists(self, limit: int = 100) -> list[dict[str, Any]]:
         """Playlists del usuario (propias y guardadas)."""
         return await asyncio.to_thread(self.ytmusic.get_library_playlists, limit)
@@ -246,27 +255,55 @@ async def import_ytmusic_library(
     try:
         added = skipped = 0
         sources: list[str] = []
+        errors: list[str] = []
 
-        for label, items in (
-            ("liked", await client.liked_songs()),
-            ("library", await client.library_songs()),
+        async def _collect(label: str, coro) -> list[dict[str, Any]]:
+            """Recolecta una fuente; si falla, lo registra y sigue con las demás."""
+            try:
+                return await coro
+            except Exception as exc:
+                logger.warning(f"Fuente '{label}' de YouTube Music no disponible: {exc}")
+                errors.append(label)
+                return []
+
+        for label, coro in (
+            ("liked", client.liked_songs()),
+            ("library", client.library_songs()),
+            ("uploads", client.upload_songs()),
         ):
+            items = await _collect(label, coro)
+            if not items:
+                errors.append(label)
+                continue
             add, skip = await _import(items)
             added += add
             skipped += skip
             sources.append(label)
 
         if include_playlists:
-            playlists = await client.library_playlists()
-            for playlist in playlists:
-                playlist_id = str(playlist.get("playlistId", "")).strip()
-                if not playlist_id:
-                    continue
-                items = await client.playlist_tracks(playlist_id)
-                add, skip = await _import(items)
-                added += add
-                skipped += skip
-            sources.append("playlists")
+            playlists = await _collect("playlists", client.library_playlists())
+            if not playlists:
+                errors.append("playlists")
+            else:
+                for playlist in playlists:
+                    playlist_id = str(playlist.get("playlistId", "")).strip()
+                    if not playlist_id:
+                        continue
+                    items = await _collect(
+                        f"playlist:{playlist_id}", client.playlist_tracks(playlist_id)
+                    )
+                    add, skip = await _import(items)
+                    added += add
+                    skipped += skip
+                sources.append("playlists")
+
+        if not sources and errors:
+            raise RuntimeError(
+                "No se pudo leer ninguna fuente de YouTube Music "
+                f"({', '.join(errors)}). La sesión puede haber caducado: "
+                "regenera ~/.youber/ytmusic_headers.json "
+                "(python examples/ytmusic_headers_from_chrome.py) y reintenta."
+            )
 
         logger.info(
             f"import_ytmusic_library: +{added} nuevas, {skipped} ya existentes "

@@ -81,6 +81,21 @@ class FakeYTMusic:
                 "duration": 180,
             }
         ]
+        self.uploads: list[dict] = [
+            {
+                "videoId": "up1",
+                "title": "Subida Uno",
+                "artists": [{"name": "Artista U"}],
+                "duration": 240,
+            },
+            {
+                "videoId": "up2",
+                "title": "Subida Dos",
+                "artists": [{"name": "Artista V"}],
+                "duration": 260,
+            },
+        ]
+        self.fail_liked: bool = False
 
     def search(self, query: str, filter: str = "songs"):
         self.search_calls.append((query, filter))
@@ -99,6 +114,8 @@ class FakeYTMusic:
         }
 
     def get_liked_songs(self, limit=500):
+        if self.fail_liked:
+            raise RuntimeError("sesión caducada (página Sign in)")
         return self.liked
 
     def get_library_songs(self, limit=500):
@@ -106,6 +123,9 @@ class FakeYTMusic:
 
     def get_library_playlists(self, limit=100):
         return self.playlists
+
+    def get_library_upload_songs(self, limit=500):
+        return self.uploads
 
     def get_playlist(self, playlist_id: str):
         return {"id": playlist_id, "title": "Mi Playlist", "tracks": self.playlist_songs}
@@ -210,6 +230,9 @@ async def test_ytmusic_library_methods(fake_ytmusic, tmp_path: Path):
     library = await client.library_songs()
     assert len(library) == 2
     assert library[0]["videoId"] == "lib3"
+    uploads = await client.upload_songs()
+    assert len(uploads) == 2
+    assert uploads[0]["videoId"] == "up1"
     playlists = await client.library_playlists()
     assert playlists[0]["playlistId"] == "pl1"
     tracks = await client.playlist_tracks("pl1")
@@ -228,12 +251,13 @@ async def test_import_ytmusic_library(fake_ytmusic, tmp_path: Path):
     db = MusicDatabase(tmp_path / "catalogo.db")
     client = _authed_client(tmp_path, None)
     summary = await import_ytmusic_library(client=client, db=db)
-    # liked (2) + library (2) + playlist (1) = 5, sin duplicados entre fuentes.
-    assert summary["added"] == 5
-    assert summary["total"] == 5
+    # liked (2) + library (2) + uploads (2) + playlist (1) = 7.
+    assert summary["added"] == 7
+    assert summary["total"] == 7
     assert "liked" in summary["sources"]
+    assert "uploads" in summary["sources"]
     assert "playlists" in summary["sources"]
-    assert db.count() == 5
+    assert db.count() == 7
 
     track = db.get_by_external_id(TrackSource.YOUTUBE, "lib1")
     assert track is not None
@@ -243,16 +267,45 @@ async def test_import_ytmusic_library(fake_ytmusic, tmp_path: Path):
     assert track.duration == 225.0  # "3:45" -> segundos
     assert track.source == TrackSource.YOUTUBE
 
+    upload = db.get_by_external_id(TrackSource.YOUTUBE, "up1")
+    assert upload is not None
+    assert upload.title == "Subida Uno"
+
 
 async def test_import_ytmusic_library_idempotente(fake_ytmusic, tmp_path: Path):
     db = MusicDatabase(tmp_path / "catalogo.db")
     client = _authed_client(tmp_path, None)
     first = await import_ytmusic_library(client=client, db=db)
-    assert first["added"] == 5
+    assert first["added"] == 7
     second = await import_ytmusic_library(client=client, db=db)
     assert second["added"] == 0
-    assert second["skipped"] == 5
-    assert db.count() == 5
+    assert second["skipped"] == 7
+    assert db.count() == 7
+
+
+async def test_import_ytmusic_library_fuente_caida_no_tumba(fake_ytmusic, tmp_path: Path):
+    """Si una fuente falla (p. ej. sesión caducada en Me gusta), el resto importa."""
+    db = MusicDatabase(tmp_path / "catalogo.db")
+    client = _authed_client(tmp_path, None)
+    fake_ytmusic.fail_liked = True
+    summary = await import_ytmusic_library(client=client, db=db)
+    # liked falla, pero library + uploads + playlist sí importan (2+2+1=5).
+    assert summary["added"] == 5
+    assert "liked" not in summary["sources"]
+    assert "uploads" in summary["sources"]
+
+
+async def test_import_ytmusic_library_todo_caido(fake_ytmusic, tmp_path: Path):
+    """Si TODAS las fuentes fallan, avisa de sesión caducada."""
+    db = MusicDatabase(tmp_path / "catalogo.db")
+    client = _authed_client(tmp_path, None)
+    fake_ytmusic.fail_liked = True
+    fake_ytmusic.library = []
+    fake_ytmusic.liked = []
+    fake_ytmusic.uploads = []
+    fake_ytmusic.playlists = []
+    with pytest.raises(RuntimeError, match="sesión puede haber caducado"):
+        await import_ytmusic_library(client=client, db=db)
 
 
 async def test_import_ytmusic_library_sin_headers(fake_ytmusic, tmp_path: Path, monkeypatch):
