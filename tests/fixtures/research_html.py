@@ -42,6 +42,58 @@ CHANNEL_HTML = """<!DOCTYPE html>
 </body></html>
 """
 
+# Formato nuevo (sept. 2026): la pestaña de vídeos usa ``lockupViewModel``
+# dentro de ``richGridRenderer`` → ``richItemRenderer`` → ``content``.
+CHANNEL_HTML_LOCKUP = """<!DOCTYPE html>
+<html><head><title>Canal</title></head><body>
+<script>var ytInitialData = {
+  "header": {
+    "c4TabbedHeaderRenderer": {
+      "title": {"simpleText": "Canal Demo"},
+      "subscriberCountText": {"simpleText": "12,3 K suscriptores"},
+      "channelHandleText": {"runs": [{"text": "@canaldemo"}]},
+      "navigationEndpoint": {"canonicalBaseUrl": "/@canaldemo"}
+    }
+  },
+  "contents": {
+    "twoColumnBrowseResultsRenderer": {
+      "tabs": [
+        {"tabRenderer": {"title": "Videos", "content": {
+          "richGridRenderer": {
+            "contents": [
+              {"richItemRenderer": {"content": {
+                "lockupViewModel": {
+                  "contentId": "lockup12345",
+                  "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+                  "contentImage": {
+                    "thumbnailViewModel": {
+                      "image": {"sources": [{"url": "https://i.ytimg.com/vi/lockup12345/hqdefault.jpg"}]},
+                      "overlays": [{"thumbnailBottomOverlayViewModel": {
+                        "badges": [{"thumbnailBadgeViewModel": {"text": "12:34"}}]
+                      }}]
+                    }
+                  },
+                  "metadata": {"lockupMetadataViewModel": {
+                    "title": {"content": "Vídeo lockup #1"},
+                    "metadata": {"contentMetadataViewModel": {
+                      "metadataRows": [{"metadataParts": [
+                        {"text": {"content": "84 M de visualizaciones"}},
+                        {"text": {"content": "hace 3 días"}}
+                      ]}]
+                    }}
+                  }}
+                }
+              }}}
+            ]
+          }
+        }}}
+      ]
+    }
+  }
+};</script>
+</body></html>
+"""
+
 VIDEO_HTML = """<!DOCTYPE html>
 <html><head><title>Vídeo</title></head><body>
 <script>var ytInitialPlayerResponse = {

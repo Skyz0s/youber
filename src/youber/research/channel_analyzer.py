@@ -35,6 +35,13 @@ DEFAULT_UA = (
 )
 API_BASE = "https://www.googleapis.com/youtube/v3"
 
+# Cookies de consentimiento de la UE: sin ellas YouTube redirige a
+# consent.youtube.com y la página pública no contiene ytInitialData.
+CONSENT_COOKIES = {
+    "SOCS": "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMwODI5LjA3X3AxGgJlbiACGgYIgPzXsgY",
+    "CONSENT": "YES+cb.20210328-17-p0.en+FX+419",
+}
+
 
 # ---------------------------------------------------------------------------
 # Utilidades de extracción de JSON embebido
@@ -157,6 +164,115 @@ def _iter_video_renderers(data: dict[str, Any]) -> list[dict[str, Any]]:
     return renderers
 
 
+def _iter_lockup_view_models(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Recorre los ``lockupViewModel`` (formato nuevo de la pestaña de vídeos).
+
+    YouTube ha migrado la pestaña de vídeos del canal del antiguo
+    ``videoRenderer`` al ``lockupViewModel`` dentro de ``richGridRenderer`` →
+    ``richItemRenderer`` → ``content``. Este parser cubre ese formato.
+    """
+    contents = data.get("contents", {})
+    tabs = contents.get("twoColumnBrowseResultsRenderer", {}).get("tabs", [])
+    renderers: list[dict[str, Any]] = []
+    for tab in tabs:
+        content = tab.get("tabRenderer", {}).get("content", {})
+        for container_key in ("richGridRenderer", "itemSectionRenderer"):
+            container = content.get(container_key)
+            if not isinstance(container, dict):
+                continue
+            for item in container.get("contents", []):
+                inner = item.get("richItemRenderer", {}).get("content", {})
+                lockup = inner.get("lockupViewModel")
+                if isinstance(lockup, dict) and lockup.get("contentType") in (
+                    "LOCKUP_CONTENT_TYPE_VIDEO",
+                    None,
+                ):
+                    renderers.append(lockup)
+    return renderers
+
+
+def _lockup_to_video(
+    lockup: dict[str, Any], channel_name: str, channel_url: str
+) -> VideoData | None:
+    """Convierte un ``lockupViewModel`` en :class:`VideoData`.
+
+    Estructura (sept. 2026): ``contentId`` es el videoId, el título vive en
+    ``metadata.lockupMetadataViewModel.title.content``, las vistas y la fecha
+    en ``metadataRows[].metadataParts[].text.content`` y la duración en el
+    badge inferior de la miniatura.
+    """
+    video_id = lockup.get("contentId")
+    if not isinstance(video_id, str):
+        return None
+    metadata = lockup.get("metadata", {}).get("lockupMetadataViewModel", {})
+    title = metadata.get("title", {}).get("content")
+    if not isinstance(title, str) or not title.strip():
+        return None
+
+    # Vistas y fecha: fila(s) de metadataRows con metadataParts de texto.
+    views: str = "0"
+    publish_date: str | None = None
+    rows = (
+        metadata.get("metadata", {})
+        .get("contentMetadataViewModel", {})
+        .get("metadataRows", [])
+    )
+    for row in rows:
+        parts = [
+            part.get("text", {}).get("content", "")
+            for part in row.get("metadataParts", [])
+            if isinstance(part.get("text"), dict)
+        ]
+        for part in parts:
+            if not isinstance(part, str) or not part:
+                continue
+            low = part.lower()
+            if "visualizaci" in low or "views" in low or "reproduccion" in low:
+                views = part
+            elif "hace " in low or "ago" in low or "estre" in low:
+                publish_date = part
+
+    # Duración: badge inferior de la miniatura (``20:29``). En el formato
+    # nuevo vive dentro de ``contentImage.thumbnailViewModel.overlays``.
+    duration: str | None = None
+    overlay_sources: list[Any] = list(lockup.get("overlays", []))
+    content_image_overlays = (
+        lockup.get("contentImage", {})
+        .get("thumbnailViewModel", {})
+        .get("overlays", [])
+    )
+    overlay_sources.extend(content_image_overlays or [])
+    for overlay in overlay_sources:
+        badges = overlay.get("thumbnailBottomOverlayViewModel", {}).get("badges", [])
+        for badge in badges:
+            text = badge.get("thumbnailBadgeViewModel", {}).get("text")
+            if isinstance(text, str) and text and ":" in text:
+                duration = text
+                break
+        if duration:
+            break
+
+    thumbnails = (
+        lockup.get("contentImage", {})
+        .get("thumbnailViewModel", {})
+        .get("image", {})
+        .get("sources", [])
+    )
+    thumbnail_url = thumbnails[-1].get("url") if thumbnails else None
+
+    return VideoData(
+        title=title,
+        url=f"https://www.youtube.com/watch?v={video_id}",
+        video_id=video_id,
+        views=views,
+        duration=duration,
+        publish_date=publish_date,
+        thumbnail_url=thumbnail_url,
+        channel_name=channel_name,
+        channel_url=channel_url,
+    )
+
+
 def _channel_url_from_header(header: dict[str, Any], fallback: str) -> str:
     nav = header.get("navigationEndpoint", {})
     base = nav.get("canonicalBaseUrl")
@@ -200,29 +316,37 @@ def parse_channel_html(html: str, channel_url: str) -> ChannelData:
     canonical = _channel_url_from_header(header, channel_url)
 
     videos: list[VideoData] = []
-    for renderer in _iter_video_renderers(data):
-        video_id = renderer.get("videoId")
-        if not isinstance(video_id, str):
-            continue
-        title = _text(renderer.get("title"))
-        if not title:
-            continue
-        thumbnails = renderer.get("thumbnail", {}).get("thumbnails", [])
-        videos.append(
-            VideoData(
-                title=title,
-                url=f"https://www.youtube.com/watch?v={video_id}",
-                video_id=video_id,
-                views=_text(renderer.get("viewCountText")) or "0",
-                duration=_text(renderer.get("lengthText")) or None,
-                publish_date=_text(renderer.get("publishedTimeText")) or None,
-                thumbnail_url=(
-                    thumbnails[-1].get("url") if thumbnails else None
-                ),
-                channel_name=name,
-                channel_url=canonical,
+    renderers = _iter_video_renderers(data)
+    if renderers:
+        for renderer in renderers:
+            video_id = renderer.get("videoId")
+            if not isinstance(video_id, str):
+                continue
+            title = _text(renderer.get("title"))
+            if not title:
+                continue
+            thumbnails = renderer.get("thumbnail", {}).get("thumbnails", [])
+            videos.append(
+                VideoData(
+                    title=title,
+                    url=f"https://www.youtube.com/watch?v={video_id}",
+                    video_id=video_id,
+                    views=_text(renderer.get("viewCountText")) or "0",
+                    duration=_text(renderer.get("lengthText")) or None,
+                    publish_date=_text(renderer.get("publishedTimeText")) or None,
+                    thumbnail_url=(
+                        thumbnails[-1].get("url") if thumbnails else None
+                    ),
+                    channel_name=name,
+                    channel_url=canonical,
+                )
             )
-        )
+    else:
+        # Formato nuevo: lockupViewModel
+        for lockup in _iter_lockup_view_models(data):
+            video = _lockup_to_video(lockup, name, canonical)
+            if video is not None:
+                videos.append(video)
 
     logger.debug(f"parse_channel_html: {len(videos)} vídeos de «{name}»")
     return ChannelData(
@@ -313,6 +437,7 @@ class ChannelAnalyzer:
         async with httpx.AsyncClient(
             timeout=self.timeout,
             headers={"User-Agent": DEFAULT_UA, "Accept-Language": "es,en;q=0.8"},
+            cookies=CONSENT_COOKIES,
             follow_redirects=True,
         ) as client:
             await asyncio.sleep(self.request_delay)

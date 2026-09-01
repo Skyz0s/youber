@@ -4,8 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from tests.fixtures.research_html import CHANNEL_HTML, VIDEO_HTML, VIDEO_HTML_NO_SOCIAL
-from youber.research.channel_analyzer import parse_channel_html
+from tests.fixtures.research_html import (
+    CHANNEL_HTML,
+    CHANNEL_HTML_LOCKUP,
+    VIDEO_HTML,
+    VIDEO_HTML_NO_SOCIAL,
+)
+from youber.research.channel_analyzer import (
+    _lockup_to_video,
+    parse_channel_html,
+)
 from youber.research.data_models import ChannelData, VideoData
 from youber.research.exporters import (
     export_channel,
@@ -104,6 +112,52 @@ def test_parse_channel_html():
     assert video.thumbnail_url == "https://i.ytimg.com/vi/abc123def45/hqdefault.jpg"
 
 
+def test_parse_channel_html_lockup():
+    """Formato nuevo (sept. 2026): lockupViewModel en vez de videoRenderer."""
+    channel = parse_channel_html(CHANNEL_HTML_LOCKUP, CHANNEL_URL)
+    assert channel.name == "Canal Demo"
+    assert len(channel.videos) == 1
+    video = channel.videos[0]
+    assert video.title == "Vídeo lockup #1"
+    assert video.video_id == "lockup12345"
+    assert video.views == "84 M de visualizaciones"
+    assert video.duration == "12:34"
+    assert video.publish_date == "hace 3 días"
+    assert video.thumbnail_url == "https://i.ytimg.com/vi/lockup12345/hqdefault.jpg"
+
+
+def test_lockup_to_video_directo():
+    """_lockup_to_video: vistas y fecha desde metadataRows."""
+    lockup = {
+        "contentId": "vid999",
+        "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+        "contentImage": {
+            "thumbnailViewModel": {
+                "image": {"sources": [{"url": "https://i.ytimg.com/vi/vid999/hq.jpg"}]},
+                "overlays": [{"thumbnailBottomOverlayViewModel": {
+                    "badges": [{"thumbnailBadgeViewModel": {"text": "20:29"}}]
+                }}],
+            }
+        },
+        "metadata": {"lockupMetadataViewModel": {
+            "title": {"content": "Título lockup"},
+            "metadata": {"contentMetadataViewModel": {
+                "metadataRows": [{"metadataParts": [
+                    {"text": {"content": "1,2 M de visualizaciones"}},
+                    {"text": {"content": "hace 1 año"}}
+                ]}]
+            }}
+        }},
+    }
+    video = _lockup_to_video(lockup, "Canal", "https://www.youtube.com/@canal")
+    assert video is not None
+    assert video.video_id == "vid999"
+    assert video.title == "Título lockup"
+    assert video.views == "1,2 M de visualizaciones"
+    assert video.duration == "20:29"
+    assert video.publish_date == "hace 1 año"
+
+
 def test_parse_video_html():
     video = parse_video_html(VIDEO_HTML, VIDEO_URL)
     assert video.title == "Vídeo de prueba #1"
@@ -151,6 +205,10 @@ def test_parse_compact_count():
     assert parse_compact_count("12K") == 12_000
     assert parse_compact_count("500") == 500
     assert parse_compact_count("sin datos") is None
+    # Formato real de la página (sept. 2026): "84 M de visualizaciones"
+    assert parse_compact_count("84 M de visualizaciones") == 84_000_000
+    assert parse_compact_count("1,2 M de suscriptores") == 1_200_000
+    assert parse_compact_count("12K vistas") == 12_000
 
 
 def test_hashtag_frequency():

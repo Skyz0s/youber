@@ -26,7 +26,7 @@ QUESTION_RE = re.compile(r"\?")
 VS_RE = re.compile(r"\bvs\.?\b", re.IGNORECASE)
 TUTORIAL_RE = re.compile(r"\b(cómo|como|tutorial|guía|guia)\b", re.IGNORECASE)
 TOP_LIST_RE = re.compile(r"\btop\s*\d+|\bmejores?\b", re.IGNORECASE)
-COMPACT_NUMBER_RE = re.compile(r"([\d.,]+)\s*([KMBkmb]?)\b")
+COMPACT_NUMBER_RE = re.compile(r"([\d.,]+)\s*([KMBkmb]?)(?!\w)")
 
 
 def extract_hashtags(text: str) -> list[str]:
@@ -37,12 +37,17 @@ def extract_hashtags(text: str) -> list[str]:
 def parse_compact_count(text: str) -> float | None:
     """Convierte "1,2 M", "3.4M" o "12K" en número (mejor esfuerzo).
 
+    Nota: NO se eliminan los espacios antes de buscar — el patrón ya los
+    consume y ``(?!\\w)`` necesita el espacio (o el final) después del
+    sufijo para no confundir "84 M de visualizaciones" con una palabra
+    que empiece por M.
+
     Returns:
         El valor numérico, o ``None`` si no se reconoce ningún formato.
     """
     if not text:
         return None
-    match = COMPACT_NUMBER_RE.search(text.replace(" ", ""))
+    match = COMPACT_NUMBER_RE.search(text)
     if not match:
         return None
     raw, suffix = match.groups()
