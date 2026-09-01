@@ -425,6 +425,8 @@ tr:hover{{background:#f7fafc}}
     <strong>🎵 Catálogo de canciones:</strong>
     <input type="text" id="tracks-q" placeholder="Buscar por título/artista/álbum/género…" style="min-width:280px" oninput="loadTracks()">
     <button onclick="loadTracks()">↻</button>
+    <button onclick="exportTracks('csv')" title="Exportar selección actual a CSV (Excel)">💾 CSV</button>
+    <button onclick="exportTracks('json')" title="Exportar selección actual a JSON">💾 JSON</button>
     <span id="tracks-count" class="status"></span>
   </div>
   <div class="controls" id="tracks-filters">
@@ -435,6 +437,7 @@ tr:hover{{background:#f7fafc}}
     <button class="filter-btn" data-filter="relaxed" onclick="setTrackFilter('relaxed')">😌 Relajada</button>
     <button class="filter-btn" data-filter="positive" onclick="setTrackFilter('positive')">😊 Positiva</button>
     <button class="filter-btn" data-filter="intense" onclick="setTrackFilter('intense')">🖤 Intensa</button>
+    <button class="filter-btn" data-filter="favorites" onclick="setTrackFilter('favorites')">⭐ Favoritas</button>
   </div>
   <div style="overflow-x:auto;background:#fff;border:1px solid #ddd;border-radius:8px">
   <table>
@@ -610,7 +613,7 @@ function switchTab(name) {{
 let tracksAll = [];
 let tracksSort = {{key: 'title', dir: 1}};
 let tracksFilter = 'all';
-const FILTER_LABELS = {{all: 'todas', energetic: '⚡ energéticas', danceable: '💃 bailables', relaxed: '😌 relajadas', positive: '😊 positivas', intense: '🖤 intensas'}};
+const FILTER_LABELS = {{all: 'todas', energetic: '⚡ energéticas', danceable: '💃 bailables', relaxed: '😌 relajadas', positive: '😊 positivas', intense: '🖤 intensas', favorites: '⭐ favoritas'}};
 
 function fmtDuration(s) {{
   if (s == null || isNaN(s)) return '-';
@@ -635,6 +638,48 @@ async function loadTracks() {{
   renderTracks();
 }}
 
+function exportTracks(fmt) {{
+  const key = tracksSort.key, dir = tracksSort.dir;
+  const list = [...tracksAll].sort((a, b) => {{
+    let va = a[key], vb = b[key];
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va == null) va = '';
+    if (vb == null) vb = '';
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  }});
+  if (fmt === 'csv') {{
+    const head = ['Título','Artista','Álbum','Duración (s)','Género','Energía','Baile','Ánimo','Tempo','Fuente','Favorita'];
+    const rows = list.map(t => [t.title, t.artist || '', t.album || '', t.duration ?? '', t.genre || '',
+      t.energy != null ? Math.round(t.energy * 100) + '%' : '',
+      t.danceability != null ? Math.round(t.danceability * 100) + '%' : '',
+      t.valence != null ? Math.round(t.valence * 100) + '%' : '',
+      t.tempo ?? '', t.source || '', t.favorite ? 'sí' : 'no']
+      .map(c => '"' + String(c).replace(/"/g, '""') + '"'));
+    const csv = '\uFEFF' + [head, ...rows].map(r => r.join(';')).join('\r\n');
+    downloadFile('canciones.csv', csv, 'text/csv;charset=utf-8');
+  }} else {{
+    const out = list.map(t => ({{
+      title: t.title, artist: t.artist, album: t.album, duration_s: t.duration,
+      genre: t.genre, energy: t.energy, danceability: t.danceability,
+      valence: t.valence, tempo: t.tempo, source: t.source, favorite: t.favorite,
+    }}));
+    downloadFile('canciones.json', JSON.stringify(out, null, 2), 'application/json');
+  }}
+}}
+
+function downloadFile(name, content, mime) {{
+  const blob = new Blob([content], {{type: mime}});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {{ URL.revokeObjectURL(a.href); a.remove(); }}, 500);
+}}
+
 function setTrackFilter(f) {{
   tracksFilter = f;
   document.querySelectorAll('#tracks-filters .filter-btn').forEach(btn => {{
@@ -650,6 +695,7 @@ function renderTracks() {{
   else if (tracksFilter === 'relaxed') list = list.filter(t => (t.energy || 0) < 0.5 && (t.tempo || 0) < 110);
   else if (tracksFilter === 'positive') list = list.filter(t => (t.valence || 0) >= 0.6);
   else if (tracksFilter === 'intense') list = list.filter(t => (t.valence || 0) < 0.4);
+  else if (tracksFilter === 'favorites') list = list.filter(t => t.favorite);
   const key = tracksSort.key, dir = tracksSort.dir;
   const sorted = [...list].sort((a, b) => {{
     let va = a[key], vb = b[key];
