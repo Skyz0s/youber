@@ -11,6 +11,7 @@ from youber.script.transcripts import (
     _first_words,
     analyze_channel,
     analyze_video,
+    extract_keywords,
     fetch_transcript,
     hook_template,
 )
@@ -66,6 +67,20 @@ def test_analyze_video_sin_transcripcion(monkeypatch):
     assert analyze_video("xyz") is None
 
 
+def test_extract_keywords_filtra_stopwords():
+    text = "Hola a todos, hoy cocinamos pasta con tomate y cocinamos salsa"
+    keywords = extract_keywords(text, top_n=4)
+    assert "cocinamos" in keywords  # la más frecuente (x2)
+    assert "pasta" in keywords
+    assert "tomate" in keywords
+    assert "hola" not in keywords  # token corto/stopword
+    assert len(keywords) <= 4
+
+
+def test_extract_keywords_vacio():
+    assert extract_keywords("de la que el y los") == []
+
+
 def test_analyze_video_ok(monkeypatch):
     monkeypatch.setattr(
         "youber.script.transcripts.fetch_transcript",
@@ -77,6 +92,9 @@ def test_analyze_video_ok(monkeypatch):
     assert analysis.hooks
     assert "100 policías" in analysis.hooks[0]
     assert analysis.ctas
+    # keywords reales del contenido (sin stopwords)
+    assert analysis.keywords
+    assert "policías" in analysis.keywords
 
 
 def test_analyze_channel(monkeypatch):
@@ -106,6 +124,7 @@ def test_analyze_channel(monkeypatch):
     assert analysis.video_count == 3
     assert any("Hook del vid1" in h for h in analysis.hooks)
     assert analysis.ctas
+    assert analysis.keywords  # agregadas del contenido real
 
 
 def test_hook_template_con_transcripcion():

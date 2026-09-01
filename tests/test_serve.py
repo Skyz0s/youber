@@ -488,6 +488,84 @@ def test_http_script_proposal(tmp_path: Path, monkeypatch):
         server.server_close()
 
 
+def test_http_script_proposal_con_video_url(tmp_path: Path, monkeypatch):
+    """GET /api/script-proposal con URL de vídeo: el contenido del vídeo manda.
+
+    El título/descripción/transcripción del vídeo origen generan las
+    keywords reales de cada escena (para que el stock case con el vídeo)
+    y el tema por defecto es el título del vídeo.
+    """
+    from youber.research.data_models import VideoData
+    from youber.script.transcripts import TranscriptSnippet
+
+    video = VideoData(
+        title="Mi reto de cocina",
+        url="https://www.youtube.com/watch?v=abc123def45",
+        video_id="abc123def45",
+        views="1 K de visualizaciones",
+        duration="2:00",
+        description="Cocinamos pasta con tomate casero",
+        channel_name="Knight Princess",
+        channel_url="https://www.youtube.com/@knightprincess",
+    )
+
+    async def fake_video_analyze(url, mode="auto"):
+        return video
+
+    def fake_fetch(video_id, **kw):
+        return [
+            TranscriptSnippet(start=0.5, text="Hoy cocinamos pasta con tomate"),
+            TranscriptSnippet(start=10.0, text="La salsa es lo importante"),
+        ]
+
+    monkeypatch.setattr(
+        "youber.research.video_analyzer.VideoAnalyzer",
+        lambda **kwargs: type(
+            "Fake", (), {"analyze": staticmethod(fake_video_analyze)}
+        )(),
+    )
+    monkeypatch.setattr(
+        "youber.script.transcripts.fetch_transcript", fake_fetch
+    )
+    monkeypatch.setattr(
+        "youber.dashboard.serve.WidgetManager",
+        lambda: _FakeCollectManager(),
+    )
+    monkeypatch.setattr(
+        "youber.video.stock.PEXELS_KEY_FILE", tmp_path / "pexels.txt"
+    )
+    monkeypatch.setattr(
+        "youber.video.stock.PIXABAY_KEY_FILE", tmp_path / "pixabay.txt"
+    )
+    app = DashboardApp(
+        config_path=tmp_path / "dash.json",
+        widgets=DEFAULT_WIDGETS,
+        library_dir=tmp_path / "music",
+    )
+    server, base = _start_server(app)
+    try:
+        from urllib.parse import quote
+
+        url = quote("https://www.youtube.com/watch?v=abc123def45", safe="")
+        with urlopen(
+            f"{base}/api/script-proposal?url={url}", timeout=5
+        ) as response:
+            assert response.status == 200
+            payload = json.loads(response.read().decode("utf-8"))
+            assert payload["ok"] is True
+            script = payload["script"]
+            # tema por defecto = título del vídeo origen
+            assert script["topic"] == "Mi reto de cocina"
+            # cada escena lleva keywords del contenido real (pasta/tomate/cocina)
+            assert script["scenes"]
+            all_keywords = [k for s in script["scenes"] for k in s["keywords"]]
+            assert "pasta" in all_keywords or "cocina" in all_keywords
+            assert script["total_duration"] >= 30.0  # mínimo sensato
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_http_script_proposal_sin_url(tmp_path: Path, monkeypatch):
     """GET /api/script-proposal sin url devuelve 400."""
     from urllib.error import HTTPError

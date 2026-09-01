@@ -277,13 +277,17 @@ class DashboardApp:
         duration: float | None = None,
         max_videos: int = 10,
     ) -> dict[str, Any]:
-        """Analiza un canal y propone guion + música local para tu vídeo.
+        """Analiza un canal o vídeo y propone guion + música local para tu vídeo.
 
         Args:
-            url: URL del canal (``@handle``, ``channel/UC...``).
-            topic: Tema de tu vídeo.
+            url: URL del canal (``@handle``, ``channel/UC...``) o de un vídeo
+                (``watch?v=...``, ``youtu.be/...``). Si es un vídeo, su título,
+                descripción y transcripción marcan el contenido del guion
+                (keywords reales para el stock y duración de referencia).
+            topic: Tema de tu vídeo; si la URL es un vídeo y no se indica,
+                se usa el título del vídeo.
             duration: Duración total deseada (s); si es ``None`` se usa la
-                media del canal.
+                media del canal (o la del vídeo origen, con mínimo).
             max_videos: Vídeos del canal a analizar para los insights.
 
         Returns:
@@ -293,22 +297,63 @@ class DashboardApp:
             no se puede analizar.
         """
         from youber.research.channel_analyzer import ChannelAnalyzer
+        from youber.research.data_models import ChannelData
         from youber.research.patterns import channel_overview
+        from youber.research.video_analyzer import VideoAnalyzer, extract_video_id
         from youber.script.builder import _pick_local_track
         from youber.script.generator import generate_script
-        from youber.script.transcripts import analyze_channel as analyze_transcripts
-
-        channel = await ChannelAnalyzer().analyze(
-            url, max_videos=max_videos, mode="html"
+        from youber.script.transcripts import (
+            analyze_channel as analyze_transcripts,
         )
-        insights = channel_overview(channel)
-        # Transcripciones públicas del canal patrón → instrucciones reales.
-        transcripts = analyze_transcripts(channel.videos, max_videos=3)
+        from youber.script.transcripts import (
+            analyze_video as analyze_video_transcript,
+        )
+
+        video_id = extract_video_id(url)
+        content_keywords: list[str] | None = None
+        if video_id:
+            # La URL es un vídeo concreto (p. ej. uno tuyo): su contenido manda.
+            video = await VideoAnalyzer().analyze(url, mode="auto")
+            channel = ChannelData(
+                name=video.channel_name,
+                url=video.channel_url or url,
+                handle=None,
+                subscribers=None,
+                videos=[video],
+            )
+            insights = channel_overview(channel)
+            if not topic or topic == "Mi vídeo":
+                topic = video.title or topic
+            # Transcripción del propio vídeo → hooks, CTA y keywords reales.
+            analysis = analyze_video_transcript(video.video_id)
+            text_source = " ".join(
+                filter(None, [video.title, video.description])
+            )
+            from youber.script.transcripts import extract_keywords
+
+            content_keywords = extract_keywords(text_source)
+            if analysis and analysis.keywords:
+                content_keywords = list(
+                    dict.fromkeys(content_keywords + analysis.keywords)
+                )[:8]
+        else:
+            channel = await ChannelAnalyzer().analyze(
+                url, max_videos=max_videos, mode="html"
+            )
+            insights = channel_overview(channel)
+            # Transcripciones públicas del canal patrón → instrucciones reales.
+            analysis = analyze_transcripts(channel.videos, max_videos=3)
+            if analysis.video_count and analysis.keywords:
+                content_keywords = analysis.keywords
+
         script = generate_script(
             insights,
             topic=topic,
             duration=duration,
-            transcripts=transcripts if transcripts.video_count else None,
+            transcripts=(
+                analysis if analysis and analysis.video_count else None
+            ),
+            content_keywords=content_keywords,
         )
 
         library = self._get_library()

@@ -23,6 +23,25 @@ from youber.research.data_models import VideoData
 
 HOOK_SECONDS = 20.0
 CTA_SECONDS = 25.0
+
+# Stopwords es/en para extraer keywords del contenido real del vídeo.
+_STOPWORDS = frozenset(
+    """de la que el en y a los del se las por un para con no una su al lo como
+    más pero sus le ya o este sí porque esta entre cuando muy sin sobre también
+    me hasta hay donde quien desde todo nos durante todos uno les ni contra
+    otros ese eso ante ellos e esto mí antes algunos qué unos yo otro otras
+    otra él tanto esa estos mucho quienes nada muchos cual poco ella estar
+    estas algunas algo nosotros mi mis tú te ti tu tus ellas nosotras vosotros
+    vosotras os mío mía míos mías tuyo tuya tuyos tuyas suyo suya suyos suyas
+    nuestro nuestra nuestros nuestras vuestro vuestra vuestros vuestras esos
+    esas esos esas the of and to in is are was were for with on at by from as
+    an be or your my me it he she they this that these those not no but you
+    all can will just don't have has had do does did what when where which who
+    how why if then than so very too also only own same more less most some
+    any each other another into over under about after before between during
+    through porque como para sobre algo todo cada vez después además también
+    """.split()
+)
 CTA_MARKERS = (
     "suscríb",
     "suscrib",
@@ -67,6 +86,24 @@ class TranscriptAnalysis:
     avg_hook_duration: float | None = None
     video_count: int = 0
     samples: list[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+
+
+def extract_keywords(text: str, top_n: int = 8) -> list[str]:
+    """Extrae las palabras más relevantes de un texto (sin stopwords).
+
+    Filtra stopwords en español/inglés y tokens cortos; devuelve las
+    ``top_n`` palabras más frecuentes, que sirven de base para buscar
+    clips de stock que reflejen el contenido real del vídeo.
+    """
+    words = re.findall(r"[a-zA-ZÁÉÍÓÚÜÑáéíóúüñ]{4,}", text.lower())
+    counts: dict[str, int] = {}
+    for word in words:
+        if word in _STOPWORDS:
+            continue
+        counts[word] = counts.get(word, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
+    return [word for word, _ in ranked[:top_n]]
 
 
 def fetch_transcript(
@@ -132,17 +169,19 @@ def _cta_from_tail(snippets: list[TranscriptSnippet]) -> list[str]:
 
 
 def analyze_video(video_id: str) -> TranscriptAnalysis | None:
-    """Analiza un vídeo: devuelve su hook y CTA (o ``None`` sin transcripción)."""
+    """Analiza un vídeo: devuelve su hook, CTA y keywords (o ``None`` sin transcripción)."""
     snippets = fetch_transcript(video_id)
     if not snippets:
         return None
     hook = _first_words(snippets, HOOK_SECONDS)
     ctas = _cta_from_tail(snippets)
+    full_text = " ".join(_clean(s.text) for s in snippets)
     return TranscriptAnalysis(
         hooks=[hook] if hook else [],
         ctas=ctas,
         video_count=1,
         samples=[_clean(s.text) for s in snippets[:8] if _clean(s.text)],
+        keywords=extract_keywords(full_text),
     )
 
 
@@ -163,9 +202,18 @@ def analyze_channel(videos: list[VideoData], max_videos: int = 3) -> TranscriptA
             continue
         analysis.hooks.extend(single.hooks)
         analysis.ctas.extend(single.ctas)
+        analysis.samples.extend(single.samples)
+        analysis.keywords.extend(single.keywords)
         analysis.video_count += 1
     analysis.hooks = list(dict.fromkeys(h for h in analysis.hooks if h))
     analysis.ctas = list(dict.fromkeys(c for c in analysis.ctas if c))
+    # keywords más frecuentes del canal (frecuencia agregada)
+    counts: dict[str, int] = {}
+    for word in analysis.keywords:
+        counts[word] = counts.get(word, 0) + 1
+    analysis.keywords = [
+        w for w, _ in sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
+    ]
     return analysis
 
 

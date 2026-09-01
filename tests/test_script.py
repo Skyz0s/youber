@@ -65,6 +65,40 @@ def test_generate_script_duracion_minima_por_escena():
     assert all(scene.duration >= 2.0 for scene in script.scenes)
 
 
+def test_generate_script_duracion_minima_total():
+    """Sin duración explícita, la media del canal tiene un mínimo (30 s)."""
+    insights = _insights(duration_stats={"avg_seconds": 12.0})
+    script = generate_script(insights, topic="X")
+    assert script.total_duration == pytest.approx(30.0)
+
+
+def test_generate_script_con_content_keywords():
+    """Las keywords del contenido real del vídeo origen marcan cada escena."""
+    content = ["cocina", "pasta", "restaurante"]
+    script = generate_script(_insights(), topic="Mi vídeo", content_keywords=content)
+    assert script.scenes
+    for scene in script.scenes:
+        assert "cocina" in scene.keywords
+        assert "pasta" in scene.keywords
+
+
+def test_generate_script_sin_content_keywords_fallback():
+    """Sin contenido real, cada escena mantiene las keywords genéricas."""
+    script = generate_script(_insights(), topic="X")
+    for scene in script.scenes:
+        assert scene.keywords  # no vacías
+
+
+def test_infer_mood_con_content_keywords():
+    """El contenido del vídeo manda sobre la duración para la música."""
+    sad = _infer_mood(_insights(duration_stats={"avg_seconds": 120}), ["triste", "perdida"])
+    assert sad == Mood.SAD
+    energetic = _infer_mood(
+        _insights(duration_stats={"avg_seconds": 1200}), ["fiesta", "carrera"]
+    )
+    assert energetic == Mood.ENERGETIC
+
+
 def test_generate_script_tema_con_mood():
     script = generate_script(_insights(), topic="X", music_mood=Mood.RELAXING)
     assert script.music_mood == Mood.RELAXING

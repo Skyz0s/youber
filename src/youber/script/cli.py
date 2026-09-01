@@ -100,6 +100,7 @@ def _print_script(script: Script) -> None:
 async def _run(args: argparse.Namespace) -> None:
     """Flujo principal."""
     analysis = None
+    content_keywords: list[str] | None = None
     if args.demo:
         from youber.cli.workflow_cli import demo_channel
 
@@ -109,30 +110,70 @@ async def _run(args: argparse.Namespace) -> None:
     else:
         if not args.channel:
             raise SystemExit("Indica --channel <url> o usa --demo")
-        console.print(f"📡 Analizando canal: [bold]{args.channel}[/]")
-        channel = await ChannelAnalyzer().analyze(
-            args.channel, max_videos=args.max_videos, mode="html"
-        )
-        insights = channel_overview(channel)
-        duration_stats = insights.get("duration_stats", {})
-        console.print(
-            f"   Media: {duration_stats.get('avg_seconds')} s · "
-            f"{len(channel.videos)} vídeos · "
-            f"patrones: {insights.get('title_patterns', {}).get('with_numbers', 0)} con números"
-        )
-        # Transcripciones públicas del canal patrón (instrucciones reales).
-        from youber.script.transcripts import analyze_channel
+        console.print(f"📡 Analizando: [bold]{args.channel}[/]")
+        # Si la URL es un vídeo concreto, su contenido manda; si no, es canal.
+        from youber.research.video_analyzer import VideoAnalyzer, extract_video_id
 
-        console.print("🎙️  Extrayendo transcripciones públicas (estilo del canal)...")
-        analysis = analyze_channel(channel.videos, max_videos=3)
-        if analysis and analysis.video_count:
-            hook = (analysis.hooks[0] if analysis.hooks else "-")[:60]
-            console.print(f"   ✓ {analysis.video_count} transcripción(es) · hook: «{hook}»")
+        video_id = extract_video_id(args.channel)
+        if video_id:
+            from youber.research.data_models import ChannelData
+            from youber.script.transcripts import (
+                analyze_video as analyze_video_transcript,
+            )
+            from youber.script.transcripts import (
+                extract_keywords,
+            )
+
+            video = await VideoAnalyzer().analyze(args.channel, mode="auto")
+            channel = ChannelData(
+                name=video.channel_name,
+                url=video.channel_url or args.channel,
+                handle=None,
+                subscribers=None,
+                videos=[video],
+            )
+            insights = channel_overview(channel)
+            if not args.topic or args.topic == "Mi vídeo":
+                args.topic = video.title or args.topic
+            console.print("🎙️  Extrayendo transcripción pública del vídeo origen...")
+            analysis = analyze_video_transcript(video.video_id)
+            content_keywords = extract_keywords(
+                " ".join(filter(None, [video.title, video.description]))
+            )
+            if analysis and analysis.keywords:
+                content_keywords = list(
+                    dict.fromkeys(content_keywords + analysis.keywords)
+                )[:8]
         else:
-            console.print("   ℹ️  Sin transcripciones disponibles (plantillas genéricas)")
+            channel = await ChannelAnalyzer().analyze(
+                args.channel, max_videos=args.max_videos, mode="html"
+            )
+            insights = channel_overview(channel)
+            duration_stats = insights.get("duration_stats", {})
+            console.print(
+                f"   Media: {duration_stats.get('avg_seconds')} s · "
+                f"{len(channel.videos)} vídeos · "
+                f"patrones: {insights.get('title_patterns', {}).get('with_numbers', 0)} con números"
+            )
+            # Transcripciones públicas del canal patrón (instrucciones reales).
+            from youber.script.transcripts import analyze_channel
+
+            console.print("🎙️  Extrayendo transcripciones públicas (estilo del canal)...")
+            analysis = analyze_channel(channel.videos, max_videos=3)
+            if analysis and analysis.video_count:
+                hook = (analysis.hooks[0] if analysis.hooks else "-")[:60]
+                console.print(f"   ✓ {analysis.video_count} transcripción(es) · hook: «{hook}»")
+            else:
+                console.print("   ℹ️  Sin transcripciones disponibles (plantillas genéricas)")
+            if analysis and analysis.video_count and analysis.keywords:
+                content_keywords = analysis.keywords
 
     script = generate_script(
-        insights, topic=args.topic, duration=args.duration, transcripts=analysis
+        insights,
+        topic=args.topic,
+        duration=args.duration,
+        transcripts=analysis if analysis and analysis.video_count else None,
+        content_keywords=content_keywords,
     )
     _print_script(script)
 

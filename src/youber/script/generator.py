@@ -38,8 +38,17 @@ _STRUCTURE: list[tuple[SceneType, float]] = [
     (SceneType.CTA, 0.05),
 ]
 
-# Términos de búsqueda de stock (B-roll) por tipo de escena. En inglés
-# porque Pexels/Pixabay indexan mejor el material audiovisual en inglés.
+# Intención visual por tipo de escena (en inglés: mejor indexación en Pexels).
+_SCENE_INTENT: dict[SceneType, list[str]] = {
+    SceneType.HOOK: ["attention", "opening", "first seconds"],
+    SceneType.INTRO: ["introduction", "presentation", "welcome"],
+    SceneType.CONTENT: ["explanation", "details", "close up"],
+    SceneType.CLIMAX: ["climax", "key moment", "reveal"],
+    SceneType.CTA: ["call to action", "subscribe", "thanks"],
+}
+
+# Términos de búsqueda de stock (B-roll) por tipo de escena cuando no hay
+# contenido real del vídeo origen (fallback genérico).
 _SCENE_KEYWORDS: dict[SceneType, list[str]] = {
     SceneType.HOOK: ["dramatic", "suspense", "close up", "action"],
     SceneType.INTRO: ["person talking", "introduction", "presenter", "studio"],
@@ -48,17 +57,34 @@ _SCENE_KEYWORDS: dict[SceneType, list[str]] = {
     SceneType.CTA: ["subscribe", "hand gesture", "call to action", "thank you"],
 }
 
+
+def _scene_keywords(
+    scene_type: SceneType, content_keywords: list[str] | None
+) -> list[str]:
+    """Keywords de búsqueda de stock para una escena.
+
+    Si hay keywords extraídas del contenido real del vídeo origen, se usan
+    esas (reflejan la intención del vídeo: que audio y vídeo casen) junto a
+    la intención visual de la escena. Sin contenido, cae a la plantilla
+    genérica por tipo de escena.
+    """
+    if content_keywords:
+        merged = list(dict.fromkeys(content_keywords[:5] + _SCENE_INTENT[scene_type]))
+        return merged[:8]
+    return _SCENE_KEYWORDS.get(scene_type, [])
+
 DEFAULT_DURATION = 60.0  # duración objetivo si el canal no aporta datos
+MIN_TARGET_DURATION = 30.0  # mínimo para que el guion tenga estructura real
 
 
 def _target_duration(insights: dict[str, Any], duration: float | None) -> float:
-    """Duración total del guion: explícita o la media del canal."""
+    """Duración total del guion: explícita o la media del canal (con mínimo)."""
     if duration and duration > 0:
         return float(duration)
     stats = insights.get("duration_stats", {})
     avg = stats.get("avg_seconds")
     if avg and avg > 0:
-        return float(avg)
+        return max(float(avg), MIN_TARGET_DURATION)
     return DEFAULT_DURATION
 
 
@@ -125,6 +151,7 @@ def generate_script(
     duration: float | None = None,
     music_mood: Mood | None = None,
     transcripts: TranscriptAnalysis | None = None,
+    content_keywords: list[str] | None = None,
 ) -> Script:
     """Genera un guion con estructura viral a partir de los insights.
 
@@ -136,6 +163,10 @@ def generate_script(
         transcripts: Análisis de transcripciones públicas del canal patrón
             (opcional). Si se aporta, las escenas incluyen instrucciones
             reales del estilo del canal en lugar de plantillas.
+        content_keywords: Términos reales del contenido del vídeo origen
+            (título/descripción/transcripción). Si se aportan, cada escena
+            los usa para buscar clips de stock que reflejen la intención
+            del vídeo (que audio y vídeo casen).
 
     Returns:
         Un :class:`Script` listo para construir el proyecto de edición.
@@ -145,13 +176,14 @@ def generate_script(
     titles = _scene_titles(topic, patterns)
     channel = insights.get("channel", {}).get("name")
 
-    mood = music_mood or _infer_mood(insights)
+    mood = music_mood or _infer_mood(insights, content_keywords)
 
     scenes: list[Scene] = []
     content_index = 0
     content_count = sum(1 for stype, _ in _STRUCTURE if stype == SceneType.CONTENT)
     for scene_type, ratio in _STRUCTURE:
         scene_duration = max(2.0, round(total * ratio, 1))
+        keywords = _scene_keywords(scene_type, content_keywords)
         if scene_type == SceneType.HOOK:
             if transcripts is not None:
                 text = hook_template(topic, transcripts)
@@ -169,7 +201,7 @@ def generate_script(
                     text=text,
                     position=TextPosition.CENTER,
                     transition=TransitionType.FADE,
-                    keywords=_SCENE_KEYWORDS.get(scene_type, []),
+                    keywords=keywords,
                 )
             )
             continue
@@ -195,7 +227,7 @@ def generate_script(
                     if scene_type in (SceneType.HOOK, SceneType.INTRO)
                     else TransitionType.CROSSFADE
                 ),
-                keywords=_SCENE_KEYWORDS.get(scene_type, []),
+                keywords=keywords,
             )
         )
 
@@ -212,11 +244,30 @@ def generate_script(
     )
 
 
-def _infer_mood(insights: dict[str, Any]) -> Mood:
-    """Infere un estado de ánimo para la música según la duración del canal.
+def _infer_mood(
+    insights: dict[str, Any], content_keywords: list[str] | None = None
+) -> Mood:
+    """Infere el estado de ánimo de la música.
 
-    Vídeos cortos → más enérgico; vídeos largos → más épico/focus.
+    Si hay keywords del contenido real del vídeo origen, se usan primero
+    (la música casa con la intención del vídeo); si no, por duración.
     """
+    if content_keywords:
+        text = " ".join(content_keywords).lower()
+        if any(w in text for w in ("triste", "miedo", "oscur", "dolor", "llor", "perd", "noche")):
+            return Mood.SAD
+        if any(w in text for w in ("fiest", "energ", "deport", "carrera", "fuerte", "rapid", "lucha")):
+            return Mood.ENERGETIC
+        if any(w in text for w in ("amor", "feliz", "alegr", "risa", "celebrac", "sol")):
+            return Mood.HAPPY
+        if any(w in text for w in ("mister", "secreto", "intriga", "oscuro", "nocturn")):
+            return Mood.MYSTERIOUS
+        if any(w in text for w in ("concentr", "estudio", "trabajo", "productiv", "foco", "aprend")):
+            return Mood.FOCUSED
+        if any(w in text for w in ("epic", "grand", "hero", "aventura", "batalla", "victoria")):
+            return Mood.EPIC
+        if any(w in text for w in ("relaj", "calma", "tranquil", "naturaleza", "meditac", "paz")):
+            return Mood.RELAXING
     stats = insights.get("duration_stats", {})
     avg = stats.get("avg_seconds")
     if avg is None:
