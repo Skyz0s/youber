@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
@@ -13,8 +12,6 @@ from loguru import logger
 from youber.montage.adapter import OpenMontageAdapter
 from youber.montage.models import (
     AudioSource,
-    PatternSource,
-    PatternSpec,
     ProductionMode,
     ProductionPlan,
 )
@@ -171,8 +168,10 @@ def _parse_resolution(res_str: str | None) -> tuple[int, int] | None:
     try:
         w, h = res_str.lower().split("x")
         return (int(w), int(h))
-    except Exception:
-        raise argparse.ArgumentTypeError(f"Resolución inválida: {res_str}. Usa WxH (ej: 1920x1080)")
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Resolución inválida: {res_str}. Usa WxH (ej: 1920x1080)"
+        ) from None
 
 
 async def _run_produce(args: argparse.Namespace) -> int:

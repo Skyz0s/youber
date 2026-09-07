@@ -14,14 +14,12 @@ import asyncio
 import json
 import re
 import subprocess
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
-from youber.montage.models import PatternSpec, PatternSource
-
+from youber.montage.models import PatternSource, PatternSpec
 
 # ────────────────────────────────────────────────────────────────────
 # Helpers ffprobe / ffmpeg
