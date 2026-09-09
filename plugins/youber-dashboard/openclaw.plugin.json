@@ -1,0 +1,14 @@
+{
+  "id": "youber-dashboard",
+  "name": "Youber Dashboard",
+  "description": "Panel nativo de Youber en la Control UI (Fase 0: spike técnico)",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
