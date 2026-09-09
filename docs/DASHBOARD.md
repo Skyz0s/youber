@@ -1,159 +1,80 @@
-# Dashboard de métricas (`youber.dashboard`)
+# Dashboard de Youber (Control UI)
 
-Sistema de widgets visuales con métricas clave del ecosistema Youber:
-catálogo de música, uso, proyectos recientes, subidas a YouTube, tareas
-programadas y actividad diaria. Renderizado en **Markdown**, **HTML** o
-**JSON**.
+Guía de uso del **tab "Youber"** del plugin `youber-dashboard`, la interfaz
+nativa de Youber en la Control UI de OpenClaw (Fases 0-4).
 
-## Estructura
+> Para el plugin (instalación, configuración y modelo de seguridad) ver
+> [PLUGIN.md](PLUGIN.md). Para el CLI de métricas `youber-dashboard`
+> (widgets en HTML/Markdown/JSON) ver [METRICS.md](METRICS.md).
 
-| Módulo | Responsabilidad |
-|---|---|
-| `models.py` | `WidgetType`, `Widget`, `WidgetData` (pydantic v2) |
-| `data_sources.py` | Conexión a las fuentes: música (SQLite), scheduler (JSON), reportes, subidas |
-| `metrics.py` | Cálculo de métricas (funciones puras, offline-testables) |
-| `registry.py` | Registro de widgets: tipo → métrica + título + fuentes |
-| `widgets.py` | `WidgetManager`: crea widgets y recolecta sus datos |
-| `renderer.py` | Renderizado HTML / Markdown / JSON |
-| `cli.py` | Comando `youber-dashboard` |
+![Dashboard](img/dashboard-home.png)
 
-## Tipos de widget (`WidgetType`)
+## Qué es
 
-`channel-trends`, `music-usage`, `recent-projects`, `upload-status`,
-`engagement-metrics`, `scheduled-tasks`, `channel-comparison`,
-`daily-activity`, `top-videos`, `catalog-stats`.
+El dashboard es una SPA construida con **Vite + Lit** que se sirve desde el
+plugin (`/youber-dashboard`) y habla con el **bridge JSON** (`youber.api`)
+por HTTP. Todo corre en **localhost**; no necesita tokens ni credenciales
+en el navegador (las claves API solo se consultan como *presencia* ✅/❌).
 
-## CLI
+## Acceso
 
-```bash
-youber-dashboard list                                # widgets disponibles
-youber-dashboard render catalog-stats                # un widget (Markdown)
-youber-dashboard render music-usage -f json          # un widget en JSON
-youber-dashboard dashboard --format html -o dash.html  # dashboard completo
-youber-dashboard dashboard -f md                       # Markdown por consola
-youber-dashboard dashboard --widgets catalog-stats,scheduled-tasks,upload-status -f html -o custom.html  # selección
-youber-dashboard serve                                # dashboard en el navegador (puerto 8765)
-youber-dashboard serve --port 9000 --refresh 30       # otro puerto y refresco cada 30 s
-```
+1. Control UI abierta → tab **Youber** (requiere scope `operator.read`).
+2. URL directa: `http://127.0.0.1:18789/youber-dashboard/` (loopback).
 
-## Trabajar en el dashboard (modo servidor)
+## Páginas (5)
 
-Para **ver y manejar el dashboard directamente en el navegador** (sin
-comandos por cada cambio):
+| Ruta | Página | Qué hace |
+| --- | --- | --- |
+| `#/dashboard` | **Dashboard** | Resumen: canciones en catálogo, jobs en cola/ejecución, tareas programadas, FFmpeg y proveedores configurados (solo booleanos) |
+| `#/research` | **Investigación** | Busca canales por tema/categoría (modo auto/api/html/demo), analiza un canal al hacer clic (datos públicos + vídeos) y exporta CSV |
+| `#/music` | **Música** | Catálogo local: busca por título/artista, haz clic en una pista para ver su **letra** (sidecar) y envíala a Producción |
+| `#/production` | **Producción** | Lanza `youber-produce`/workflow (topic, pipeline, pista, duración, resolución, `--sync` con estilo de subtítulos) y sigue el job en vivo |
+| `#/monitor` | **Monitorización** | Tareas programadas, historial de jobs (estado/exit/fecha/salida) y estado de la subida a YouTube |
 
-```bash
-youber-dashboard serve
-```
+## Flujos típicos
 
-Abre `http://127.0.0.1:8787` (puerto configurable con `--port` o en la
-configuración). La página:
+### Producir un vídeo
 
-- Muestra los widgets seleccionados con **auto-refresco** (por defecto
-  cada 60 s; cambia con `--refresh`).
-- Permite **marcar/desmarcar widgets con checkboxes** y guardar la
-  selección; queda persistida en `~/.youber/dashboard.json`.
-- Incluye un **buscador de música en plataformas** (Apple/iTunes o
-  Spotify): escribe un texto, marca los resultados que te interesen y
-  pulsa «Importar seleccionadas» para añadirlos al catálogo **sin salir
-  del navegador** (solo metadatos públicos, nunca audio).
-- Incluye **importación de tu biblioteca completa de Apple**: pega la
-  ruta del XML exportado (Archivo → Biblioteca → Exportar biblioteca…)
-  y pulsa «Importar biblioteca» para registrar todas tus canciones de
-  una vez.
-- Incluye **importación de tu biblioteca de YouTube Music** (gratis, sin
-  API keys): botón «🎧 Importar mi biblioteca de YouTube Music» que trae
-  tus Me gusta, guardadas, subidas y playlists (opción de incluir
-  playlists). Requiere generar una vez `~/.youber/ytmusic_headers.json`
-  (ver docs/MUSIC.md).
-- Incluye **importación del catálogo público de un artista/canal**: botón
-  «🎤 Importar catálogo del canal/artista» que trae la discografía
-  completa (canciones destacadas, álbumes y singles) — sin necesidad de
-  autenticación (datos públicos).
-- Expone `GET /api/data` (JSON de los widgets), `GET /api/search-cloud`
-  (buscar en plataforma), `POST /api/import-cloud`, `POST
-  /api/import-apple-library` (XML de Apple), `GET /api/ytmusic-status` y
-  `POST /api/import-ytmusic` (biblioteca de YouTube Music) para
-  integrarse con otras herramientas.
+1. (opcional) En **Música**, haz clic en una canción → *Usar en producción*
+   (la selección persiste entre páginas y recargas).
+2. En **Producción**, rellena el *Topic*, elige pipeline/pista y duración.
+   Activa *Sincronizar letras* si la pista tiene sidecar.
+3. *Producir vídeo* → se lanza un job en segundo plano. La tarjeta de estado
+   hace **polling cada 2 s** (5 s si el job va largo; se pausa con la pestaña
+   oculta) y muestra el log.
+4. Al terminar (✅ completado) aparece **⬇️ Descargar vídeo**: el MP4 se sirve
+   desde `~/.youber/jobs/<id>/reports/` por el endpoint de descarga.
 
-El buscador importa al mismo catálogo que muestra el widget
-`catalog-stats` (`<music-dir>/.music.db`); al terminar, los widgets se
-refrescan solos. El directorio de música se elige con `--music-dir`.
+Si ya hay jobs en cola/ejecución, el dashboard pide **confirmación** antes
+de encolar otro.
 
-Configuración guardada (`~/.youber/dashboard.json`):
+### Investigar + exportar
 
-```json
-{
-  "widgets": ["catalog-stats", "scheduled-tasks", "upload-status"],
-  "refresh_seconds": 60,
-  "port": 8787
-}
-```
+1. **Investigación**: tema + categoría + modo (`demo` no usa red).
+2. Clic en un canal → análisis (suscriptores, vídeos, patrones).
+3. *Guardar CSV* exporta los resultados a un fichero.
 
-El servidor escucha solo en `127.0.0.1` (no expone datos fuera de la
-máquina) y usa únicamente la librería estándar.
+## Seguridad (resumen)
 
-## Dashboard personalizado
+- Rutas del plugin: `auth:"plugin"` + **solo loopback**.
+- **Origin guard**: solo se atienden peticiones sin `Origin`, con
+  `Origin: null` (iframe sandbox de la Control UI) u orígenes loopback.
+  Un sitio web abierto en el mismo navegador no puede leer ni lanzar jobs.
+- Cabecera `X-Content-Type-Options: nosniff` en todo el prefijo.
+- Las claves API **nunca viajan al navegador**: solo booleanos de presencia.
+- La descarga valida el id del job y que el fichero esté dentro del
+  directorio de jobs (sin path traversal).
+- El id de `jobs.status` se valida en el bridge (formato seguro); no se
+  ejecuta shell nunca (whitelist de flags por tipo de job).
 
-Puedes construir un dashboard con una **selección concreta de widgets** de
-dos formas: desde la CLI con `--widgets` (lista separada por comas) o desde
-código con `WidgetManager.create_widget()` / `WidgetManager.collect_types()`.
+## Solución de problemas
 
-```python
-from youber.dashboard import WidgetManager
-from youber.dashboard.renderer import render_dashboard_html
+- La página no carga → ¿Gateway activa? `openclaw gateway status`.
+- Página antigua/estática → el plugin sirve `dist/` (build de Vite). Si solo
+  ves el HTML de Fase 2, ejecuta `npm ci && npm run build` en el plugin.
+- Errores técnicos → ahora se muestran como mensajes humanos; el detalle
+  queda en los logs de la Gateway (`openclaw gateway logs`).
 
-manager = WidgetManager()
-data = manager.collect_types(["catalog-stats", "scheduled-tasks", "upload-status"])
-html = render_dashboard_html(data)
-Path("custom_dashboard.html").write_text(html, encoding="utf-8")
-```
-
-El orden en el HTML respeta la posición de cada widget (los creados juntos
-siguen el orden de la lista), no el id aleatorio. Ejemplo completo:
-`examples/custom_dashboard.py`.
-
-## Uso desde código
-
-```python
-from youber.dashboard import WidgetManager, create_widget, WidgetType
-from youber.dashboard.renderer import render_dashboard_markdown
-
-manager = WidgetManager()  # carga fuentes por defecto (música, scheduler, reportes)
-widget = create_widget(WidgetType.CATALOG_STATS)
-data = manager.collect(widget)
-print(render_dashboard_markdown([data]))
-```
-
-O con fuentes inyectadas (para tests o fuentes personalizadas):
-
-```python
-manager = WidgetManager(sources={"tracks": [...], "reports": [...], ...})
-```
-
-O crear y recolectar en un solo paso:
-
-```python
-manager = WidgetManager()
-data = manager.collect_types(["catalog-stats", "upload-status", "scheduled-tasks"])
-```
-
-## Modelos
-
-- **`Widget`**: `id`, `type`, `title`, `params`, `position`,
-  `refresh_interval` (s), `enabled`, `created_at`, `updated_at`.
-- **`WidgetData`**: `widget_id`, `type`, `title`, `data` (dict de métricas),
-  `position` (ordena en el dashboard), `rendered_at`.
-
-## Cómo funcionan las métricas
-
-Las funciones de `metrics.py` son **puras**: reciben datos tipados (lista de
-pistas, trabajos, reportes, vídeos) y devuelven dicts. El registro
-(`registry.py`) asocia cada tipo de widget con su métrica y con los nombres
-de las fuentes que necesita; `WidgetManager.collect()` carga esas fuentes y
-las pasa como argumentos.
-
-## Ética
-
-Métricas descriptivas de la propia actividad del usuario. Sin manipular
-métricas ajenas ni inflar nada: el dashboard muestra el estado real del
-ecosistema local.
+![Producción](img/dashboard-production.png)
+![Música](img/dashboard-music.png)
+![Monitorización](img/dashboard-monitor.png)

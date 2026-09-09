@@ -2,7 +2,7 @@
   "id": "youber-dashboard",
   "name": "Youber Dashboard",
   "description": "Panel nativo de Youber en la Control UI",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "activation": {
     "onStartup": true
   },

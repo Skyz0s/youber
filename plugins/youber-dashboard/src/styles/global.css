@@ -194,3 +194,25 @@ input.yb-input, select.yb-select, textarea.yb-input {
   border-radius: 12px; padding: 1.2rem; max-width: 640px; width: 92%;
   max-height: 80vh; overflow: auto;
 }
+.yb-modal-title { margin: 0 0 0.5rem; font-size: 1.05rem; }
+.yb-modal-text { margin: 0 0 0.75rem; color: var(--text, #c9d1d9); }
+.yb-modal-actions { margin-top: 0.75rem; }
+
+.yb-hint {
+  margin-top: 0.25rem; font-size: 0.75rem; color: var(--text-dim);
+  line-height: 1.35; max-width: 34ch;
+}
+
+.yb-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  padding: 0.15rem 0.6rem; font-size: 0.75rem; color: var(--text-dim);
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot.ok { background: var(--green, #3fb950); }
+.dot.off { background: var(--border-strong, #30363d); }
+
+.yb-cols { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+.yb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.yb-stat b { display: block; font-size: 1.4rem; }
+.yb-stat span { color: var(--text-dim); font-size: 0.8rem; }

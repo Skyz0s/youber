@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -23,6 +24,10 @@ from typing import Any
 from youber.api.models import ApiError, JobRecord, JobStatus
 
 DEFAULT_JOBS_DIR = Path.home() / ".youber" / "jobs"
+
+# Ids de job: carácter seguro (alnum + guiones), nunca separadores de ruta
+# ni puntos → anti path-traversal en load_record ("../../x" queda fuera).
+_JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 # Tipos de job y módulos CLI asociados.
 _JOB_TYPES: dict[str, str] = {
@@ -85,6 +90,8 @@ def jobs_dir() -> Path:
 
 
 def _record_path(job_id: str) -> Path:
+    if not isinstance(job_id, str) or not _JOB_ID_RE.match(job_id):
+        raise ApiError(f"Id de job inválido: {job_id!r}")
     return jobs_dir() / f"{job_id}.json"
 
 

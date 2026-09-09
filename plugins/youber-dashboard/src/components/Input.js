@@ -6,6 +6,8 @@ export class YbInput extends LitElement {
     value: { type: String },
     type: { type: String },
     placeholder: { type: String },
+    hint: { type: String },
+    title: { type: String },
   };
 
   createRenderRoot() {
@@ -18,6 +20,8 @@ export class YbInput extends LitElement {
     this.value = "";
     this.type = "text";
     this.placeholder = "";
+    this.hint = "";
+    this.title = "";
   }
 
   _onInput(ev) {
@@ -28,14 +32,16 @@ export class YbInput extends LitElement {
   render() {
     return html`
       <div class="yb-field">
-        ${this.label ? html`<label>${this.label}</label>` : ""}
+        ${this.label ? html`<label title=${this.title || this.hint || this.label}>${this.label}</label>` : ""}
         <input
           class="yb-input"
           type=${this.type}
           .value=${this.value}
           placeholder=${this.placeholder}
+          title=${this.title || this.hint || ""}
           @input=${this._onInput}
         />
+        ${this.hint ? html`<p class="yb-hint">${this.hint}</p>` : ""}
       </div>
     `;
   }

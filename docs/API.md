@@ -60,6 +60,17 @@ stdout+stderr a `<job_dir>/run.log` y actualiza el registro
 Seguridad: los secretos nunca salen en las respuestas (solo presencia
 booleanos); el directorio de jobs se puede redirigir con `YOUBER_JOBS_DIR`.
 
+### Endurecimiento (Fase 4)
+
+- **Ids de job validados**: `jobs.status`/`jobs.history` solo aceptan ids con
+  el formato `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` (nada de `../../` ni
+  separadores de ruta) → imposible leer ficheros fuera de `YOUBER_JOBS_DIR`
+  por path traversal. Los ids que no cumplen devuelven error `ApiError`.
+- **Sin shell nunca**: `jobs.submit` construye el argv con lista blanca por
+  tipo y rechaza valores que empiecen por `-` (anti-inyección de flags).
+- **Sin secretos en respuestas**: solo booleanos de presencia; el dashboard
+  del plugin nunca recibe claves API.
+
 ## Uso como librería
 
 ```python

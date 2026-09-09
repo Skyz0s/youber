@@ -22,6 +22,7 @@ sobre **Playwright**, con:
 - **Bot de Telegram** (control del framework desde el chat: investigación, música, edición, subida)
 - **Programador de tareas** (scheduler: once/daily/weekly/cron + daemon en segundo plano)
 - **Dashboard de métricas** (widgets visuales: catálogo, uso, tareas, actividad)
+- **Dashboard de Control UI** (plugin `youber-dashboard`: 5 páginas, jobs en vivo y descarga de MP4 desde el navegador)
 - **Sandbox de simulaciones** (geolocalización, red, dispositivos)
 - **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva), `youber-research`, `youber-workflow`, `youber-music`, `youber-edit` y `youber-upload`
 
@@ -119,10 +120,19 @@ asyncio.run(main())
 - [Subida a YouTube](docs/UPLOAD.md) — OAuth 2.0 y publicación programada
 - [Bot de Telegram](docs/TELEGRAM.md) — comandos para controlar el framework
 - [Programador de tareas](docs/SCHEDULER.md) — jobs, cron y daemon
-- [Dashboard de métricas](docs/DASHBOARD.md) — widgets en HTML/Markdown/JSON
+- [Métricas CLI](docs/METRICS.md) — widgets en HTML/Markdown/JSON (módulo `youber.dashboard`)
+- [Dashboard (Control UI)](docs/DASHBOARD.md) — guía de uso del tab Youber
+- [Plugin youber-dashboard](docs/PLUGIN.md) — instalación y configuración del plugin
 - [Guía de laboratorio](docs/RESEARCH.md) — experimentos observacionales
 - [Ejemplos](docs/EXAMPLES.md) — guía de los ejemplos
 - [Publicación en PyPI](docs/PUBLISHING.md) — cómo publicar el paquete
+
+## Capturas (dashboard de Control UI)
+
+![Dashboard](docs/img/dashboard-home.png)
+![Producción](docs/img/dashboard-production.png)
+![Música](docs/img/dashboard-music.png)
+![Monitorización](docs/img/dashboard-monitor.png)
 
 ## Calidad
 

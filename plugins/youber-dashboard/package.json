@@ -1,7 +1,7 @@
 {
   "name": "@youber/youber-dashboard",
-  "version": "0.3.0",
-  "description": "Native Youber dashboard tab for the OpenClaw Control UI (Fase 3: UI Vite+Lit)",
+  "version": "0.4.0",
+  "description": "Native Youber dashboard tab for the OpenClaw Control UI (Fase 4: hardened)",
   "type": "module",
   "main": "./index.js",
   "exports": {

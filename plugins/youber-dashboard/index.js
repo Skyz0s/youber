@@ -1,26 +1,55 @@
-// Youber Dashboard — Fase 2 (plugin runtime + bridge)
+// Youber Dashboard — plugin runtime (Fases 2-4)
 //
 // Registra el tab "Youber" en la Control UI y un prefijo HTTP auth:"plugin"
 // que enruta:
 //
-//   GET  /youber-dashboard/            → UI estática (src/routes/ui.js)
+//   GET  /youber-dashboard/            → UI (dist/ de Vite, fallback static/)
 //   GET  /youber-dashboard/ping        → pong
 //   GET  /youber-dashboard/api/<ruta>  → proxy al bridge (src/routes/api.js)
 //   POST /youber-dashboard/api/jobs    → jobs.submit vía bridge
+//   GET  /youber-dashboard/api/jobs/download?id= → artefacto de un job
 //
-// El tab se renderiza en un iframe con sandbox (sin token de la UI), por lo
-// que el contenido se sirve con auth:"plugin" + guard de loopback; las
-// respuestas llevan CORS para el origen opaco del iframe.
+// Modelo de seguridad (Fase 4):
+//  - auth:"plugin": la ruta NO pide token de la Gateway (el iframe del tab va
+//    con sandbox y origen opaco, sin token). El acceso se limita a loopback.
+//  - Comprobación de Origin: solo se sirven peticiones SIN cabecera Origin
+//    (curl, misma-origen) o con "Origin: null" (iframe sandbox de la Control
+//    UI). Cualquier otro origen (un sitio web abierto en el mismo navegador)
+//    recibe 403 sin cabeceras CORS → no puede leer respuestas ni lanzar jobs
+//    contra 127.0.0.1 (drive-by localhost).
+//  - Las respuestas llevan CORS (ACAO *) solo para orígenes permitidos.
+//  - X-Content-Type-Options: nosniff en todo el prefijo.
 
 import { registerTab } from "./src/tab.js";
 import { handleApi } from "./src/routes/api.js";
 import { handleUi } from "./src/routes/ui.js";
 
-/** Cabeceras CORS amables para el iframe con sandbox (origen opaco). */
+/** Cabeceras CORS para el iframe con sandbox (origen opaco). */
 function corsHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+}
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+/**
+ * Un origen externo (sitio web) no debe poder hablar con 127.0.0.1.
+ * Permitido: sin Origin (curl/misma-origen), "null" (iframe sandbox de la
+ * Control UI) u orígenes loopback (p.ej. abrir el dashboard en una pestaña
+ * directa http://127.0.0.1:<puerto>). Cualquier otro origen → 403 sin CORS.
+ */
+function originAllowed(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  if (origin === "null") return true;
+  try {
+    const host = new URL(origin).hostname;
+    return LOOPBACK_HOSTS.has(host);
+  } catch {
+    return false;
+  }
 }
 
 /** Acepta solo peticiones loopback (la Control UI corre en esta máquina). */
@@ -32,6 +61,7 @@ function isLoopback(req) {
 function sendText(res, status, text, contentType = "text/plain; charset=utf-8") {
   res.statusCode = status;
   res.setHeader("Content-Type", contentType);
+  res.setHeader("X-Content-Type-Options", "nosniff");
   res.end(text);
 }
 
@@ -39,7 +69,7 @@ export default {
   id: "youber-dashboard",
   name: "Youber Dashboard",
   description: "Panel nativo de Youber en la Control UI",
-  version: "0.3.0",
+  version: "0.4.0",
   register(api) {
     registerTab(api);
 
@@ -48,6 +78,10 @@ export default {
       auth: "plugin",
       match: "prefix",
       handler: async (req, res) => {
+        if (!originAllowed(req)) {
+          sendText(res, 403, "forbidden: origin not allowed");
+          return true;
+        }
         corsHeaders(res);
         if (req.method === "OPTIONS") {
           res.statusCode = 204;
@@ -86,7 +120,7 @@ export default {
     });
 
     api.logger.info(
-      "Youber Dashboard (Fase 3): tab + UI Vite/Lit (dist) + proxy /api/* → youber.api"
+      "Youber Dashboard (Fase 4): tab + UI Vite/Lit (dist) + proxy /api/* → youber.api (hardened)"
     );
   },
 };

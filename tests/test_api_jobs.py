@@ -112,6 +112,29 @@ async def test_status_job_desconocido(tmp_path: Path, monkeypatch):
     assert "no encontrado" in envelope["error"]
 
 
+async def test_status_rechaza_id_con_traversal(tmp_path: Path, monkeypatch):
+    """Ids tipo '../../x' no pueden salir del directorio de jobs."""
+    monkeypatch.setenv("YOUBER_JOBS_DIR", str(tmp_path))
+    from youber.api.server import handle
+
+    for evil in ("../../etc/passwd", "..%2F..", "a/b", "\\evil", "....//x"):
+        envelope = await handle("jobs.status", {"id": evil})
+        assert envelope["ok"] is False
+        assert "inválido" in envelope["error"], evil
+
+
+def test_record_path_rechaza_ids_peligrosos(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("YOUBER_JOBS_DIR", str(tmp_path))
+    from youber.api.routes.jobs import _record_path
+
+    for evil in ("..", ".", "../../x", "a/b", "a\\b", "a..b/../c", ""):
+        with pytest.raises(ApiError, match="inválido"):
+            _record_path(evil)
+    # Ids legítimos (hex del runner y de ejemplo) pasan.
+    assert _record_path("00f21a2a637c").name == "00f21a2a637c.json"
+    assert _record_path("jobtest").name == "jobtest.json"
+
+
 # ---------------------------------------------------------------------------
 # run_job: subproceso real trivial (rápido y sin red)
 # ---------------------------------------------------------------------------

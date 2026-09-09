@@ -4,8 +4,11 @@ import "./Spinner.js";
 
 const TERMINAL = new Set(["done", "failed"]);
 const POLL_MS = 2000;
+const BACKOFF_MS = 5000; // tras 60 s de ejecución, espaciar a 5 s
 
-// Polling en tiempo real del estado de un job (cada 2 s) + log + descarga.
+// Polling en tiempo real del estado de un job + log + descarga.
+// Fase 4: con backoff (2 s → 5 s si el job va largo) y pausa cuando la
+// pestaña no es visible (no malgastamos peticiones en segundo plano).
 export class YbJobStatus extends LitElement {
   static properties = {
     jobId: { type: String },
@@ -24,18 +27,29 @@ export class YbJobStatus extends LitElement {
     this.showLog = false;
     this._timer = null;
     this._error = "";
+    this._startedAt = null;
+    this._onVisible = () => {
+      if (!document.hidden && this.jobId && !this._timer) this._poll();
+    };
   }
 
   updated(changed) {
     if (changed.has("jobId") && this.jobId) {
       this._error = "";
       this.job = null;
+      this._startedAt = Date.now();
       this._poll();
     }
   }
 
+  connectedCallback() {
+    super.connectedCallback();
+    document.addEventListener("visibilitychange", this._onVisible);
+  }
+
   disconnectedCallback() {
     super.disconnectedCallback();
+    document.removeEventListener("visibilitychange", this._onVisible);
     this._stop();
   }
 
@@ -46,6 +60,11 @@ export class YbJobStatus extends LitElement {
     }
   }
 
+  _nextDelay() {
+    const elapsed = Date.now() - (this._startedAt || Date.now());
+    return elapsed > 60_000 ? BACKOFF_MS : POLL_MS;
+  }
+
   async _poll() {
     if (!this.jobId) return;
     try {
@@ -53,14 +72,16 @@ export class YbJobStatus extends LitElement {
       this.job = job;
       if (TERMINAL.has(job.status)) {
         this._stop();
-        this.dispatchEvent(new CustomEvent("yb-job-done", { detail: { job }, bubbles: true, composed: true }));
+        this.dispatchEvent(
+          new CustomEvent("yb-job-done", { detail: { job }, bubbles: true, composed: true })
+        );
         return;
       }
     } catch (err) {
       this._error = err.message;
     }
-    if (this.isConnected) {
-      this._timer = setTimeout(() => this._poll(), POLL_MS);
+    if (this.isConnected && !document.hidden) {
+      this._timer = setTimeout(() => this._poll(), this._nextDelay());
     }
   }
 

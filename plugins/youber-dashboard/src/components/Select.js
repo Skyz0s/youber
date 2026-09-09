@@ -6,6 +6,8 @@ export class YbSelect extends LitElement {
     label: { type: String },
     options: { type: Array },
     value: { type: String },
+    hint: { type: String },
+    title: { type: String },
   };
 
   createRenderRoot() {
@@ -17,6 +19,8 @@ export class YbSelect extends LitElement {
     this.label = "";
     this.options = [];
     this.value = "";
+    this.hint = "";
+    this.title = "";
   }
 
   _onChange(ev) {
@@ -27,12 +31,13 @@ export class YbSelect extends LitElement {
   render() {
     return html`
       <div class="yb-field">
-        ${this.label ? html`<label>${this.label}</label>` : ""}
-        <select class="yb-select" .value=${this.value} @change=${this._onChange}>
+        ${this.label ? html`<label title=${this.title || this.hint || this.label}>${this.label}</label>` : ""}
+        <select class="yb-select" .value=${this.value} title=${this.title || this.hint || ""} @change=${this._onChange}>
           ${this.options.map(
             (opt) => html`<option value=${opt.value} ?selected=${String(opt.value) === String(this.value)}>${opt.label}</option>`
           )}
         </select>
+        ${this.hint ? html`<p class="yb-hint">${this.hint}</p>` : ""}
       </div>
     `;
   }
