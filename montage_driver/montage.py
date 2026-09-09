@@ -39,13 +39,18 @@ from pathlib import Path
 
 DRIVER_DIR = Path(__file__).resolve().parent
 
-# Palabras vacias (en/es) que no aportan a la busqueda de footage.
+# Palabras vacias (en/es) que no aportan a la busqueda de footage. Incluye
+# el relleno de las plantillas de prompt del adapter (documentary/explainer)
+# para que el topic real del usuario sea el que genere las queries.
 _STOPWORDS = {
-    "a", "about", "an", "and", "are", "as", "at", "be", "by", "can", "con",
-    "create", "de", "del", "do", "el", "en", "for", "from", "generate", "hacer",
-    "how", "in", "is", "la", "las", "lo", "los", "make", "making", "montage",
-    "of", "on", "or", "para", "que", "se", "the", "to", "tutorial", "un", "una",
-    "video", "what", "why", "with", "y",
+    "a", "about", "an", "and", "animated", "are", "as", "at", "be", "by",
+    "can", "clip", "con", "create", "de", "del", "do", "documentary", "el",
+    "elegiac", "en", "explainer", "footage", "for", "from", "generate",
+    "generated", "hacer", "how", "in", "is", "la", "las", "lo", "los",
+    "make", "making", "mixing", "montage", "music", "narration", "new",
+    "no", "of", "on", "only", "or", "para", "que", "real", "se", "second",
+    "seconds", "the", "to", "tone", "tutorial", "un", "una", "use", "video",
+    "visuals", "what", "why", "with", "y",
 }
 
 # Keywords "de sabor" por pipeline: complementan al topic real en la busqueda.
