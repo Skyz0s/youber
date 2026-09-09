@@ -25,3 +25,6 @@ src/*.egg-info/
 
 # Clon de OpenMontage para validación e2e del driver de montaje (no es parte del repo)
 /OpenMontage/
+
+# Salidas generadas por producciones locales (youber-produce, workflow)
+/output/
