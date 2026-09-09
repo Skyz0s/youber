@@ -109,3 +109,23 @@ class MusicLibrary:
     def close(self) -> None:
         """Cierra el catálogo (no-op; las conexiones se abren por operación)."""
         self.db.close()
+
+
+def find_track(library: MusicLibrary, query: str) -> Track | None:
+    """Resuelve una pista del catálogo por ID exacto o por texto libre.
+
+    Args:
+        library: catálogo abierto (:class:`MusicLibrary`).
+        query: ID de pista o texto (título/artista/género).
+
+    Returns:
+        La pista encontrada, o ``None`` si no hay coincidencias.
+    """
+    query = (query or "").strip()
+    if not query:
+        return None
+    exact = library.get(query)
+    if exact is not None:
+        return exact
+    matches = library.search(text=query)
+    return matches[0] if matches else None

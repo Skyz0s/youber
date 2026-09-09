@@ -27,7 +27,11 @@ from pathlib import Path
 
 from youber.sync.aligner import LyricsAligner
 from youber.sync.lyrics import LyricsExtractor
-from youber.sync.renderer import SubtitleRenderer, SubtitleStyle
+from youber.sync.renderer import (
+    SUBTITLE_STYLE_PRESETS,
+    SubtitleRenderer,
+    subtitle_style_preset,
+)
 from youber.sync.timestamps import SyncError, serialize
 
 _FORMATS = ("lrc", "srt", "json", "txt")
@@ -96,6 +100,12 @@ def build_parser() -> argparse.ArgumentParser:
     burn.add_argument("-o", "--output", default=None, help="MP4 de salida")
     burn.add_argument("--font", default=None, help="Fuente (default: Arial en Windows)")
     burn.add_argument("--font-size", type=int, default=None, help="Tamaño de fuente")
+    burn.add_argument(
+        "--style",
+        choices=sorted(SUBTITLE_STYLE_PRESETS),
+        default="clean",
+        help="Estilo de subtítulos (default: clean)",
+    )
 
     return parser
 
@@ -164,7 +174,11 @@ async def _cmd_align(args: argparse.Namespace) -> int:
 
 
 async def _cmd_burn(args: argparse.Namespace) -> int:
-    style = SubtitleStyle(font_name=args.font, font_size=args.font_size)
+    style = subtitle_style_preset(args.style)
+    if args.font:
+        style = style.model_copy(update={"font_name": args.font})
+    if args.font_size:
+        style = style.model_copy(update={"font_size": args.font_size})
     result = await SubtitleRenderer().render(
         args.video, args.lyrics, output=args.output, style=style
     )

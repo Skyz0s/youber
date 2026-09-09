@@ -40,6 +40,8 @@ class SubtitleStyle(BaseModel):
     outline: int = Field(default=2, ge=0)
     shadow: int = Field(default=0, ge=0)
     bold: bool = False
+    border_style: int = Field(default=1, ge=1, le=3)  # 1=contorno, 3=caja
+    back_colour: str | None = None  # fondo de la caja cuando BorderStyle=3
 
 
 class RenderResult(BaseModel):
@@ -92,6 +94,39 @@ def resolve_style(style: SubtitleStyle, video_height: int) -> SubtitleStyle:
     )
 
 
+# ---------------------------------------------------------------------------
+# Presets de estilo
+# ---------------------------------------------------------------------------
+
+
+SUBTITLE_STYLE_PRESETS: dict[str, SubtitleStyle] = {
+    "clean": SubtitleStyle(),  # blanco con contorno negro (por defecto)
+    "classic": SubtitleStyle(
+        primary_color="&H0000FFFF",  # amarillo (AABBGGRR)
+        outline_color="&H00000000",
+    ),
+    "box": SubtitleStyle(
+        border_style=3,
+        back_colour="&H80000000",  # caja negra semitransparente
+        outline=0,
+        shadow=0,
+    ),
+    "minimal": SubtitleStyle(outline=0, shadow=1),
+}
+
+
+def subtitle_style_preset(name: str | None = None) -> SubtitleStyle:
+    """Devuelve una copia del preset de estilo pedido (default: ``clean``)."""
+    key = (name or "clean").strip().lower()
+    preset = SUBTITLE_STYLE_PRESETS.get(key)
+    if preset is None:
+        raise SyncError(
+            f"Estilo de subtítulos desconocido: {name!r}. "
+            f"Válidos: {', '.join(sorted(SUBTITLE_STYLE_PRESETS))}"
+        )
+    return preset.model_copy(deep=True)
+
+
 def build_subtitles_filter(
     srt_filename: str,
     style: SubtitleStyle | None = None,
@@ -121,6 +156,10 @@ def build_subtitles_filter(
     if resolved.font_name is None:
         # Sin fuente explícita: libass usará su default (fontconfig).
         force_parts = [p for p in force_parts if not p.startswith("FontName=")]
+    if resolved.border_style != 1:
+        force_parts.append(f"BorderStyle={resolved.border_style}")
+    if resolved.back_colour is not None:
+        force_parts.append(f"BackColour={resolved.back_colour}")
 
     parts = [
         f"subtitles=filename='{_escape_filter_value(srt_filename)}'",

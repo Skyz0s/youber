@@ -17,6 +17,7 @@ youber-produce --pattern <youtube-url|video.mp4> [--mode remix|inspired|hybrid]
                [--mood <mood> | --audio <file.mp3>] [--pipeline <name>]
                [--playbook <name>] [--budget <usd>] [-o salida.mp4]
 youber-produce --topic "<tema libre>" [--pipeline <name>] [-o salida.mp4]
+youber-produce --topic "Python tutorial" --track "<canción>" --sync -o salida.mp4
 youber-produce --install-driver
 ```
 
@@ -32,6 +33,9 @@ youber-produce --install-driver   # instala montage_driver/montage.py en el clon
 - `--topic` produce sin vídeo patrón (no hace falta analizar nada).
 - `--install-driver` copia el driver incluido en el repo
   (`montage_driver/montage.py`) a la raíz del clon de OpenMontage y sale.
+- `--track <id|título> --sync`: la canción del catálogo pasa a ser la banda
+  sonora del montaje y su letra se sincroniza y quema como subtítulos
+  (`--style clean|classic|box|minimal`, `--lyrics`, `--whisper`).
 
 ## Adapter OpenMontage — contrato de integración
 

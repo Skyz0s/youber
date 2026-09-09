@@ -136,6 +136,43 @@ Ejemplos:
         help="Instala el driver montage.py incluido en el clon de OpenMontage y sale",
     )
 
+    # Sincronización de letras (--sync)
+    parser.add_argument(
+        "--track",
+        default=None,
+        help="Canción del catálogo youber.music: ID o texto (título/artista)",
+    )
+    parser.add_argument(
+        "--library",
+        default="music",
+        help="Directorio del catálogo de música (default: music)",
+    )
+    parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Sincroniza la letra de la canción (--track) y la quema como subtítulos",
+    )
+    parser.add_argument(
+        "--lyrics",
+        default=None,
+        help="Fichero de letra .lrc/.txt/.srt (default: <canción>.lrc junto al audio)",
+    )
+    parser.add_argument(
+        "--whisper",
+        action="store_true",
+        help="Transcribe con Whisper si no hay letra (requiere faster-whisper)",
+    )
+    parser.add_argument(
+        "--model",
+        default="small",
+        help="Modelo Whisper para --whisper (default: small)",
+    )
+    parser.add_argument(
+        "--style",
+        default="clean",
+        help="Estilo de subtítulos: clean|classic|box|minimal (default: clean)",
+    )
+
     # Objetivo (opcional, si se quiere forzar duración/resolución)
     parser.add_argument(
         "--duration",
@@ -185,6 +222,62 @@ def _parse_resolution(res_str: str | None) -> tuple[int, int] | None:
         raise argparse.ArgumentTypeError(
             f"Resolución inválida: {res_str}. Usa WxH (ej: 1920x1080)"
         ) from None
+
+
+async def _apply_sync_to_video(
+    args: argparse.Namespace, video_path: Path
+) -> tuple[Path, float, tuple[int, int]] | None:
+    """Aplica --sync: canción del catálogo como banda sonora + subtítulos.
+
+    El montaje de OpenMontage sale sin pista de audio: la canción pasa a ser
+    la banda sonora y los subtítulos se sincronizan contra SU audio. El
+    fichero ``video_path`` se sustituye por el resultado final.
+    """
+    if not getattr(args, "track", None):
+        logger.error(
+            "--sync requiere --track <id o título> (canción del catálogo youber.music)"
+        )
+        return None
+
+    from youber.music.library import MusicLibrary, find_track
+    from youber.sync.pipeline import sync_video_with_track
+    from youber.sync.renderer import subtitle_style_preset
+
+    library = MusicLibrary(getattr(args, "library", "music"))
+    try:
+        track = find_track(library, args.track)
+    finally:
+        library.close()
+    if track is None:
+        logger.error(
+            f"Pista no encontrada en el catálogo: {args.track!r} "
+            "(revisa --library; escanea con youber-music scan)"
+        )
+        return None
+
+    logger.info(
+        "🎤 Sincronizando letra de {!r} — {}",
+        track.title,
+        track.artist or "artista desconocido",
+    )
+    result = await sync_video_with_track(
+        video_path,
+        track.file_path,
+        output=video_path,  # sustituye el montaje mudo por el final sincronizado
+        lyrics_file=Path(args.lyrics) if getattr(args, "lyrics", None) else None,
+        whisper=bool(getattr(args, "whisper", False)),
+        model=getattr(args, "model", "small"),
+        style=subtitle_style_preset(getattr(args, "style", "clean")),
+        add_audio=True,
+    )
+    logger.success(
+        "✅ Vídeo sincronizado: {} | {:.1f}s | {}x{}",
+        result.output_path,
+        result.duration,
+        result.resolution[0],
+        result.resolution[1],
+    )
+    return result.output_path, result.duration, result.resolution
 
 
 async def _run_produce(args: argparse.Namespace) -> int:
@@ -294,12 +387,21 @@ async def _run_produce(args: argparse.Namespace) -> int:
         logger.error(f"Producción falló: {result.error}")
         return 1
 
-    # Éxito
+    # Sincronización de letras (--sync) sobre el montaje final.
     out_path = result.output_path
+    duration = result.duration
+    resolution = result.resolution
+    if out_path and getattr(args, "sync", False):
+        synced = await _apply_sync_to_video(args, out_path)
+        if synced is None:
+            return 1
+        out_path, duration, resolution = synced
+
+    # Éxito
     if out_path:
         logger.success(
             f"✅ Vídeo generado: {out_path} | "
-            f"{result.duration:.1f}s | {result.resolution[0]}x{result.resolution[1]}"
+            f"{duration:.1f}s | {resolution[0]}x{resolution[1]}"
         )
         if not args.output:
             print(str(out_path))  # Para piping en scripts

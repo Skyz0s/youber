@@ -36,6 +36,7 @@ from rich.table import Table
 from youber.audio._ffmpeg import run_command
 from youber.audio.editor import add_background_music
 from youber.console import ensure_utf8_console
+from youber.music.library import MusicLibrary, find_track
 from youber.research.channel_analyzer import ChannelAnalyzer
 from youber.research.data_models import ChannelData, VideoData
 from youber.research.exporters import (
@@ -44,6 +45,8 @@ from youber.research.exporters import (
     generate_channel_markdown,
 )
 from youber.research.patterns import channel_overview
+from youber.sync.pipeline import sync_video_with_track
+from youber.sync.renderer import subtitle_style_preset
 
 console = Console()
 
@@ -87,6 +90,57 @@ def build_parser() -> argparse.ArgumentParser:
         "--demo",
         action="store_true",
         help="Canal sintético (sin red) + vídeo/música generados con FFmpeg",
+    )
+    parser.add_argument(
+        "--track",
+        default=None,
+        help="Canción del catálogo youber.music (ID o texto): música y letra",
+    )
+    parser.add_argument(
+        "--library",
+        default="music",
+        help="Directorio del catálogo de música (default: music)",
+    )
+    parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Sincroniza la letra de la canción y quema subtítulos en el vídeo final",
+    )
+    parser.add_argument(
+        "--lyrics",
+        default=None,
+        help="Fichero de letra .lrc/.txt/.srt (default: <canción>.lrc junto al audio)",
+    )
+    parser.add_argument(
+        "--whisper",
+        action="store_true",
+        help="Transcribe con Whisper si no hay letra (requiere faster-whisper)",
+    )
+    parser.add_argument(
+        "--model",
+        default="small",
+        help="Modelo Whisper para --whisper (default: small)",
+    )
+    parser.add_argument(
+        "--style",
+        default="clean",
+        help="Estilo de subtítulos: clean|classic|box|minimal (default: clean)",
+    )
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="Sube el vídeo final a YouTube (requiere auth: youber-upload auth)",
+    )
+    parser.add_argument(
+        "--upload-title",
+        default=None,
+        help="Título para la subida (default: nombre del canal + resumen)",
+    )
+    parser.add_argument(
+        "--privacy",
+        choices=("private", "unlisted", "public"),
+        default="private",
+        help="Privacidad de la subida (default: private)",
     )
     return parser
 
@@ -278,6 +332,16 @@ async def run_workflow(
     duration: int = DEFAULT_DURATION,
     mode: str = "html",
     demo: bool = False,
+    track: str | None = None,
+    library_dir: str = "music",
+    sync_lyrics: bool = False,
+    lyrics_file: str | None = None,
+    whisper: bool = False,
+    model: str = "small",
+    style: str = "clean",
+    upload: bool = False,
+    upload_title: str | None = None,
+    privacy: str = "private",
 ) -> dict[str, Any]:
     """Ejecuta el flujo completo de investigación + edición.
 
@@ -327,11 +391,27 @@ async def run_workflow(
         await generate_test_video(str(video), duration)
     console.print(f"   Vídeo: [green]{video}[/]")
 
-    # Paso 5: música de fondo
+    # Paso 5: música de fondo (local > catálogo > generada)
     console.print(Panel.fit("[bold cyan]Paso 5/6 · Música de fondo[/]", border_style="cyan"))
+    track_obj: Any = None
     if music_path:
         music = Path(music_path)
         console.print(f"🎵 Música local: [bold]{music}[/]")
+    elif track:
+        console.print(f"🔎 Buscando en el catálogo: [bold]{track}[/]")
+        library = MusicLibrary(library_dir)
+        try:
+            track_obj = find_track(library, track)
+        finally:
+            library.close()
+        if track_obj is None:
+            raise RuntimeError(
+                f"Pista no encontrada en el catálogo {library_dir!r}: {track!r}. "
+                "Escanea antes con: youber-music --library <dir> scan"
+            )
+        music = Path(track_obj.file_path)
+        artist = f" — {track_obj.artist}" if track_obj.artist else ""
+        console.print(f"🎵 Del catálogo: [bold]{track_obj.title}{artist}[/]")
     else:
         music = out / "test_music.mp3"
         console.print(f"🎵 Generando música de prueba (FFmpeg): [bold]{music}[/]")
@@ -342,14 +422,16 @@ async def run_workflow(
     console.print(Panel.fit("[bold cyan]Paso 6/6 · Edición y exportación[/]", border_style="cyan"))
     final_video = out / f"{_slug(channel.name)}_final.mp4"
     console.print(f"🎛️  Añadiendo música de fondo → [bold]{final_video}[/]")
-    await add_background_music(
-        str(video),
-        str(music),
-        str(final_video),
-        volume=0.3,
-        fade_in=2,
-        fade_out=2,
-    )
+    mix_kwargs: dict[str, Any] = {"volume": 0.3, "fade_in": 2, "fade_out": 2}
+    if sync_lyrics and (track_obj is not None or music_path):
+        # La canción es la banda sonora principal: la letra debe oírse.
+        mix_kwargs = {
+            "volume": 1.0,
+            "fade_in": 0.0,
+            "fade_out": 0.0,
+            "original_audio_volume": 0.0,
+        }
+    await add_background_music(str(video), str(music), str(final_video), **mix_kwargs)
 
     stem = _slug(channel.name)
     json_path = export_channel(channel, out / f"{stem}.json", fmt="json")
@@ -358,8 +440,66 @@ async def run_workflow(
     md_path.write_text(generate_channel_markdown(channel), encoding="utf-8")
 
     console.print(f"✅ Vídeo final: [bold green]{final_video}[/]")
+
+    # Paso 7 (opcional): letras sincronizadas sobre el vídeo final
+    upload_url: str | None = None
+    if sync_lyrics:
+        audio_source = (
+            Path(track_obj.file_path)
+            if track_obj is not None
+            else (Path(music_path) if music_path else None)
+        )
+        if audio_source is None:
+            raise RuntimeError(
+                "--sync requiere --track (canción del catálogo) o --music"
+            )
+        console.print(
+            Panel.fit(
+                f"[bold cyan]Paso 7/7 · Letras sincronizadas (estilo '{style}')[/]",
+                border_style="cyan",
+            )
+        )
+        console.print(f"🎤 Sincronizando letra contra: [bold]{audio_source}[/]")
+        sync_result = await sync_video_with_track(
+            final_video,
+            audio_source,
+            output=final_video,
+            lyrics_file=Path(lyrics_file) if lyrics_file else None,
+            whisper=whisper,
+            model=model,
+            style=subtitle_style_preset(style),
+            add_audio=False,  # la canción ya está mezclada en el vídeo
+        )
+        final_video = Path(sync_result.output_path)
+        console.print(
+            f"🎤 Subtítulos quemados (estilo {style}) → [bold green]{final_video}[/]"
+        )
+
+    # Paso 8 (opcional): subida a YouTube
+    if upload:
+        console.print(
+            Panel.fit("[bold cyan]Paso 8/8 · Subida a YouTube[/]", border_style="cyan")
+        )
+        hashtags = [
+            entry["hashtag"] for entry in (insights.get("top_hashtags") or [])
+        ][:5]
+        title = upload_title or f"{channel.name} · resumen automático (youber)"
+        description = (
+            f"Resumen del canal {channel.name} generado con youber-workflow.\n"
+            f"{channel.url or ''}\n"
+            + (("# " + " #".join(hashtags)) if hashtags else "")
+        )
+        upload_url = await _upload_video(
+            final_video,
+            title=title,
+            description=description,
+            tags=hashtags,
+            privacy=privacy,
+        )
+        console.print(f"🚀 Subido: [bold]{upload_url}[/] (privacidad: {privacy})")
+
     console.print(f"📄 Exportados: {json_path.name}, {csv_path.name}, {md_path.name}")
-    return {
+    result: dict[str, Any] = {
         "channel": channel.name,
         "videos": len(channel.videos),
         "video": str(video),
@@ -369,6 +509,45 @@ async def run_workflow(
         "csv": str(csv_path),
         "markdown": str(md_path),
     }
+    if sync_lyrics:
+        result["synced"] = True
+        result["subtitles_style"] = style
+    if upload_url:
+        result["upload_url"] = upload_url
+    return result
+
+
+async def _upload_video(
+    video_path: str | Path,
+    *,
+    title: str,
+    description: str = "",
+    tags: list[str] | None = None,
+    privacy: str = "private",
+) -> str:
+    """Sube un vídeo a YouTube con la API oficial (requiere auth previa).
+
+    Raises:
+        RuntimeError: si no hay credenciales (ejecuta ``youber-upload auth``).
+    """
+    from youber.upload.auth import YouTubeAuth
+    from youber.upload.metadata import PrivacyStatus, VideoMetadata
+    from youber.upload.youtube import YouTubeUploader
+
+    auth = YouTubeAuth()
+    if not auth.has_token():
+        raise RuntimeError(
+            "No hay credenciales de YouTube. Ejecuta primero: youber-upload auth"
+        )
+    metadata = VideoMetadata(
+        title=title,
+        description=description,
+        tags=tags or [],
+        privacy_status=PrivacyStatus(privacy),
+    )
+    resource = await YouTubeUploader(auth).upload_video(video_path, metadata)
+    video_id = (resource or {}).get("id")
+    return YouTubeUploader.get_video_url(video_id) if video_id else "(sin id)"
 
 
 def main() -> None:
@@ -386,6 +565,16 @@ def main() -> None:
                 duration=args.duration,
                 mode="api" if args.api else "html",
                 demo=args.demo,
+                track=args.track,
+                library_dir=args.library,
+                sync_lyrics=args.sync,
+                lyrics_file=args.lyrics,
+                whisper=args.whisper,
+                model=args.model,
+                style=args.style,
+                upload=args.upload,
+                upload_title=args.upload_title,
+                privacy=args.privacy,
             )
         )
     except Exception as exc:

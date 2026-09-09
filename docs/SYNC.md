@@ -71,6 +71,32 @@ Formatos en `youber.sync.timestamps` (puro, offline): `parse_lrc/parse_srt/
 parse_txt/parse_json`, `parse_lyrics_file`, `serialize(doc, "lrc|srt|json|txt")`,
 modelos `LyricsDocument`/`SyncLine` (pydantic v2).
 
+## Integración en producción
+
+Los dos flujos de producción aceptan letras sincronizadas sobre la canción del
+catálogo (resolución por ID o texto: ``youber.music.library.find_track``):
+
+```bash
+# youber-produce: el montaje sale sin audio → la canción es la banda sonora
+youber-produce --topic "Python tutorial" --track "Mi canción" --sync -o final.mp4
+
+# youber-workflow: la canción se mezcla como música de fondo principal
+youber-workflow --channel @python --track "Mi canción" --sync --upload
+```
+
+- La letra se busca como fichero junto a la canción (`<canción>.lrc/.srt/
+  .json/.txt`), se puede pasar explícita con `--lyrics <fichero>`, o
+  transcribir con `--whisper`.
+- `--style clean|classic|box|minimal` elige el estilo de subtítulos
+  (presets en `youber.sync.renderer.SUBTITLE_STYLE_PRESETS`);
+  `--font`/`--font-size` lo afinan.
+- `youber-workflow --upload` sube el vídeo final a YouTube con la API
+  oficial (privado por defecto; requiere `youber-upload auth` previo).
+- Orquestación: `youber.sync.pipeline.sync_video_with_track()` — sustituye
+  el audio si el vídeo no tiene pista (`add_audio=True`, caso produce) o
+  solo quema subtítulos si ya contiene la canción (`add_audio=False`, caso
+  workflow).
+
 ## Nota ética / licencias
 
 - **Usa letras que poseas o con licencia** (ficheros .lrc/.txt propios) o
