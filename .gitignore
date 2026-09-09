@@ -22,3 +22,6 @@ dist/
 
 # Metadata de instalaciÃ³n editable
 src/*.egg-info/
+
+# Clon de OpenMontage para validación e2e del driver de montaje (no es parte del repo)
+/OpenMontage/

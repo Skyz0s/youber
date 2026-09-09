@@ -188,6 +188,11 @@ class OpenMontageAdapter:
             if plan.output_path is not None
             else self.project_dir / "output"
         )
+        if not output_dir.is_absolute():
+            # El driver corre con cwd=OpenMontage: las rutas relativas deben
+            # resolverse contra el proyecto, no contra el clon.
+            output_dir = self.project_dir / output_dir
+        output_dir = output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info("🎬 Produciendo con OpenMontage: {} (pipeline={})", topic, plan.pipeline)
@@ -288,6 +293,16 @@ class OpenMontageAdapter:
         """
         if not self.available():
             raise OpenMontageError(self.describe())
+
+        output_dir = Path(output_dir)
+        if not output_dir.is_absolute():
+            output_dir = self.project_dir / output_dir
+        output_dir = output_dir.resolve()
+        if output_file is not None:
+            output_file = Path(output_file)
+            if not output_file.is_absolute():
+                output_file = self.project_dir / output_file
+            output_file = output_file.resolve()
 
         driver = self.driver or Path("montage.py")
         cmd: list[str] = [

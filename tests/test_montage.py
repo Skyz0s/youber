@@ -155,6 +155,23 @@ async def test_produce_ok_con_output_path(tmp_path: Path):
     assert out_file.exists()
 
 
+async def test_produce_ok_con_output_path_relativo(tmp_path: Path):
+    """Rutas relativas se resuelven contra el proyecto, no contra el clon.
+
+    Regresión: el driver corre con cwd=OpenMontage; si el adaptador pasaba
+    una ruta de salida relativa (p.ej. ``output/out.mp4``), el MP4 acababa
+    en el clon y el adaptador fallaba con "no escribió el archivo esperado".
+    """
+    _make_fake_clone(tmp_path)
+    adapter = OpenMontageAdapter(project_dir=tmp_path)
+    result = await adapter.produce(_make_plan(output_path=Path("output/mi_video.mp4")))
+    assert result.success is True
+    assert result.output_path is not None
+    assert result.output_path.is_absolute()
+    assert result.output_path == (tmp_path / "output" / "mi_video.mp4").resolve()
+    assert result.output_path.exists()
+
+
 async def test_produce_sin_clon_devuelve_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("OPENMONTAGE_DIR", raising=False)
     adapter = OpenMontageAdapter(project_dir=tmp_path)
