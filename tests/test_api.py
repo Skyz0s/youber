@@ -295,3 +295,51 @@ def test_server_modo_subproceso_params_invalidos():
     envelope = json.loads(proc.stdout)
     assert envelope["ok"] is False
     assert "JSON" in envelope["error"]
+
+
+def test_server_modo_subproceso_unicode_log(tmp_path: Path, monkeypatch):
+    """Regresión: logs con emojis/unicode no deben romper el modo subproceso.
+
+    En Windows el stdout por defecto es cp1252; el bridge fuerza UTF-8 al
+    imprimir el JSON (evita UnicodeEncodeError que rompía el proxy HTTP).
+    """
+    import os
+
+    from youber.api.models import JobRecord, JobStatus
+    from youber.api.routes.jobs import save_record
+
+    jobs_dir = tmp_path / "jobs"
+    monkeypatch.setenv("YOUBER_JOBS_DIR", str(jobs_dir))
+    save_record(
+        JobRecord(
+            id="unicode-job",
+            type="workflow",
+            status=JobStatus.DONE,
+            exit_code=0,
+            log="✅ vídeo final generado 🎬 con música añadida",
+        )
+    )
+
+    env = dict(os.environ, YOUBER_JOBS_DIR=str(jobs_dir))
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "youber.api.server",
+            "--route",
+            "jobs.status",
+            "--params",
+            json.dumps({"id": "unicode-job"}),
+        ],
+        capture_output=True,
+        # El bridge imprime en UTF-8 (fix de cp1252 en Windows): decodificar
+        # como UTF-8 en vez del locale por defecto.
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    envelope = json.loads(proc.stdout)
+    assert envelope["ok"] is True
+    assert "✅" in envelope["data"]["log"]

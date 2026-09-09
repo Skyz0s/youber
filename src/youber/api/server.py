@@ -52,6 +52,11 @@ def _main(argv: list[str] | None = None) -> int:
     """
     import argparse
 
+    # stdout en UTF-8: en Windows el codec por defecto (cp1252) rompe con
+    # emojis/unicode de los logs (UnicodeEncodeError) al imprimir el JSON.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(prog="python -m youber.api.server")
     parser.add_argument("--route", required=True, help="Ruta canónica (music.list, ...)")
     parser.add_argument("--params", default="{}", help="Parámetros en JSON")
