@@ -9,6 +9,9 @@ Los errores controlados (:class:`ApiError`) se devuelven como
 
 from __future__ import annotations
 
+import asyncio
+import json
+import sys
 import traceback
 from typing import Any
 
@@ -39,3 +42,32 @@ async def handle(route: str, params: dict[str, Any] | None = None) -> dict[str, 
     except Exception as exc:  # noqa: BLE001 — el bridge nunca debe reventar
         logger.error("Error interno en {}: {}", route, traceback.format_exc())
         return {"ok": False, "error": f"Error interno: {exc}"}
+
+
+def _main(argv: list[str] | None = None) -> int:
+    """Modo subproceso usado por el plugin (proxy HTTP → bridge).
+
+    Uso: ``python -m youber.api.server --route <ruta> --params '<json>'``
+    Imprime el envoltorio JSON en stdout; exit 0 si ok, 1 si error.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="python -m youber.api.server")
+    parser.add_argument("--route", required=True, help="Ruta canónica (music.list, ...)")
+    parser.add_argument("--params", default="{}", help="Parámetros en JSON")
+    args = parser.parse_args(argv)
+    try:
+        params = json.loads(args.params)
+    except json.JSONDecodeError:
+        print('{"ok": false, "error": "params JSON inválido"}')
+        return 1
+    if not isinstance(params, dict):
+        print('{"ok": false, "error": "params debe ser un objeto JSON"}')
+        return 1
+    envelope = asyncio.run(handle(args.route, params))
+    print(json.dumps(envelope, ensure_ascii=False))
+    return 0 if envelope.get("ok") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(_main())

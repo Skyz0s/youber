@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Youber Dashboard</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+         background: #0d1117; color: #e6edf3; }
+  header { padding: 1rem 1.25rem; border-bottom: 1px solid #21262d;
+           display: flex; align-items: center; gap: .75rem; }
+  header h1 { font-size: 1.15rem; margin: 0; }
+  .badge { background: #1f6feb22; color: #58a6ff; border: 1px solid #1f6feb55;
+           padding: .15rem .6rem; border-radius: 999px; font-size: .72rem; }
+  main { padding: 1.25rem; display: grid; gap: 1.25rem;
+         grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .card { background: #161b22; border: 1px solid #21262d; border-radius: 12px;
+          padding: 1rem 1.1rem; }
+  .card h2 { margin: 0 0 .75rem; font-size: .95rem; color: #7ee787; }
+  .card h3 { margin: .9rem 0 .4rem; font-size: .85rem; color: #9da7b3; }
+  table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+  th, td { text-align: left; padding: .3rem .4rem; border-bottom: 1px solid #21262d; }
+  th { color: #8b949e; font-weight: 600; }
+  code { background: #0d1117; padding: .1rem .35rem; border-radius: 6px;
+         color: #7ee787; font-size: .78rem; word-break: break-all; }
+  button { background: #238636; color: #fff; border: 0; border-radius: 8px;
+           padding: .45rem .9rem; font-size: .85rem; cursor: pointer; }
+  button:hover { background: #2ea043; }
+  button.secondary { background: #30363d; } button.secondary:hover { background: #3d444d; }
+  button:disabled { opacity: .5; cursor: default; }
+  .grid { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); }
+  .stat { background: #0d1117; border: 1px solid #21262d; border-radius: 10px;
+          padding: .6rem .8rem; }
+  .stat b { display: block; font-size: 1.3rem; }
+  .stat span { font-size: .75rem; color: #8b949e; }
+  .ok { color: #7ee787; } .off { color: #8b949e; } .err { color: #ff7b72; }
+  .muted { color: #8b949e; font-size: .8rem; }
+  .lyrics { white-space: pre-line; font-size: .85rem; line-height: 1.5;
+            background: #0d1117; border-radius: 10px; padding: .7rem .9rem;
+            max-height: 220px; overflow: auto; }
+  #log { font-family: ui-monospace, monospace; font-size: .75rem; color: #8b949e;
+         max-height: 160px; overflow: auto; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚙️ Youber Dashboard</h1>
+  <span class="badge">Fase 2 · Plugin runtime + bridge</span>
+</header>
+<main>
+  <section class="card">
+    <h2>Estado</h2>
+    <div class="grid" id="status">
+      <div class="stat"><b>…</b><span>Pistas (catálogo)</span></div>
+      <div class="stat"><b>…</b><span>Tareas programadas</span></div>
+      <div class="stat"><b>…</b><span>Jobs (cola/activos)</span></div>
+      <div class="stat"><b>…</b><span>ffmpeg / ffprobe</span></div>
+    </div>
+    <h3>Providers</h3>
+    <div id="providers" class="muted">cargando…</div>
+  </section>
+
+  <section class="card">
+    <h2>Música</h2>
+    <p class="muted" style="margin:.1rem 0 .6rem">Catálogo local
+      (<code>music</code>). Pulsa una fila para ver su letra (sidecar).</p>
+    <table>
+      <thead><tr><th>Título</th><th>Artista</th><th>Duración</th><th>Moods</th></tr></thead>
+      <tbody id="tracks"></tbody>
+    </table>
+    <h3>Letra</h3>
+    <div class="lyrics" id="lyrics">Selecciona una pista…</div>
+  </section>
+
+  <section class="card">
+    <h2>Producción (jobs)</h2>
+    <p class="muted" style="margin:.1rem 0 .6rem">Lanza un job de larga
+      duración (worker detached del bridge) y haz polling de su estado.</p>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.6rem">
+      <button id="btnWorkflow">Workflow demo (FFmpeg)</button>
+      <button id="btnRefreshJobs" class="secondary">Refrescar jobs</button>
+    </div>
+    <table>
+      <thead><tr><th>Id</th><th>Tipo</th><th>Estado</th><th>Exit</th><th>Salida</th></tr></thead>
+      <tbody id="jobs"></tbody>
+    </table>
+    <h3>Log del último job</h3>
+    <div id="log" class="muted">—</div>
+  </section>
+</main>
+
+<script>
+const API = "/youber-dashboard/api";
+
+async function apiGet(path) {
+  const res = await fetch(`${API}/${path}`);
+  return res.json();
+}
+async function apiPostJobs(body) {
+  const res = await fetch(`${API}/jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+function el(id) { return document.getElementById(id); }
+function fmtSeconds(s) {
+  if (s == null) return "-";
+  return `${Math.round(s)}s`;
+}
+
+// --- Estado ---------------------------------------------------------------
+async function loadStatus() {
+  const env = await apiGet("status");
+  if (!env.ok) { el("status").innerHTML = `<span class="err">${env.error}</span>`; return; }
+  const d = env.data;
+  el("status").innerHTML = `
+    <div class="stat"><b>${d.music.tracks}</b><span>Pistas (${d.music.library})</span></div>
+    <div class="stat"><b>${d.schedule.enabled}/${d.schedule.jobs}</b><span>Tareas programadas (habilitadas)</span></div>
+    <div class="stat"><b>${d.jobs.queued}/${d.jobs.running}</b><span>Jobs cola/activos</span></div>
+    <div class="stat"><b>${d.system.ffmpeg ? "✅" : "❌"}</b><span>ffmpeg / ffprobe</span></div>`;
+  el("providers").innerHTML = Object.entries(d.providers)
+    .map(([k, v]) => `<span class="${v ? "ok" : "off"}">${k}: ${v ? "sí" : "no"}</span>`)
+    .join(" · ");
+}
+
+// --- Música ---------------------------------------------------------------
+async function loadMusic() {
+  const env = await apiGet("music/list?limit=50");
+  if (!env.ok) { el("tracks").innerHTML = `<tr><td colspan="4" class="err">${env.error}</td></tr>`; return; }
+  const rows = env.data.tracks.map((t) => `
+    <tr data-id="${t.id}" data-title="${t.title.replace(/"/g, "&quot;")}" style="cursor:pointer">
+      <td>${t.title}</td><td>${t.artist ?? "-"}</td><td>${fmtSeconds(t.duration)}</td>
+      <td>${(t.moods || []).join(", ") || "-"}</td>
+    </tr>`).join("");
+  el("tracks").innerHTML = rows || `<tr><td colspan="4" class="muted">catálogo vacío</td></tr>`;
+  document.querySelectorAll("#tracks tr[data-id]").forEach((tr) =>
+    tr.addEventListener("click", () => loadLyrics(tr.dataset.id, tr.dataset.title)));
+}
+
+async function loadLyrics(id, title) {
+  el("lyrics").textContent = `Buscando letra de "${title}"…`;
+  const env = await apiGet(`music/lyrics?query=${encodeURIComponent(id)}`);
+  if (!env.ok) { el("lyrics").innerHTML = `<span class="err">${env.error}</span>`; return; }
+  const d = env.data;
+  if (!d.lyrics) { el("lyrics").innerHTML = `<span class="muted">${d.hint ?? "sin letra"}</span>`; return; }
+  el("lyrics").textContent = d.lyrics.lines.map((l) => l.text).join("\n");
+}
+
+// --- Jobs ------------------------------------------------------------------
+function jobRow(j) {
+  return `<tr><td><code>${j.id}</code></td><td>${j.type}</td>
+    <td>${j.status}</td><td>${j.exit_code ?? "-"}</td>
+    <td><code>${j.output_path ?? "-"}</code></td></tr>`;
+}
+
+async function loadJobs() {
+  const env = await apiGet("jobs/history?limit=10");
+  if (!env.ok) { el("jobs").innerHTML = `<tr><td colspan="5" class="err">${env.error}</td></tr>`; return; }
+  el("jobs").innerHTML = env.data.jobs.map(jobRow).join("")
+    || `<tr><td colspan="5" class="muted">sin jobs todavía</td></tr>`;
+}
+
+async function pollJob(id, logEl) {
+  for (let i = 0; i < 120; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const env = await apiGet(`jobs/status?id=${id}`);
+    if (!env.ok) { logEl.textContent += `\n${env.error}`; return; }
+    const j = env.data;
+    logEl.textContent = (j.log || "").slice(-1500);
+    logEl.scrollTop = logEl.scrollHeight;
+    if (j.status === "done" || j.status === "failed") {
+      logEl.textContent += `\n→ ${j.status} (exit ${j.exit_code}) · ${j.output_path ?? ""}`;
+      loadJobs(); loadStatus();
+      return;
+    }
+  }
+}
+
+el("btnWorkflow").addEventListener("click", async () => {
+  const btn = el("btnWorkflow");
+  btn.disabled = true;
+  const log = el("log");
+  log.textContent = "Enviando job workflow demo…";
+  const env = await apiPostJobs({ type: "workflow", demo: true, duration: 8 });
+  if (!env.ok) { log.textContent = env.error; btn.disabled = false; return; }
+  log.textContent = `Job ${env.data.id} (${env.data.status}). Esperando…`;
+  loadJobs();
+  await pollJob(env.data.id, log);
+  btn.disabled = false;
+});
+
+el("btnRefreshJobs").addEventListener("click", () => { loadJobs(); loadStatus(); });
+
+// arranque
+loadStatus(); loadMusic(); loadJobs();
+setInterval(() => { loadStatus(); }, 15000);
+</script>
+</body>
+</html>

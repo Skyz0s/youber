@@ -7,6 +7,8 @@ modo ``demo`` de discovery (sintético) y mocks para research/catálogo.
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from youber.api.server import handle, list_routes
@@ -253,3 +255,43 @@ def test_cli_parser_tiene_subcomandos():
     parser = build_parser()
     choices = parser._subparsers._group_actions[0].choices
     assert {"status", "music", "discovery", "research", "schedule", "jobs", "uploads"} <= set(choices)
+
+
+# ---------------------------------------------------------------------------
+# Modo subproceso (lo usa el plugin: python -m youber.api.server)
+# ---------------------------------------------------------------------------
+
+
+def test_server_modo_subproceso_ok(tmp_path: Path):
+    """python -m youber.api.server --route X --params JSON imprime el envoltorio."""
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "youber.api.server",
+            "--route",
+            "music.list",
+            "--params",
+            json.dumps({"library": str(tmp_path), "limit": 5}),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr
+    envelope = json.loads(proc.stdout)
+    assert envelope["ok"] is True
+    assert envelope["data"]["count"] == 0
+
+
+def test_server_modo_subproceso_params_invalidos():
+    proc = subprocess.run(
+        [sys.executable, "-m", "youber.api.server", "--route", "status", "--params", "no-json"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 1
+    envelope = json.loads(proc.stdout)
+    assert envelope["ok"] is False
+    assert "JSON" in envelope["error"]
