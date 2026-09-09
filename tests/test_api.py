@@ -86,11 +86,12 @@ async def test_music_lyrics_pista_no_encontrada(tmp_path: Path):
 class _FakeTrack:
     """Sustituto mínimo de Track (file_path + model_dump)."""
 
-    def __init__(self, file_path: Path) -> None:
+    def __init__(self, file_path: Path, title: str = "Cancion demo") -> None:
         self.file_path = file_path
+        self.title = title
 
     def model_dump(self, mode: str = "json") -> dict:
-        return {"id": "t1", "title": "Cancion demo", "file_path": str(self.file_path)}
+        return {"id": "t1", "title": self.title, "file_path": str(self.file_path)}
 
 
 async def test_music_lyrics_con_sidecar(tmp_path: Path, monkeypatch):
@@ -124,6 +125,63 @@ async def test_music_lyrics_sin_sidecar(tmp_path: Path, monkeypatch):
     assert envelope["ok"] is True
     assert envelope["data"]["lyrics"] is None
     assert "No hay fichero de letra" in envelope["data"]["hint"]
+
+
+# ---------------------------------------------------------------------------
+# Configuración por usuario (config.json / env): librería y letras
+# ---------------------------------------------------------------------------
+
+
+def _write_config(tmp_path: Path, **keys: str) -> Path:
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps(keys), encoding="utf-8")
+    return cfg
+
+
+async def test_music_list_usa_music_dir_del_config(tmp_path: Path, monkeypatch):
+    library = tmp_path / "musica"
+    monkeypatch.setenv("YOUBER_CONFIG", str(_write_config(tmp_path, music_dir=str(library))))
+    monkeypatch.delenv("YOUBER_MUSIC_DIR", raising=False)
+    envelope = await handle("music.list", {})
+    assert envelope["ok"] is True
+    assert envelope["data"]["library"] == str(library)
+    assert envelope["data"]["count"] == 0
+
+
+async def test_music_list_usa_env_library(tmp_path: Path, monkeypatch):
+    library = tmp_path / "musica"
+    monkeypatch.setenv("YOUBER_MUSIC_DIR", str(library))
+    monkeypatch.delenv("YOUBER_CONFIG", raising=False)
+    envelope = await handle("music.list", {})
+    assert envelope["ok"] is True
+    assert envelope["data"]["library"] == str(library)
+
+
+async def test_music_lyrics_desde_letras_dir(tmp_path: Path, monkeypatch):
+    """Sin sidecar junto al audio, la letra se busca en la carpeta de letras."""
+    song = tmp_path / "cancion.mp3"
+    song.write_bytes(b"fake")
+    letras = tmp_path / "letras"
+    letras.mkdir()
+    (letras / "Cancion demo.txt").write_text(
+        "primera linea\nsegunda linea", encoding="utf-8"
+    )
+
+    def fake_find_track(_library, _query):
+        return _FakeTrack(song)
+
+    monkeypatch.setattr("youber.api.routes.music.find_track", fake_find_track)
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({"lyrics_dir": str(letras)}), encoding="utf-8")
+    monkeypatch.setenv("YOUBER_CONFIG", str(cfg))
+    monkeypatch.delenv("YOUBER_LYRICS_DIR", raising=False)
+
+    envelope = await handle("music.lyrics", {"query": "cancion", "library": str(tmp_path)})
+    assert envelope["ok"] is True
+    lyrics = envelope["data"]["lyrics"]
+    assert lyrics is not None
+    assert len(lyrics["lines"]) == 2
+    assert envelope["data"]["source_file"].endswith("Cancion demo.txt")
 
 
 # ---------------------------------------------------------------------------

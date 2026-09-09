@@ -1,4 +1,4 @@
-import { LitElement, html } from "lit";
+﻿import { LitElement, html } from "lit";
 import { apiGet, fmtSeconds, rememberTrack } from "../api/client.js";
 import "../components/Input.js";
 import "../components/Button.js";
@@ -40,8 +40,8 @@ export class YbPageMusic extends LitElement {
     this.error = "";
     try {
       const data = query
-        ? await apiGet("music/search", { query, limit: 50 })
-        : await apiGet("music/list", { limit: 50 });
+        ? await apiGet("music/search", { query, limit: 200 })
+        : await apiGet("music/list", { limit: 200 });
       this.tracks = data.tracks || [];
     } catch (err) {
       this.error = err.message;

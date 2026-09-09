@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from youber.api.routes.jobs import count_active
+from youber.api.routes.music import resolve_library_dir
 from youber.music.library import MusicLibrary
 from youber.scheduler.storage import JobStorage
 
@@ -34,7 +35,7 @@ def _music_track_count(library_dir: str | Path) -> int:
 
 async def get_status(params: dict[str, Any]) -> dict[str, Any]:
     """Estado agregado: catálogo, tareas programadas, jobs y credenciales."""
-    library_dir = Path(str(params.get("library", DEFAULT_LIBRARY)))
+    library_dir = resolve_library_dir(params)
 
     schedule_jobs = 0
     schedule_enabled = 0
