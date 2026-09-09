@@ -39,7 +39,7 @@ export default {
   id: "youber-dashboard",
   name: "Youber Dashboard",
   description: "Panel nativo de Youber en la Control UI",
-  version: "0.2.0",
+  version: "0.3.0",
   register(api) {
     registerTab(api);
 
@@ -86,7 +86,7 @@ export default {
     });
 
     api.logger.info(
-      "Youber Dashboard (Fase 2): tab + UI estática + proxy /api/* → youber.api"
+      "Youber Dashboard (Fase 3): tab + UI Vite/Lit (dist) + proxy /api/* → youber.api"
     );
   },
 };

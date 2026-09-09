@@ -24,7 +24,10 @@
 // CORS y el guard de loopback los pone el handler del prefijo en index.js.
 
 import { execFile } from "node:child_process";
+import { createReadStream } from "node:fs";
 import { existsSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,6 +37,18 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..");
 const MAX_BODY = 1024 * 1024; // 1 MB
 const BRIDGE_TIMEOUT_MS = 300_000;
 const MAX_BUFFER = 20 * 1024 * 1024;
+const JOBS_DIR = process.env.YOUBER_JOBS_DIR || path.join(os.homedir(), ".youber", "jobs");
+
+const DOWNLOAD_MIME = {
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".json": "application/json",
+  ".csv": "text/csv",
+  ".md": "text/markdown",
+};
 
 // Rutas GET/lectura permitidas: path HTTP → ruta canónica del bridge.
 const READ_ROUTES = new Map([
@@ -142,10 +157,56 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+/** Descarga del artefacto de un job terminado (GET /api/jobs/download?id=). */
+async function handleDownload(res, jobId) {
+  if (!/^[a-z0-9-]{1,40}$/i.test(jobId || "")) {
+    return sendJson(res, 400, { ok: false, error: "id de job inválido" });
+  }
+  const recordPath = path.join(JOBS_DIR, `${jobId}.json`);
+  let record;
+  try {
+    record = JSON.parse(await readFile(recordPath, "utf8"));
+  } catch {
+    return sendJson(res, 404, { ok: false, error: `job no encontrado: ${jobId}` });
+  }
+  if (record.status !== "done" || !record.output_path) {
+    return sendJson(res, 409, {
+      ok: false,
+      error: `job no completado (estado: ${record.status || "?"})`,
+    });
+  }
+  const outputPath = path.resolve(record.output_path);
+  const jobsRoot = path.resolve(JOBS_DIR);
+  if (!outputPath.startsWith(jobsRoot + path.sep)) {
+    return sendJson(res, 403, { ok: false, error: "ruta fuera del directorio de jobs" });
+  }
+  try {
+    await stat(outputPath);
+  } catch {
+    return sendJson(res, 404, { ok: false, error: "fichero de salida no encontrado" });
+  }
+  res.statusCode = 200;
+  res.setHeader(
+    "Content-Type",
+    DOWNLOAD_MIME[path.extname(outputPath).toLowerCase()] || "application/octet-stream"
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${path.basename(outputPath)}"`
+  );
+  createReadStream(outputPath).pipe(res);
+  return true;
+}
+
 /** Handler del proxy: path sin prefijo (ej. "music/list" o "jobs"). */
 export async function handleApi(req, res, url) {
   const apiPath = url.pathname.replace(/^\/youber-dashboard\/api\/?/, "");
   const queryParams = queryToParams(url);
+
+  // Descarga de artefactos: no pasa por el bridge (streaming de fichero).
+  if (req.method === "GET" && apiPath === "jobs/download") {
+    return handleDownload(res, queryParams.id);
+  }
 
   // POST /api/jobs → jobs.submit
   if (req.method === "POST" && (apiPath === "jobs" || apiPath === "jobs/submit")) {

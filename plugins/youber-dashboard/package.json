@@ -1,14 +1,28 @@
 {
   "name": "@youber/youber-dashboard",
-  "version": "0.2.0",
-  "description": "Native Youber dashboard tab for the OpenClaw Control UI",
+  "version": "0.3.0",
+  "description": "Native Youber dashboard tab for the OpenClaw Control UI (Fase 3: UI Vite+Lit)",
   "type": "module",
   "main": "./index.js",
   "exports": {
     ".": "./index.js"
   },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
   "peerDependencies": {
     "openclaw": ">=2026.7.1-2"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "lit": "^3.2.0",
+    "vite": "^5.4.0"
   },
   "openclaw": {
     "extensions": ["./index.js"],
