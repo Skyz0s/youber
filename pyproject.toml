@@ -60,6 +60,7 @@ youber-dashboard = "youber.dashboard.cli:main"
 youber-discovery = "youber.discovery.cli:main"
 youber-produce = "youber.montage.cli:main"
 youber-sync = "youber.sync.cli:main"
+youber-api = "youber.api.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Skyz0s/youber"
