@@ -13,7 +13,12 @@ del clon con esta interfaz mínima::
 
     python montage.py --prompt <texto> --output-dir <dir> \
         [--pipeline <name>] [--playbook <name>] [--budget-usd <n>] \
-        [--output <fichero.mp4>]
+        [--output <fichero.mp4>] [--duration <s>] [--resolution WxH] \
+        [--fps <n>]
+
+youber incluye un driver real (``montage_driver/montage.py``) que produce
+montajes usando las tools del checkout (``tools.video.pexels_video``) +
+FFmpeg; se instala en el clon con ``youber-produce --install-driver``.
 
 El driver escribe el vídeo producido en ``--output`` (si se da) o en
 ``--output-dir`` y termina con código 0. Si el driver no existe, ``produce()``
@@ -58,6 +63,9 @@ _PROMPT_TEMPLATES: dict[str, str] = {
 
 # Marcadores que identifican un checkout real de OpenMontage.
 _CLONE_MARKERS = ("config.yaml", "setup.py", "render_demo.py")
+
+# Driver empaquetado en el repo de youber (montage_driver/montage.py).
+_BUNDLED_DRIVER = Path(__file__).resolve().parents[3] / "montage_driver" / "montage.py"
 
 
 class OpenMontageError(RuntimeError):
@@ -107,6 +115,24 @@ class OpenMontageAdapter:
         driver = self.openmontage_dir / "montage.py"
         return driver if driver.is_file() else None
 
+    def install_driver(self, force: bool = False) -> Path | None:
+        """Instala el driver empaquetado (montage_driver/) en el clon.
+
+        Copia ``montage.py`` a la raíz del checkout si no existe (o siempre
+        si ``force=True``) y refresca ``self.driver``. Devuelve la ruta
+        instalada o None si no hay clon o falta el driver empaquetado.
+        """
+        if self.openmontage_dir is None or not _BUNDLED_DRIVER.is_file():
+            return None
+        target = self.openmontage_dir / "montage.py"
+        if force or not target.exists():
+            shutil.copy2(_BUNDLED_DRIVER, target)
+            logger.info("Driver montage.py instalado en {}", target)
+        if target.is_file():
+            self.driver = target
+            return target
+        return None
+
     def _python_bin(self) -> str:
         """Python del venv del clon (si existe) o el intérprete actual."""
         if self.openmontage_dir is None:
@@ -134,9 +160,9 @@ class OpenMontageAdapter:
             )
         return (
             f"OpenMontage encontrado en {self.openmontage_dir}, pero falta el "
-            f"driver {self.driver or '(montage.py)'}. OpenMontage no expone aún un "
-            "CLI headless estable: crea un driver montage.py con la interfaz "
-            "--prompt/--output-dir (ver docs/MONTAGE.md)."
+            f"driver {self.driver or '(montage.py)'}. youber incluye un driver "
+            "real (montage_driver/montage.py): instálalo con "
+            "`youber-produce --install-driver` (ver docs/MONTAGE.md)."
         )
 
     # ------------------------------------------------------------------
@@ -173,6 +199,9 @@ class OpenMontageAdapter:
                 playbook=plan.playbook,
                 budget_usd=plan.budget_usd,
                 output_file=plan.output_path,
+                target_duration=plan.target_duration,
+                target_resolution=plan.target_resolution,
+                target_fps=plan.target_fps,
             )
         except OpenMontageError as exc:
             logger.error("❌ Producción falló: {}", exc)
@@ -206,7 +235,8 @@ class OpenMontageAdapter:
             topic: Tema del video.
             pipeline: Pipeline de OpenMontage (documentary, explainer, ...).
             output_dir: Directorio de salida.
-            **kwargs: ``playbook``, ``budget_usd``, ``output_file``.
+            **kwargs: ``playbook``, ``budget_usd``, ``output_file``,
+                ``target_duration``, ``target_resolution``, ``target_fps``.
 
         Returns:
             Path: ruta del video generado.
@@ -219,7 +249,10 @@ class OpenMontageAdapter:
         prompt = self._build_prompt(topic, pipeline)
         logger.info("📋 Pipeline: {} | Prompt: {}", pipeline, prompt)
         # Solo reenviamos los kwargs que entiende _run_montage.
-        allowed = {"playbook", "budget_usd", "output_file"}
+        allowed = {
+            "playbook", "budget_usd", "output_file",
+            "target_duration", "target_resolution", "target_fps",
+        }
         driver_kwargs = {key: value for key, value in kwargs.items() if key in allowed}
         return await self._run_montage(
             prompt,
@@ -242,12 +275,16 @@ class OpenMontageAdapter:
         playbook: str | None = None,
         budget_usd: float | None = None,
         output_file: Path | None = None,
+        target_duration: float | None = None,
+        target_resolution: tuple[int, int] | None = None,
+        target_fps: int | None = None,
     ) -> Path:
         """Ejecuta el driver de OpenMontage vía subprocess.
 
         Contrato del driver (``montage.py`` en la raíz del clon): recibe
         ``--prompt/--output-dir [--pipeline] [--playbook] [--budget-usd]
-        [--output]``, escribe el vídeo y termina con código 0.
+        [--output]`` y opcionalmente ``--duration/--resolution/--fps``,
+        escribe el vídeo y termina con código 0.
         """
         if not self.available():
             raise OpenMontageError(self.describe())
@@ -269,6 +306,12 @@ class OpenMontageAdapter:
             cmd += ["--budget-usd", f"{budget_usd:.2f}"]
         if output_file is not None:
             cmd += ["--output", str(output_file)]
+        if target_duration is not None:
+            cmd += ["--duration", f"{target_duration:.1f}"]
+        if target_resolution is not None:
+            cmd += ["--resolution", f"{target_resolution[0]}x{target_resolution[1]}"]
+        if target_fps is not None:
+            cmd += ["--fps", str(target_fps)]
 
         env = dict(os.environ)
         if self.openmontage_dir is not None:

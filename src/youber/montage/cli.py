@@ -12,6 +12,8 @@ from loguru import logger
 from youber.montage.adapter import OpenMontageAdapter
 from youber.montage.models import (
     AudioSource,
+    PatternSource,
+    PatternSpec,
     ProductionMode,
     ProductionPlan,
 )
@@ -26,17 +28,22 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Ejemplos:
+  youber-produce --topic "Python tutorial" --pipeline screen-demo -o demo.mp4
   youber-produce --pattern https://youtu.be/abc123 --mood epica
   youber-produce --pattern video.mp4 --audio musica.mp3 --mode remix
-  youber-produce --pattern https://youtu.be/abc123 --mode inspired --title "Mi Remix"
+  youber-produce --install-driver
         """,
     )
 
-    # Entrada: patrón (obligatorio)
-    parser.add_argument(
+    # Entrada: patrón XOR tema libre
+    entrada = parser.add_mutually_exclusive_group()
+    entrada.add_argument(
         "--pattern",
-        required=True,
         help="Vídeo patrón: URL de YouTube (https://youtu.be/...) o archivo local (video.mp4)",
+    )
+    entrada.add_argument(
+        "--topic",
+        help="Tema libre: produce sin patrón (ej: 'Python tutorial')",
     )
 
     # Modo de producción
@@ -71,13 +78,14 @@ Ejemplos:
         default=0.0,
         help="Offset de inicio en la pista de audio (segundos)",
     )
-    audio_loop = audio_group.add_mutually_exclusive_group()
-    audio_loop.add_argument(
+    # Repetición de audio (independiente de mood/audio)
+    loop_group = parser.add_mutually_exclusive_group()
+    loop_group.add_argument(
         "--loop",
         action="store_true",
         help="Repetir audio si es más corto que el vídeo",
     )
-    audio_loop.add_argument(
+    loop_group.add_argument(
         "--no-loop",
         action="store_false",
         dest="loop",
@@ -121,6 +129,11 @@ Ejemplos:
         type=float,
         default=2.0,
         help="Presupuesto máximo USD (default: 2.0)",
+    )
+    parser.add_argument(
+        "--install-driver",
+        action="store_true",
+        help="Instala el driver montage.py incluido en el clon de OpenMontage y sale",
     )
 
     # Objetivo (opcional, si se quiere forzar duración/resolución)
@@ -187,27 +200,54 @@ async def _run_produce(args: argparse.Namespace) -> int:
     logger.remove()
     logger.add(sys.stderr, level=log_level)
 
-    # Validar patrón
-    pattern_input = args.pattern.strip()
-    if not pattern_input:
-        logger.error("--pattern es obligatorio")
-        return 1
+    # Modo instalación de driver (no produce vídeo)
+    if getattr(args, "install_driver", False):
+        adapter = OpenMontageAdapter()
+        installed = adapter.install_driver(force=True)
+        if installed is None:
+            logger.error(f"No se pudo instalar el driver: {adapter.describe()}")
+            return 1
+        logger.success(f"Driver montage.py instalado en {installed}")
+        return 0
 
-    # Analizar patrón
-    logger.info(f"Analizando patrón: {pattern_input}")
-    analyzer = PatternAnalyzer(api_key=args.api_key)
-    try:
-        pattern_spec = await analyzer.analyze(pattern_input)
-    except Exception as e:
-        logger.error(f"Error analizando patrón: {e}")
-        return 1
+    # Entrada: --topic (tema libre) o --pattern (vídeo a analizar)
+    topic_input = (args.topic or "").strip()
+    if topic_input:
+        topic_res = _parse_resolution(args.resolution) or (1920, 1080)
+        pattern_spec = PatternSpec(
+            source=PatternSource.LOCAL,
+            path="",
+            title=topic_input,
+            duration=args.duration or 30.0,
+            resolution=topic_res,
+            fps=args.fps,
+            has_audio=False,
+        )
+        logger.info(
+            f"Tema libre: {topic_input} | duración objetivo {pattern_spec.duration:.1f}s"
+        )
+    else:
+        pattern_input = (args.pattern or "").strip()
+        if not pattern_input:
+            logger.error("Debes indicar --pattern o --topic")
+            return 1
 
-    logger.info(
-        f"Patrón: {pattern_spec.title} | {pattern_spec.duration:.1f}s | "
-        f"{pattern_spec.resolution[0]}x{pattern_spec.resolution[1]} @ {pattern_spec.fps}fps | "
-        f"audio={pattern_spec.has_audio} | escenas={len(pattern_spec.scene_changes)} | "
-        f"picos_audio={len(pattern_spec.audio_peaks)}"
-    )
+        # Analizar patrón
+        logger.info(f"Analizando patrón: {pattern_input}")
+        analyzer = PatternAnalyzer(api_key=args.api_key)
+        try:
+            pattern_spec = await analyzer.analyze(pattern_input)
+        except Exception as e:
+            logger.error(f"Error analizando patrón: {e}")
+            return 1
+
+        logger.info(
+            f"Patrón: {pattern_spec.title} | {pattern_spec.duration:.1f}s | "
+            f"{pattern_spec.resolution[0]}x{pattern_spec.resolution[1]} @ "
+            f"{pattern_spec.fps}fps | audio={pattern_spec.has_audio} | "
+            f"escenas={len(pattern_spec.scene_changes)} | "
+            f"picos_audio={len(pattern_spec.audio_peaks)}"
+        )
 
     # Resolver audio
     audio = AudioSource(
