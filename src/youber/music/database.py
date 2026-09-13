@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS tracks (
     external_id TEXT,
     album TEXT,
     artwork_url TEXT,
-    preview_url TEXT
+    preview_url TEXT,
+    lyrical_themes TEXT NOT NULL DEFAULT '{}',
+    lyrical_sentiment TEXT NOT NULL DEFAULT 'neutral'
 );
 """
 
@@ -46,6 +48,8 @@ _MIGRATIONS: list[tuple[str, str]] = [
     ("album", "TEXT"),
     ("artwork_url", "TEXT"),
     ("preview_url", "TEXT"),
+    ("lyrical_themes", "TEXT NOT NULL DEFAULT '{}'"),
+    ("lyrical_sentiment", "TEXT NOT NULL DEFAULT 'neutral'"),
 ]
 
 
@@ -109,6 +113,8 @@ class MusicDatabase:
             track.album,
             track.artwork_url,
             track.preview_url,
+            json.dumps(track.lyrical_themes),
+            track.lyrical_sentiment,
         )
 
     @staticmethod
@@ -133,6 +139,8 @@ class MusicDatabase:
             album=row["album"],
             artwork_url=row["artwork_url"],
             preview_url=row["preview_url"],
+            lyrical_themes=json.loads(row["lyrical_themes"] or "{}"),
+            lyrical_sentiment=row["lyrical_sentiment"] or "neutral",
         )
 
     # -- CRUD ---------------------------------------------------------------
@@ -141,7 +149,7 @@ class MusicDatabase:
         """Añade una pista al catálogo (ignora si el id ya existe)."""
         with self._connect() as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO tracks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO tracks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 self._to_row(track),
             )
 
@@ -153,7 +161,8 @@ class MusicDatabase:
                 UPDATE tracks SET file_path=?, title=?, artist=?, duration=?,
                     genre=?, moods=?, bpm=?, key=?, favorite=?, usage_count=?,
                     last_used=?, added_at=?, file_hash=?, source=?, external_id=?,
-                    album=?, artwork_url=?, preview_url=?
+                    album=?, artwork_url=?, preview_url=?, lyrical_themes=?,
+                    lyrical_sentiment=?
                 WHERE id=?
                 """,
                 (
@@ -175,6 +184,8 @@ class MusicDatabase:
                     track.album,
                     track.artwork_url,
                     track.preview_url,
+                    json.dumps(track.lyrical_themes),
+                    track.lyrical_sentiment,
                     track.id,
                 ),
             )

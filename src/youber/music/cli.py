@@ -66,7 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("scan", help="Escanea el directorio y sincroniza el catálogo")
+    sub.add_parser("scan", help="Escanea el directorio y sincroniza el catálogo").add_argument(
+        "--lyrics-dir",
+        help="Directorio donde buscar archivos de letras para análisis temático (opcional)",
+    )
 
     sub.add_parser("list", help="Lista todas las pistas del catálogo")
 
@@ -77,11 +80,35 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--favorite", action="store_true", help="Solo favoritas")
     search.add_argument("--bpm-min", type=int, help="BPM mínimo")
     search.add_argument("--bpm-max", type=int, help="BPM máximo")
+    search.add_argument(
+        "--lyric-theme",
+        help="Tema detectado en la letra (p. ej. tristeza, amor, misterio)",
+    )
+    search.add_argument(
+        "--lyric-sentiment",
+        choices=["positive", "negative", "neutral"],
+        help="Sentimiento de la letra",
+    )
 
     suggest = sub.add_parser("suggest", help="Sugiere pistas para un estado de ánimo")
     suggest.add_argument("--mood", type=_mood, help="Estado de ánimo deseado")
     suggest.add_argument("--text", help="Tema o texto libre")
     suggest.add_argument("-n", "--limit", type=int, default=5, help="Número de sugerencias")
+    suggest.add_argument(
+        "--lyric-theme",
+        help="Tema que debe aparecer en la letra (p. ej. calma)",
+    )
+
+    analyze_lyrics = sub.add_parser(
+        "lyrics",
+        help="Analiza la letra de una pista (fichero .txt local) y muestra su temática",
+    )
+    analyze_lyrics.add_argument("id", help="Id de la pista")
+    analyze_lyrics.add_argument(
+        "--lyrics-dir",
+        required=True,
+        help="Directorio con los ficheros .txt de letras",
+    )
 
     favorite = sub.add_parser("favorite", help="Marca/desmarca una pista como favorita")
     favorite.add_argument("id", help="Id de la pista")
@@ -170,10 +197,30 @@ def _print_track(track: Track) -> None:
     console.print(f"[bold]{track.title}[/] — {track.artist or '?'}")
     console.print(f"  id: {track.id} | {track.duration:.1f}s | {track.genre or '-'}")
     console.print(f"  moods: {moods} | bpm: {track.bpm or '-'} | key: {track.key or '-'}")
+    themes = ", ".join(f"{theme} ({weight:.2f})" for theme, weight in track.lyrical_themes.items())
+    console.print(f"  letra: {themes or '-'} | sentimiento: {track.lyrical_sentiment}")
     console.print(
         f"  favorita: {'⭐' if track.favorite else 'no'} | usos: {track.usage_count} | "
         f"último uso: {track.last_used or '-'}"
     )
+
+
+def _print_lyrics_analysis(track: Track, analysis) -> None:
+    """Muestra el análisis temático de la letra de una pista."""
+    console.print(f"[bold]{track.title}[/] — {track.artist or '?'}")
+    console.print(f"  idioma: {analysis.language} | sentimiento: {analysis.sentiment}")
+    console.print(f"  palabras analizadas: {analysis.word_count} | confianza: {analysis.confidence:.2f}")
+    if analysis.themes:
+        table = Table(title="Temas detectados")
+        table.add_column("Tema")
+        table.add_column("Peso", justify="right")
+        for theme, weight in analysis.themes.items():
+            table.add_row(theme, f"{weight:.2f}")
+        console.print(table)
+    else:
+        console.print("  [dim]Sin temas claros en la letra.[/]")
+    if analysis.top_words:
+        console.print(f"  palabras frecuentes: {', '.join(analysis.top_words)}")
 
 
 def _print_table(tracks: list[Track]) -> None:
@@ -204,7 +251,7 @@ def run(args: argparse.Namespace) -> None:
             run_audio_features(args, library)
             return
         if args.command == "scan":
-            summary = asyncio.run(library.scan())
+            summary = asyncio.run(library.scan(lyrics_dir=args.lyrics_dir))
             console.print(
                 f"[green]Catálogo sincronizado:[/] +{summary['added']} nuevas, "
                 f"~{summary['updated']} actualizadas, ={summary['unchanged']} sin cambios, "
@@ -220,10 +267,17 @@ def run(args: argparse.Namespace) -> None:
                 favorite=args.favorite or None,
                 bpm_min=args.bpm_min,
                 bpm_max=args.bpm_max,
+                lyrical_theme=args.lyric_theme,
+                lyrical_sentiment=args.lyric_sentiment,
             )
             _print_table(tracks)
         elif args.command == "suggest":
-            tracks = library.suggest(mood=args.mood, text=args.text, limit=args.limit)
+            tracks = library.suggest(
+                mood=args.mood,
+                text=args.text,
+                limit=args.limit,
+                lyrical_theme=args.lyric_theme,
+            )
             _print_table(tracks)
         elif args.command == "favorite":
             ok = library.mark_favorite(args.id, args.favorite)
@@ -243,6 +297,16 @@ def run(args: argparse.Namespace) -> None:
                 console.print(f"[red]Pista no encontrada: {args.id}[/]")
                 raise SystemExit(1)
             console.print(f"🗑️  Pista {args.id} eliminada")
+        elif args.command == "lyrics":
+            track = library.get(args.id)
+            if track is None:
+                console.print(f"[red]Pista no encontrada: {args.id}[/]")
+                raise SystemExit(1)
+            analysis = library.lyrics(args.id, args.lyrics_dir)
+            if analysis is None:
+                console.print(f"[yellow]Sin letra para «{track.title}» en {args.lyrics_dir}[/]")
+                raise SystemExit(1)
+            _print_lyrics_analysis(track, analysis)
         elif args.command == "import-cloud":
             asyncio.run(_run_import_cloud(args, library))
         elif args.command == "import-apple-library":

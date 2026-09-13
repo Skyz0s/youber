@@ -215,7 +215,7 @@ def test_library_scan_removes_missing(tmp_path: Path, monkeypatch):
 
     library = MusicLibrary(music_dir)
 
-    async def fake_probe(path):
+    async def fake_probe(path, lyrics_dir=None, lyrics_analyzer=None):
         from youber.music.scanner import file_hash as _hash
 
         return Track(

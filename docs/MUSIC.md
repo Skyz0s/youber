@@ -11,7 +11,8 @@ sugerencias para elegir la música de fondo de tus vídeos.
 | `models.py` | `Mood`, `TrackSource` (enum) y `Track` (pydantic v2) |
 | `database.py` | Persistencia SQLite (`MusicDatabase`) |
 | `scanner.py` | Escaneo de ficheros + metadatos con ffprobe |
-| `matcher.py` | Búsqueda por mood/género/texto y sugerencias |
+| `matcher.py` | Búsqueda por mood/género/texto/letra y sugerencias |
+| `lyrics_analyzer/` | Análisis temático de letras locales (`LyricsAnalyzer`) |
 | `library.py` | `MusicLibrary`: orquesta todo |
 | `providers.py` | Importación desde plataformas (Apple/iTunes, Spotify) |
 | `apple_library.py` | Importación de la biblioteca completa de Apple (XML exportado) |
@@ -29,6 +30,12 @@ youber-music --library ~/musica search --text piano --favorite
 youber-music --library ~/musica suggest --mood energética -n 5
 youber-music --library ~/musica favorite <id>
 youber-music --library ~/musica info <id>
+
+# Análisis de letras (temas y sentimiento) — ver docs/LYRICS_ANALYSIS.md
+youber-music --library ~/musica scan --lyrics-dir ~/letras
+youber-music --library ~/musica lyrics <id> --lyrics-dir ~/letras
+youber-music --library ~/musica search --lyric-theme tristeza
+youber-music --library ~/musica suggest --lyric-theme calma -n 5
 
 youber-music import-cloud "lofi beats" --source apple      # iTunes (sin API key)
 youber-music import-cloud "lofi beats" --source spotify -n 5  # Spotify (credenciales)
@@ -210,9 +217,20 @@ género) y calcula el SHA-256 del fichero:
 ## Sugerencias (`matcher.py`)
 
 `score_track()` puntúa cada pista: +5 si coincide el mood, +2 si es
-favorita, +1 por palabra del texto encontrada en título/artista/género, y
+favorita, +1 por palabra del texto encontrada en título/artista/género,
++1.5×peso si coincide el tema de la letra pedido (`lyrical_theme`) y
 −0.1 por uso (para rotar sugerencias). `suggest_tracks()` ordena por esa
 puntuación y devuelve las mejores.
+
+Los filtros de letra (`--lyric-theme`, `--lyric-sentiment`) permiten
+elegir música cuyo contenido encaje con el del vídeo.
+
+## Análisis de letras (`lyrics_analyzer`)
+
+Analiza los ficheros `.txt` de letras que ya tienes en disco y guarda en
+cada pista sus temas (`lyrical_themes`) y su sentimiento
+(`lyrical_sentiment`) — 100 % offline, sin dependencias nuevas ni
+scraping. Detalles, CLI y uso desde código: **`docs/LYRICS_ANALYSIS.md`**.
 
 ## Ética
 

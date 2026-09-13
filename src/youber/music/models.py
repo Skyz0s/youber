@@ -69,3 +69,7 @@ class Track(BaseModel):
     album: str | None = None
     artwork_url: str | None = None
     preview_url: str | None = None
+    #: Tema detectado en la letra → peso (0..1), p. ej. ``{"tristeza": 0.9}``.
+    lyrical_themes: dict[str, float] = Field(default_factory=dict)
+    #: Sentimiento global de la letra: positive / negative / neutral.
+    lyrical_sentiment: str = "neutral"

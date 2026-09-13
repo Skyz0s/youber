@@ -20,6 +20,7 @@ from pathlib import Path
 from loguru import logger
 
 from youber.music.database import MusicDatabase
+from youber.music.lyrics_analyzer import LyricsAnalysis, LyricsAnalyzer
 from youber.music.matcher import search_tracks, suggest_tracks
 from youber.music.models import Mood, Track
 from youber.music.scanner import scan_library
@@ -43,14 +44,17 @@ class MusicLibrary:
 
     # -- Escaneo ------------------------------------------------------------
 
-    async def scan(self) -> dict[str, int]:
+    async def scan(self, lyrics_dir: str | Path | None = None) -> dict[str, int]:
         """Escanea el directorio y sincroniza el catálogo con la base de datos.
+
+        Args:
+            lyrics_dir: Directorio donde buscar archivos de letras para análisis temático (opcional).
 
         Returns:
             Resumen con contadores: ``added``, ``updated``, ``unchanged``,
             ``removed`` y ``errors``.
         """
-        return await scan_library(self.library_dir, self.db)
+        return await scan_library(self.library_dir, self.db, lyrics_dir=lyrics_dir)
 
     # -- Búsqueda -----------------------------------------------------------
 
@@ -62,8 +66,10 @@ class MusicLibrary:
         favorite: bool | None = None,
         bpm_min: int | None = None,
         bpm_max: int | None = None,
+        lyrical_theme: str | None = None,
+        lyrical_sentiment: str | None = None,
     ) -> list[Track]:
-        """Busca pistas en el catálogo por mood, género, texto o favorito."""
+        """Busca pistas en el catálogo por mood, género, texto, letra o favorito."""
         return search_tracks(
             self.db.list_tracks(),
             mood=mood,
@@ -72,11 +78,32 @@ class MusicLibrary:
             favorite=favorite,
             bpm_min=bpm_min,
             bpm_max=bpm_max,
+            lyrical_theme=lyrical_theme,
+            lyrical_sentiment=lyrical_sentiment,
         )
 
-    def suggest(self, mood: Mood | None = None, text: str | None = None, limit: int = 5) -> list[Track]:
+    def suggest(
+        self,
+        mood: Mood | None = None,
+        text: str | None = None,
+        limit: int = 5,
+        lyrical_theme: str | None = None,
+    ) -> list[Track]:
         """Sugiere pistas para un estado de ánimo/tema (favoritas y menos usadas primero)."""
-        return suggest_tracks(self.db.list_tracks(), mood=mood, text=text, limit=limit)
+        return suggest_tracks(
+            self.db.list_tracks(),
+            mood=mood,
+            text=text,
+            limit=limit,
+            lyrical_theme=lyrical_theme,
+        )
+
+    def lyrics(self, track_id: str, lyrics_dir: str | Path) -> LyricsAnalysis | None:
+        """Analiza la letra de una pista desde un directorio local (o ``None``)."""
+        track = self.db.get_track(track_id)
+        if track is None:
+            return None
+        return LyricsAnalyzer().analyze_track_lyrics(track, Path(lyrics_dir))
 
     # -- Acceso directo -----------------------------------------------------
 

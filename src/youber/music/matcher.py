@@ -36,6 +36,8 @@ def search_tracks(
     favorite: bool | None = None,
     bpm_min: int | None = None,
     bpm_max: int | None = None,
+    lyrical_theme: str | None = None,
+    lyrical_sentiment: str | None = None,
 ) -> list[Track]:
     """Filtra las pistas según los criterios indicados (todos opcionales).
 
@@ -46,6 +48,8 @@ def search_tracks(
         text: Texto libre contra título/artista/género.
         favorite: ``True`` solo favoritas, ``False`` solo no favoritas.
         bpm_min / bpm_max: Rango de BPM (inclusivo).
+        lyrical_theme: Tema detectado en la letra (p. ej. ``tristeza``).
+        lyrical_sentiment: Sentimiento de la letra (``positive``/``negative``/``neutral``).
 
     Returns:
         Lista de pistas que cumplen todos los filtros.
@@ -64,14 +68,24 @@ def search_tracks(
             continue
         if bpm_max is not None and (track.bpm or 0) > bpm_max:
             continue
+        if lyrical_theme and lyrical_theme not in track.lyrical_themes:
+            continue
+        if lyrical_sentiment and track.lyrical_sentiment != lyrical_sentiment:
+            continue
         results.append(track)
     return results
 
 
-def score_track(track: Track, mood: Mood | None = None, text: str | None = None) -> float:
+def score_track(
+    track: Track,
+    mood: Mood | None = None,
+    text: str | None = None,
+    lyrical_theme: str | None = None,
+) -> float:
     """Puntuación de una pista para sugerencias (mayor = mejor).
 
     Puntos: mood coincidente +5, favorita +2, texto +1 por palabra,
+    tema lírico coincidente +1.5 (escalado por su peso),
     descuento por uso (0.1 por uso, para rotar las sugerencias).
     """
     score = 0.0
@@ -80,6 +94,8 @@ def score_track(track: Track, mood: Mood | None = None, text: str | None = None)
     if track.favorite:
         score += 2.0
     score += _text_score(track, text)
+    if lyrical_theme and lyrical_theme in track.lyrical_themes:
+        score += 1.5 * track.lyrical_themes[lyrical_theme]
     score -= 0.1 * track.usage_count
     return score
 
@@ -89,6 +105,7 @@ def suggest_tracks(
     mood: Mood | None = None,
     text: str | None = None,
     limit: int = 5,
+    lyrical_theme: str | None = None,
 ) -> list[Track]:
     """Sugiere las mejores pistas para un estado de ánimo/tema.
 
@@ -100,13 +117,16 @@ def suggest_tracks(
         mood: Estado de ánimo deseado (opcional).
         text: Tema o texto libre (opcional).
         limit: Número máximo de sugerencias.
+        lyrical_theme: Tema presente en la letra (opcional).
 
     Returns:
         Lista ordenada de pistas sugeridas.
     """
     ranked = sorted(
         tracks,
-        key=lambda track: score_track(track, mood=mood, text=text),
+        key=lambda track: score_track(
+            track, mood=mood, text=text, lyrical_theme=lyrical_theme
+        ),
         reverse=True,
     )
     return ranked[:limit]

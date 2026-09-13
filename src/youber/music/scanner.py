@@ -13,6 +13,7 @@ from pathlib import Path
 from loguru import logger
 
 from youber.audio._ffmpeg import probe_duration, run_command
+from youber.music.lyrics_analyzer import LyricsAnalyzer
 from youber.music.models import Track, TrackSource
 
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac"}
@@ -72,23 +73,31 @@ async def _probe_tags(path: Path) -> dict[str, str]:
     return tags
 
 
-async def probe_track(path: str | Path) -> Track:
+async def probe_track(
+    path: str | Path,
+    lyrics_dir: str | Path | None = None,
+    lyrics_analyzer: LyricsAnalyzer | None = None,
+) -> Track:
     """Analiza un fichero de audio y construye su :class:`Track`.
 
     Usa ``ffprobe`` para la duración y los metadatos; el título cae al
     nombre del fichero si no hay etiqueta.
+    Si se proporciona un directorio de letras, intenta analizar las letras
+    correspondientes para enriquecer la pista con información temática.
 
     Args:
         path: Ruta del fichero de audio.
+        lyrics_dir: Directorio donde buscar archivos de letras (opcional).
+        lyrics_analyzer: Instancia de analizador de letras (opcional).
 
     Returns:
-        La pista con sus metadatos básicos (sin moods ni favorito).
+        La pista con sus metadatos básicos y opcionalmente análisis de letras.
     """
     file_path = Path(path)
     duration = await probe_duration(file_path)
     tags = await _probe_tags(file_path)
 
-    return Track(
+    track = Track(
         id="",
         file_path=file_path,
         title=tags.get("title") or file_path.stem,
@@ -98,21 +107,38 @@ async def probe_track(path: str | Path) -> Track:
         file_hash=file_hash(file_path),
     )
 
+    # Analizar letras si se proporcionó directorio y analizador
+    if lyrics_dir is not None and lyrics_analyzer is not None:
+        try:
+            lyrics_analysis = lyrics_analyzer.analyze_track_lyrics(track, Path(lyrics_dir))
+            if lyrics_analysis is not None:
+                track.lyrical_themes = lyrics_analysis.themes
+                track.lyrical_sentiment = lyrics_analysis.sentiment
+        except Exception as exc:
+            # No fallar el escaneo si el análisis de letras falla
+            logger.warning(f"No se pudieron analizar las letras para {path}: {exc}")
+
+    return track
+
 
 async def scan_library(
     directory: str | Path,
     db,
     extensions: set[str] | None = None,
+    lyrics_dir: str | Path | None = None,
 ) -> dict[str, int]:
     """Escanea un directorio y sincroniza el catálogo con la base de datos.
 
     Añade pistas nuevas, actualiza las que cambiaron (hash distinto,
     conservando favorito y uso) y deja intactas las que siguen igual.
+    Si se proporciona un directorio de letras, intenta analizar las letras
+    correspondientes para enriquecer las pistas con información temática.
 
     Args:
         directory: Directorio a escanear.
         db: Instancia de :class:`~youber.music.database.MusicDatabase`.
         extensions: Extensiones a incluir (opcional).
+        lyrics_dir: Directorio donde buscar archivos de letras (opcional).
 
     Returns:
         Resumen con contadores: ``added``, ``updated``, ``unchanged``,
@@ -122,9 +148,12 @@ async def scan_library(
     files = scan_directory(directory, extensions)
     seen: set[str] = set()
 
+    # Crear analizador de letras una sola vez si se proporcionó directorio
+    lyrics_analyzer = LyricsAnalyzer() if lyrics_dir is not None else None
+
     for path in files:
         try:
-            track = await probe_track(path)
+            track = await probe_track(path, lyrics_dir, lyrics_analyzer)
         except Exception as exc:
             logger.warning(f"No se pudo analizar {path}: {exc}")
             summary["errors"] += 1
