@@ -9,6 +9,17 @@ Ejecuta el pipeline de principio a fin, mostrando cada paso con ``rich``:
 5. Añade música de fondo (local o generada con FFmpeg).
 6. Exporta el resultado final (JSON/CSV/Markdown + vídeo MP4).
 
+Con ``--lyrics-video`` se ejecuta el flujo **metadatos → letras → vídeo**:
+
+1. Investiga el canal (metadatos de sus vídeos).
+2. Extrae los vídeos recientes.
+3. Insights de patrones de éxito.
+4. Busca en las **letras** del catálogo la canción que hace falta para ese
+   contenido (:mod:`youber.music.selector`).
+5. Compone el **prompt** de producción y el guion (:mod:`youber.script.prompt`).
+6. Genera el vídeo en local: clips de **Pexels/Pixabay** (B-roll) + render
+   FFmpeg, y añade la canción seleccionada como banda sonora.
+
 Uso:
 
 .. code-block:: bash
@@ -16,6 +27,8 @@ Uso:
     youber-workflow --channel @python -n 10 -o reports
     youber-workflow --demo -o reports            # sin red (canal sintético)
     youber-workflow --video mi_video.mp4 --music mi_musica.mp3 -o reports
+    youber-workflow --lyrics-video --demo --topic "Mi vídeo" \
+        --library music --lyrics-dir letras -o reports
 
 Nota ética: usa solo **tu propia música** o contenido con licencia, y solo
 vídeos propios o con permiso. El modo ``--demo`` genera vídeo y música
@@ -37,6 +50,7 @@ from youber.audio._ffmpeg import run_command
 from youber.audio.editor import add_background_music
 from youber.console import ensure_utf8_console
 from youber.music.library import MusicLibrary, find_track
+from youber.music.selector import TrackMatch, select_best_track, theme_profile
 from youber.research.channel_analyzer import ChannelAnalyzer
 from youber.research.data_models import ChannelData, VideoData
 from youber.research.exporters import (
@@ -45,8 +59,11 @@ from youber.research.exporters import (
     generate_channel_markdown,
 )
 from youber.research.patterns import channel_overview
+from youber.script.builder import build_project
+from youber.script.prompt import brief_to_script, build_video_brief
 from youber.sync.pipeline import sync_video_with_track
 from youber.sync.renderer import subtitle_style_preset
+from youber.video.editor import VideoEditor
 
 console = Console()
 
@@ -141,6 +158,40 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("private", "unlisted", "public"),
         default="private",
         help="Privacidad de la subida (default: private)",
+    )
+    # -- Flujo «metadatos → letras → vídeo» (--lyrics-video)
+    parser.add_argument(
+        "--lyrics-video",
+        action="store_true",
+        help="Flujo nuevo: metadatos → letras → prompt → vídeo local (clips "
+        "Pexels/Pixabay) + canción elegida por su letra",
+    )
+    parser.add_argument(
+        "--topic",
+        default=None,
+        help="Tema del vídeo (--lyrics-video; por defecto: hashtags del canal)",
+    )
+    parser.add_argument(
+        "--lyrics-dir",
+        default=None,
+        help="Directorio con las letras .txt para el análisis temático",
+    )
+    parser.add_argument(
+        "--clips",
+        nargs="+",
+        default=[],
+        help="Tus clips de vídeo (si no, se usan clips de stock)",
+    )
+    parser.add_argument(
+        "--stock",
+        choices=("auto", "pexels", "pixabay", "none"),
+        default="auto",
+        help="Banco de clips de B-roll para el vídeo local (default: auto)",
+    )
+    parser.add_argument(
+        "--no-render",
+        action="store_true",
+        help="Con --lyrics-video: solo brief + guion (sin renderizar el vídeo)",
     )
     return parser
 
@@ -517,6 +568,256 @@ async def run_workflow(
     return result
 
 
+# ---------------------------------------------------------------------------
+# Flujo «metadatos → letras → prompt → vídeo local + canción» (--lyrics-video)
+# ---------------------------------------------------------------------------
+
+
+def _metadata_text(channel: ChannelData) -> str:
+    """Texto con todos los metadatos del canal (títulos, descripciones, tags)."""
+    parts: list[str] = [channel.name or ""]
+    for video in channel.videos:
+        parts.append(video.title or "")
+        if video.description:
+            parts.append(video.description)
+        parts.extend(video.hashtags or [])
+    return " ".join(part for part in parts if part)
+
+
+def _default_topic(insights: dict[str, Any], channel: ChannelData) -> str:
+    """Tema por defecto: los hashtags más usados del canal (o su nombre)."""
+    hashtags = [
+        str(entry["hashtag"])
+        for entry in (insights.get("top_hashtags") or [])
+        if entry.get("hashtag")
+    ][:3]
+    return ", ".join(hashtags) if hashtags else channel.name
+
+
+async def run_lyrics_video(
+    channel_ref: str = DEFAULT_CHANNEL,
+    max_videos: int = 10,
+    output_dir: str = "reports",
+    topic: str | None = None,
+    duration: int | None = None,
+    mode: str = "html",
+    demo: bool = False,
+    library_dir: str = "music",
+    lyrics_dir: str | None = None,
+    clips: list[str] | None = None,
+    stock: str = "auto",
+    track: str | None = None,
+    render: bool = True,
+) -> dict[str, Any]:
+    """Metadatos del canal → letras → prompt → vídeo local (Pexels) + canción.
+
+    Args:
+        channel_ref: URL/handle del canal (ignorado si ``demo=True``).
+        max_videos: Número máximo de vídeos a extraer.
+        output_dir: Directorio donde guardar los resultados.
+        topic: Tema del vídeo (por defecto: hashtags del canal).
+        duration: Duración objetivo en segundos (por defecto: media del canal).
+        mode: ``"html"`` o ``"api"`` para la investigación.
+        demo: Usar canal sintético (sin red).
+        library_dir: Catálogo de música local (``youber.music``).
+        lyrics_dir: Directorio con las letras ``.txt`` (opcional): si se da,
+            el catálogo se escanea con ellas para poder elegir por letra.
+        clips: Tus propios clips de vídeo (si no, se descargan de stock).
+        stock: Banco de B-roll: ``auto``, ``pexels``, ``pixabay`` o ``none``.
+        track: Fuerza una canción del catálogo (ID o texto) en vez de elegirla.
+        render: Si ``False``, solo se generan brief + guion (sin vídeo).
+
+    Returns:
+        Diccionario con el prompt, el guion, la canción elegida y las rutas
+        de los artefactos generados.
+    """
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    # Paso 1: metadatos del canal
+    console.print(Panel.fit("[bold cyan]Paso 1/6 · Metadatos del canal[/]", border_style="cyan"))
+    if demo:
+        channel = demo_channel()
+        console.print(f"📺 Canal sintético: [bold]{channel.name}[/] (sin red)")
+    else:
+        channel = await ChannelAnalyzer().analyze(channel_ref, max_videos=max_videos, mode=mode)
+        console.print(f"📺 Canal: [bold]{channel.name}[/] · {channel.subscribers or '?'} suscriptores")
+
+    # Paso 2: vídeos recientes (metadatos)
+    console.print(Panel.fit("[bold cyan]Paso 2/6 · Vídeos recientes[/]", border_style="cyan"))
+    _print_videos_table(channel, max_videos)
+
+    # Paso 3: insights de patrones
+    console.print(Panel.fit("[bold cyan]Paso 3/6 · Insights de patrones[/]", border_style="cyan"))
+    insights = channel_overview(channel)
+    _print_insights(insights)
+    clean_topic = topic or _default_topic(insights, channel)
+
+    # Paso 4: la canción que hace falta, buscada en las letras
+    console.print(
+        Panel.fit("[bold cyan]Paso 4/6 · Canción (búsqueda en las letras)[/]", border_style="cyan")
+    )
+    metadata_text = _metadata_text(channel)
+    profile = theme_profile(metadata_text)
+    if profile.themes:
+        themes = ", ".join(
+            f"{theme} {weight:.2f}" for theme, weight in profile.themes.items()
+        )
+        console.print(f"🧠 Perfil del contenido: [bold]{themes}[/] · {profile.sentiment}")
+    else:
+        console.print("🧠 Perfil del contenido: sin temas claros en los metadatos")
+
+    library = MusicLibrary(library_dir)
+    try:
+        if lyrics_dir:
+            summary = await library.scan(lyrics_dir=lyrics_dir)
+            console.print(
+                f"📚 Catálogo {library_dir}: {summary.get('added', 0)} nuevas, "
+                f"{summary.get('updated', 0)} actualizadas ({library.count()} pistas)"
+            )
+        if track:
+            forced = find_track(library, track)
+            if forced is None:
+                raise RuntimeError(
+                    f"Canción no encontrada en el catálogo {library_dir!r}: {track!r}. "
+                    "Escanea antes con: youber-music --library <dir> scan --lyrics-dir <letras>"
+                )
+            match: TrackMatch | None = TrackMatch(
+                track_id=forced.id,
+                title=forced.title,
+                artist=forced.artist,
+                score=0.0,
+                matched_themes=list(forced.lyrical_themes),
+                reason="elegida a mano (--track)",
+            )
+        else:
+            match = select_best_track(
+                library.all(), profile, keywords=profile.top_words
+            )
+        if match is not None:
+            artist = f" — {match.artist}" if match.artist else ""
+            console.print(
+                f"🎵 Canción elegida: [bold]{match.title}{artist}[/] (score {match.score:g})"
+            )
+            console.print(f"   Motivo: {match.reason}")
+        else:
+            console.print(
+                "🎵 Sin catálogo de música: el vídeo se renderiza sin banda sonora "
+                "(escanea con: youber-music scan --lyrics-dir <letras>)"
+            )
+
+        # Paso 5: prompt de producción + guion
+        console.print(
+            Panel.fit("[bold cyan]Paso 5/6 · Prompt y guion[/]", border_style="cyan")
+        )
+        brief = build_video_brief(
+            insights,
+            topic=clean_topic,
+            duration=float(duration) if duration else None,
+            profile=profile,
+            metadata_text=metadata_text,
+            track_match=match,
+        )
+        script = brief_to_script(brief, insights)
+        console.print(brief.prompt)
+        console.print(
+            f"🎬 Guion: {len(script.scenes)} escenas · {script.total_duration:g} s · "
+            f"mood [bold]{script.music_mood.value if script.music_mood else '-'}[/]"
+        )
+
+        # Paso 6: vídeo local (clips de stock) + canción
+        console.print(
+            Panel.fit("[bold cyan]Paso 6/6 · Vídeo local + audio[/]", border_style="cyan")
+        )
+        clip_paths = [Path(clip) for clip in (clips or [])]
+        if not clip_paths:
+            from youber.video.stock import available as stock_available
+            from youber.video.stock import fetch_clips_for_scenes
+
+            banks = stock_available()
+            if stock != "none" and any(banks.values()):
+                scenes = [scene.model_dump() for scene in script.scenes]
+                avg_scene = script.total_duration / max(1, len(scenes))
+                per_scene = max(1, min(4, max(1, round(avg_scene / 6))))
+                console.print(
+                    f"⬇️  Buscando clips de B-roll ({stock}) por escena..."
+                )
+                fetched = await fetch_clips_for_scenes(
+                    scenes,
+                    out / "clips",
+                    bank=stock,
+                    per_scene=per_scene,
+                )
+                clip_paths = [path for paths in fetched.values() for path in paths]
+            if not clip_paths:
+                console.print(
+                    "⚠️  Sin clips ni key de stock: se genera un clip sintético "
+                    "(FFmpeg) para que el render funcione offline"
+                )
+                fallback = out / "clip_base.mp4"
+                await generate_test_video(str(fallback), duration or DEFAULT_DURATION)
+                clip_paths = [fallback]
+        console.print(f"🎞️  Clips: [bold]{len(clip_paths)}[/]")
+
+        final_video: Path | None = None
+        if render:
+            editor = VideoEditor(library=library)
+            project = build_project(
+                script,
+                clips=clip_paths,
+                library=library,
+                editor=editor,
+                title=brief.topic,
+                music_track_id=match.track_id if match else None,
+            )
+            final_video = out / f"{_slug(brief.topic)}_final.mp4"
+            console.print(f"🎛️  Renderizando (FFmpeg) → [bold]{final_video}[/]")
+            await editor.render(project, final_video)
+            console.print(f"✅ Vídeo final + canción: [bold green]{final_video}[/]")
+        else:
+            console.print("⏭️  Render omitido (--no-render)")
+
+        # Exportación
+        brief_json = export_channel(channel, out / f"{_slug(channel.name)}.json", fmt="json")
+        script_path = out / f"{_slug(brief.topic)}_guion.json"
+        script_path.write_text(script.model_dump_json(indent=2), encoding="utf-8")
+        brief_path = out / f"{_slug(brief.topic)}_brief.json"
+        brief_path.write_text(brief.model_dump_json(indent=2), encoding="utf-8")
+        md_path = out / f"{_slug(channel.name)}.md"
+        md_path.write_text(generate_channel_markdown(channel), encoding="utf-8")
+        console.print(
+            f"📄 Exportados: {brief_path.name}, {script_path.name}, {md_path.name}"
+        )
+    finally:
+        library.close()
+
+    return {
+        "channel": channel.name,
+        "videos": len(channel.videos),
+        "topic": brief.topic,
+        "themes": profile.themes,
+        "sentiment": profile.sentiment,
+        "track": (
+            {
+                "id": match.track_id,
+                "title": match.title,
+                "artist": match.artist,
+                "score": match.score,
+                "reason": match.reason,
+            }
+            if match is not None
+            else None
+        ),
+        "prompt": brief.prompt,
+        "script": str(script_path),
+        "brief": str(brief_path),
+        "json": str(brief_json),
+        "markdown": str(md_path),
+        "clips": [str(clip) for clip in clip_paths],
+        "final_video": str(final_video) if final_video else None,
+    }
+
+
 async def _upload_video(
     video_path: str | Path,
     *,
@@ -555,6 +856,28 @@ def main() -> None:
     ensure_utf8_console()
     args = build_parser().parse_args()
     try:
+        if args.lyrics_video:
+            result = asyncio.run(
+                run_lyrics_video(
+                    channel_ref=args.channel,
+                    max_videos=args.max_videos,
+                    output_dir=args.output_dir,
+                    topic=args.topic,
+                    duration=args.duration if args.duration != DEFAULT_DURATION else None,
+                    mode="api" if args.api else "html",
+                    demo=args.demo,
+                    library_dir=args.library,
+                    lyrics_dir=args.lyrics_dir,
+                    clips=args.clips,
+                    stock=args.stock,
+                    track=args.track,
+                    render=not args.no_render,
+                )
+            )
+            console.print(
+                f"[bold green]✔ Flujo completado: {result['topic']}[/]"
+            )
+            return
         asyncio.run(
             run_workflow(
                 channel_ref=args.channel,

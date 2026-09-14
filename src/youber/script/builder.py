@@ -66,6 +66,8 @@ def build_project(
     resolution: tuple[int, int] = (1920, 1080),
     fps: int = 30,
     with_texts: bool = True,
+    music_track_id: str | None = None,
+    music_volume: float = 0.25,
 ) -> Project:
     """Construye el :class:`Project` de edición a partir del guion.
 
@@ -81,6 +83,10 @@ def build_project(
             (las instrucciones de escena son para el editor, no para el
             espectador — por defecto ``True`` para el CLI, ``False`` en el
             flujo automático del dashboard).
+        music_track_id: Pista concreta del catálogo para la banda sonora
+            (p. ej. la elegida por sus letras en ``youber.music.selector``).
+            Si se indica, tiene prioridad sobre la sugerencia por mood.
+        music_volume: Volumen de la música de fondo (0..1).
 
     Returns:
         Proyecto listo para ``editor.render(project, out, ...)``.
@@ -131,8 +137,11 @@ def build_project(
             )
         start += scene.duration
 
-    if library is not None:
+    if music_track_id:
+        # La canción viene elegida de fuera (p. ej. por su letra): úsala tal cual.
+        editor.set_music(project, music_track_id, volume=music_volume)
+    elif library is not None:
         track = _pick_local_track(library, script)
         if track is not None:
-            editor.set_music(project, track.id, volume=0.25)
+            editor.set_music(project, track.id, volume=music_volume)
     return project

@@ -53,3 +53,16 @@ print(result["final_video"])  # reports/canal-demo-sintetico_final.mp4
 El flujo genera vídeo y música **sintéticos** (sin derechos de autor) y
 analiza solo datos públicos. Si usas tus propios ficheros, que sean de tu
 creación o con licencia, y vídeos propios o con permiso.
+
+## Flujo nuevo: metadatos → letras → vídeo (`--lyrics-video`)
+
+Además del flujo clásico, `youber-workflow --lyrics-video` busca en las
+**letras** del catálogo la canción que encaja con los metadatos del canal,
+compone un **prompt** de producción y genera el vídeo **en local** con clips
+de **Pexels/Pixabay** + la canción elegida como banda sonora.
+
+```bash
+youber-workflow --lyrics-video --demo --topic "Demo" --library music --stock none
+```
+
+Detalle completo en [`docs/LYRICS_VIDEO.md`](LYRICS_VIDEO.md).
