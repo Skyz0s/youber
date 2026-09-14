@@ -18,6 +18,22 @@ from youber.montage.adapter import OpenMontageAdapter, OpenMontageError
 from youber.montage.cli import _run_produce, build_parser
 from youber.montage.models import PatternSource, PatternSpec, ProductionPlan
 
+# Valor real del entorno (solo lo usa el test de integracion, que si lo quiere).
+_REAL_OPENMONTAGE_DIR = os.environ.get("OPENMONTAGE_DIR")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_openmontage_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Aisla los tests del ``OPENMONTAGE_DIR`` del entorno del desarrollador.
+
+    Sin esto, un ``OPENMONTAGE_DIR`` real (p.ej. el clon de la maquina) gana
+    sobre ``<project_dir>/OpenMontage`` y los tests acaban usando (o tocando)
+    el clon real en vez del checkout fake de ``tmp_path``. Los tests que
+    validan ese orden de resolucion lo vuelven a fijar con ``monkeypatch``.
+    """
+    monkeypatch.delenv("OPENMONTAGE_DIR", raising=False)
+
+
 FAKE_DRIVER_OK = """\
 import argparse
 import pathlib
@@ -299,8 +315,9 @@ _HAS_REAL_OPENMONTAGE = bool(os.environ.get("OPENMONTAGE_DIR")) and (
     not _HAS_REAL_OPENMONTAGE,
     reason="Requiere OPENMONTAGE_DIR con montage.py (driver real)",
 )
-async def test_produce_integracion_real(tmp_path: Path):
+async def test_produce_integracion_real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Con un clon real que tenga driver montage.py, produce() genera vídeo."""
+    monkeypatch.setenv("OPENMONTAGE_DIR", str(_REAL_OPENMONTAGE_DIR))
     adapter = OpenMontageAdapter(project_dir=tmp_path)
     assert adapter.available()
     result = await adapter.produce(_make_plan())

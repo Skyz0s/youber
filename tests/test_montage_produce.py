@@ -10,9 +10,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from youber.montage.adapter import OpenMontageAdapter
 from youber.montage.cli import _run_produce, build_parser
 from youber.montage.models import PatternSource, ProductionPlan
+
+
+@pytest.fixture(autouse=True)
+def _isolate_openmontage_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Aisla los tests del ``OPENMONTAGE_DIR`` del entorno del desarrollador.
+
+    Un ``OPENMONTAGE_DIR`` real (p.ej. el clon de la maquina) gana sobre
+    ``<project_dir>/OpenMontage`` y estos tests acabarian instalando el driver
+    en el clon real en vez del checkout fake de ``tmp_path``.
+    """
+    monkeypatch.delenv("OPENMONTAGE_DIR", raising=False)
+
 
 DRIVER_SOURCE = Path(__file__).resolve().parents[1] / "montage_driver" / "montage.py"
 
