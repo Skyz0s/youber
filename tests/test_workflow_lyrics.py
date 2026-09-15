@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 
 from youber.cli.workflow_cli import build_parser, run_lyrics_video
+from youber.journal import DecisionJournal
 from youber.music.models import Track
+from youber.music.selector import TrackMatch
 from youber.research.data_models import ChannelData, VideoData
 from youber.video.editor import VideoEditor
 
@@ -35,6 +37,12 @@ def _track(track_id: str, title: str, themes: dict[str, float], sentiment: str) 
 TRACKS = [
     _track("sad", "Adiós", {"tristeza": 0.9}, "negative"),
     _track("happy", "Alegría", {"felicidad": 0.9}, "positive"),
+]
+
+#: Ranking sintético con dos candidatas (para probar el margen del journal).
+SELECT_TRACKS = [
+    TrackMatch(track_id="sad", title="Adiós", score=6.0, matched_themes=["tristeza"]),
+    TrackMatch(track_id="happy", title="Alegría", score=0.1, matched_themes=[]),
 ]
 
 
@@ -154,6 +162,15 @@ def test_parser_lyrics_video_defaults():
     assert args.no_render is False
 
 
+def test_parser_journal_flags():
+    args = build_parser().parse_args([])
+    assert args.no_journal is False
+    assert args.journal_db is None
+    args = build_parser().parse_args(["--no-journal", "--journal-db", "x.db"])
+    assert args.no_journal is True
+    assert args.journal_db == "x.db"
+
+
 # ---------------------------------------------------------------------------
 # Flujo completo (offline)
 # ---------------------------------------------------------------------------
@@ -243,6 +260,101 @@ async def test_lyrics_video_track_inexistente_falla(offline) -> None:
             track="no-existe",
             render=False,
         )
+
+
+# ---------------------------------------------------------------------------
+# Registro de decisiones (decision journal)
+# ---------------------------------------------------------------------------
+
+
+async def test_lyrics_video_registra_decision(offline, tmp_path: Path) -> None:
+    """Cada vídeo generado deja su decisión completa en el journal."""
+    db = tmp_path / "decisiones.db"
+    result = await run_lyrics_video(
+        demo=True,
+        topic="La noche",
+        output_dir=str(tmp_path / "out-journal"),
+        library_dir=str(tmp_path / "music-journal"),
+        lyrics_dir=str(tmp_path / "letras"),
+        stock="pexels",
+        duration=30,
+        journal_db=str(db),
+    )
+
+    assert result["decision_id"]
+    journal = DecisionJournal(db)
+    record = journal.get(str(result["decision_id"]))
+    assert record is not None
+    assert record.topic == "La noche"
+    assert record.mode == "demo"
+    # Atributos de los metadatos (canal sintético triste)
+    assert record.attributes.dominant_theme == "tristeza"
+    assert record.attributes.sentiment == "negative"
+    assert record.attributes.videos_analyzed == 1
+    # Decisión de canción, con motivo y candidatas
+    assert record.track.chosen_id == "sad"
+    assert record.track.sentiment_match is True
+    assert record.track.reason
+    # El ranking completo queda registrado (la elegida primero)
+    assert record.track.candidates[0].track_id == "sad"
+    assert [candidate.rank for candidate in record.track.candidates] == [1, 2]
+    assert record.track.catalog_size == 2
+    assert record.track.margin is not None
+    # Vídeo generado y artefactos
+    assert record.video.clip_source == "pexels"
+    assert record.video.clip_count >= 1
+    assert record.video.path == result["final_video"]
+    assert set(record.artifacts) == {"brief", "script", "json", "markdown"}
+    assert record.prompt == result["prompt"]
+
+
+async def test_lyrics_video_journal_se_puede_desactivar(offline, tmp_path: Path) -> None:
+    db = tmp_path / "vacio.db"
+    result = await run_lyrics_video(
+        demo=True,
+        topic="Sin journal",
+        output_dir=str(tmp_path / "out-nj"),
+        library_dir=str(tmp_path / "music-nj"),
+        stock="none",
+        render=False,
+        journal=False,
+        journal_db=str(db),
+    )
+    assert result["decision_id"] is None
+    assert DecisionJournal(db).count() == 0
+
+
+async def test_lyrics_video_registra_ventaja_entre_candidatas(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Con varias candidatas, el journal guarda el ranking y el margen."""
+    import youber.cli.workflow_cli as workflow_cli
+
+    monkeypatch.setattr(workflow_cli, "demo_channel", _sad_channel)
+    monkeypatch.setattr(workflow_cli, "MusicLibrary", FakeLibrary)
+    monkeypatch.setattr(
+        workflow_cli,
+        "select_tracks",
+        lambda tracks, profile, **kwargs: list(SELECT_TRACKS),
+    )
+
+    db = tmp_path / "ranking.db"
+    result = await run_lyrics_video(
+        demo=True,
+        topic="Ranking",
+        output_dir=str(tmp_path / "out-rank"),
+        library_dir=str(tmp_path / "music-rank"),
+        stock="none",
+        render=False,
+        journal_db=str(db),
+    )
+
+    record = DecisionJournal(db).get(str(result["decision_id"]))
+    assert record is not None
+    assert [candidate.track_id for candidate in record.track.candidates] == ["sad", "happy"]
+    assert record.track.candidates[0].rank == 1
+    assert record.track.margin == 5.9  # 6.0 - 0.1
+    assert record.track.catalog_size == 2
 
 
 # ---------------------------------------------------------------------------

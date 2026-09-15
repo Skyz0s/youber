@@ -46,11 +46,17 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from youber.audio._ffmpeg import run_command
+from youber.audio._ffmpeg import probe_duration, run_command
 from youber.audio.editor import add_background_music
 from youber.console import ensure_utf8_console
+from youber.journal import (
+    DecisionJournal,
+    DecisionRecord,
+    record_from_lyrics_run,
+    record_from_workflow_run,
+)
 from youber.music.library import MusicLibrary, find_track
-from youber.music.selector import TrackMatch, select_best_track, theme_profile
+from youber.music.selector import TrackMatch, select_tracks, theme_profile
 from youber.research.channel_analyzer import ChannelAnalyzer
 from youber.research.data_models import ChannelData, VideoData
 from youber.research.exporters import (
@@ -193,6 +199,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Con --lyrics-video: solo brief + guion (sin renderizar el vídeo)",
     )
+    parser.add_argument(
+        "--journal-db",
+        default=None,
+        help="Base de datos del registro de decisiones (default: ~/.youber/journal.db)",
+    )
+    parser.add_argument(
+        "--no-journal",
+        action="store_true",
+        help="No registrar la decisión en el decision journal",
+    )
     return parser
 
 
@@ -330,6 +346,34 @@ async def generate_test_music(path: str, duration: int = DEFAULT_DURATION) -> st
 # ---------------------------------------------------------------------------
 
 
+async def _video_duration(path: str | Path | None) -> float | None:
+    """Duración del vídeo final (best effort: ``None`` si no se puede medir).
+
+    Se usa para el registro de decisiones; un fallo al medir nunca debe
+    tumbar un flujo que ya ha renderizado el vídeo.
+    """
+    if not path:
+        return None
+    target = Path(path)
+    if not target.is_file():
+        return None
+    try:
+        return await probe_duration(target)
+    except Exception:  # la journalización es best-effort
+        return None
+
+
+def _journal_record(record: DecisionRecord, journal_db: str | None) -> str:
+    """Guarda una decisión en el journal y lo anuncia por consola."""
+    store = DecisionJournal(journal_db)
+    try:
+        store.record(record)
+    finally:
+        store.close()
+    console.print(f"🗂️  Decisión registrada: [bold]{record.id}[/]")
+    return record.id
+
+
 def _slug(text: str) -> str:
     """Convierte un texto en un nombre de fichero seguro (ASCII)."""
     return (
@@ -393,6 +437,8 @@ async def run_workflow(
     upload: bool = False,
     upload_title: str | None = None,
     privacy: str = "private",
+    journal: bool = True,
+    journal_db: str | None = None,
 ) -> dict[str, Any]:
     """Ejecuta el flujo completo de investigación + edición.
 
@@ -549,6 +595,33 @@ async def run_workflow(
         )
         console.print(f"🚀 Subido: [bold]{upload_url}[/] (privacidad: {privacy})")
 
+    decision_id: str | None = None
+    if journal:
+        journal_profile = theme_profile(_metadata_text(channel))
+        decision_id = _journal_record(
+            record_from_workflow_run(
+                channel=channel,
+                insights=insights,
+                profile=journal_profile,
+                track=track_obj,
+                target_duration=float(duration),
+                artifacts={
+                    "json": str(json_path),
+                    "csv": str(csv_path),
+                    "markdown": str(md_path),
+                },
+                video_path=final_video,
+                video_duration=await _video_duration(final_video),
+                clip_source="local" if video_path else "synthetic",
+                mode="demo" if demo else mode,
+                upload_url=upload_url,
+                upload_title=upload_title,
+                privacy=privacy if upload else None,
+                metadata_text=_metadata_text(channel),
+            ),
+            journal_db,
+        )
+
     console.print(f"📄 Exportados: {json_path.name}, {csv_path.name}, {md_path.name}")
     result: dict[str, Any] = {
         "channel": channel.name,
@@ -559,6 +632,7 @@ async def run_workflow(
         "json": str(json_path),
         "csv": str(csv_path),
         "markdown": str(md_path),
+        "decision_id": decision_id,
     }
     if sync_lyrics:
         result["synced"] = True
@@ -608,6 +682,9 @@ async def run_lyrics_video(
     stock: str = "auto",
     track: str | None = None,
     render: bool = True,
+    journal: bool = True,
+    journal_db: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Metadatos del canal → letras → prompt → vídeo local (Pexels) + canción.
 
@@ -626,6 +703,10 @@ async def run_lyrics_video(
         stock: Banco de B-roll: ``auto``, ``pexels``, ``pixabay`` o ``none``.
         track: Fuerza una canción del catálogo (ID o texto) en vez de elegirla.
         render: Si ``False``, solo se generan brief + guion (sin vídeo).
+        journal: Registrar la decisión completa en el decision journal.
+        journal_db: Base de datos del journal (por defecto
+            ``YOUBER_JOURNAL_DB`` o ``~/.youber/journal.db``).
+        run_id: Identificador de la ejecución (para agrupar decisiones).
 
     Returns:
         Diccionario con el prompt, el guion, la canción elegida y las rutas
@@ -668,6 +749,7 @@ async def run_lyrics_video(
         console.print("🧠 Perfil del contenido: sin temas claros en los metadatos")
 
     library = MusicLibrary(library_dir)
+    candidates: list[TrackMatch] = []
     try:
         if lyrics_dir:
             summary = await library.scan(lyrics_dir=lyrics_dir)
@@ -675,6 +757,7 @@ async def run_lyrics_video(
                 f"📚 Catálogo {library_dir}: {summary.get('added', 0)} nuevas, "
                 f"{summary.get('updated', 0)} actualizadas ({library.count()} pistas)"
             )
+        match: TrackMatch | None = None
         if track:
             forced = find_track(library, track)
             if forced is None:
@@ -682,7 +765,7 @@ async def run_lyrics_video(
                     f"Canción no encontrada en el catálogo {library_dir!r}: {track!r}. "
                     "Escanea antes con: youber-music --library <dir> scan --lyrics-dir <letras>"
                 )
-            match: TrackMatch | None = TrackMatch(
+            forced_match = TrackMatch(
                 track_id=forced.id,
                 title=forced.title,
                 artist=forced.artist,
@@ -690,10 +773,13 @@ async def run_lyrics_video(
                 matched_themes=list(forced.lyrical_themes),
                 reason="elegida a mano (--track)",
             )
+            match = forced_match
+            candidates = [forced_match]
         else:
-            match = select_best_track(
-                library.all(), profile, keywords=profile.top_words
+            candidates = select_tracks(
+                library.all(), profile, keywords=profile.top_words, limit=5
             )
+            match = candidates[0] if candidates else None
         if match is not None:
             artist = f" — {match.artist}" if match.artist else ""
             console.print(
@@ -730,12 +816,21 @@ async def run_lyrics_video(
             Panel.fit("[bold cyan]Paso 6/6 · Vídeo local + audio[/]", border_style="cyan")
         )
         clip_paths = [Path(clip) for clip in (clips or [])]
+        clip_source = "local" if clip_paths else "none"
         if not clip_paths:
             from youber.video.stock import available as stock_available
             from youber.video.stock import fetch_clips_for_scenes
 
             banks = stock_available()
             if stock != "none" and any(banks.values()):
+                clip_source = (
+                    next(
+                        (name for name, available_bank in banks.items() if available_bank),
+                        stock,
+                    )
+                    if stock == "auto"
+                    else stock
+                )
                 scenes = [scene.model_dump() for scene in script.scenes]
                 avg_scene = script.total_duration / max(1, len(scenes))
                 per_scene = max(1, min(4, max(1, round(avg_scene / 6))))
@@ -757,6 +852,7 @@ async def run_lyrics_video(
                 fallback = out / "clip_base.mp4"
                 await generate_test_video(str(fallback), duration or DEFAULT_DURATION)
                 clip_paths = [fallback]
+                clip_source = "synthetic"
         console.print(f"🎞️  Clips: [bold]{len(clip_paths)}[/]")
 
         final_video: Path | None = None
@@ -788,6 +884,44 @@ async def run_lyrics_video(
         console.print(
             f"📄 Exportados: {brief_path.name}, {script_path.name}, {md_path.name}"
         )
+
+        # Registro de la decisión completa (metadatos → canción → vídeo)
+        decision_id: str | None = None
+        if journal:
+            decision_id = _journal_record(
+                record_from_lyrics_run(
+                    topic=brief.topic,
+                    channel=channel,
+                    insights=insights,
+                    profile=profile,
+                    match=match,
+                    candidates=candidates,
+                    chosen_track=(
+                        library.get(match.track_id) if match is not None else None
+                    ),
+                    forced=bool(track),
+                    catalog_size=library.count(),
+                    prompt=brief.prompt,
+                    keywords=brief.keywords,
+                    target_duration=brief.target_duration,
+                    scenes=len(script.scenes),
+                    music_mood=brief.music_mood,
+                    artifacts={
+                        "brief": str(brief_path),
+                        "script": str(script_path),
+                        "json": str(brief_json),
+                        "markdown": str(md_path),
+                    },
+                    video_path=final_video,
+                    video_duration=await _video_duration(final_video),
+                    clip_count=len(clip_paths),
+                    clip_source=clip_source,
+                    mode="demo" if demo else mode,
+                    run_id=run_id,
+                    metadata_text=metadata_text,
+                ),
+                journal_db,
+            )
     finally:
         library.close()
 
@@ -814,7 +948,9 @@ async def run_lyrics_video(
         "json": str(brief_json),
         "markdown": str(md_path),
         "clips": [str(clip) for clip in clip_paths],
+        "clip_source": clip_source,
         "final_video": str(final_video) if final_video else None,
+        "decision_id": decision_id,
     }
 
 
@@ -872,6 +1008,8 @@ def main() -> None:
                     stock=args.stock,
                     track=args.track,
                     render=not args.no_render,
+                    journal=not args.no_journal,
+                    journal_db=args.journal_db,
                 )
             )
             console.print(
@@ -898,6 +1036,8 @@ def main() -> None:
                 upload=args.upload,
                 upload_title=args.upload_title,
                 privacy=args.privacy,
+                journal=not args.no_journal,
+                journal_db=args.journal_db,
             )
         )
     except Exception as exc:

@@ -123,9 +123,9 @@ asyncio.run(main())
 - [Métricas CLI](docs/METRICS.md) — widgets en HTML/Markdown/JSON (módulo `youber.dashboard`)
 - [Dashboard (Control UI)](docs/DASHBOARD.md) — guía de uso del tab Youber
 - [Plugin youber-dashboard](docs/PLUGIN.md) — instalación y configuración del plugin
-- [Guía de laboratorio](docs/RESEARCH.md) — experimentos observacionales
-- [Ejemplos](docs/EXAMPLES.md) — guía de los ejemplos
-- [Publicación en PyPI](docs/PUBLISHING.md) — cómo publicar el paquete
+- [Guía de laboratorio](docs/RESEARCH.md) - experimentos observacionales
+- [Ejemplos](docs/EXAMPLES.md) - guía de los ejemplos
+- [Registro de decisiones](docs/DECISION_JOURNAL.md) - qué decidió el algoritmo y cómo rindió cada vídeo
 
 ## Capturas (dashboard de Control UI)
 

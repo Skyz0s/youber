@@ -4,6 +4,27 @@ Todos los cambios relevantes del proyecto se documentan aquí.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el
 proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
+## [Unreleased]
+
+### Added
+
+- **Registro de decisiones** (`youber/journal`, CLI `youber-journal`): cada
+  vídeo generado deja una huella auditable — patrón detectado en los metadatos,
+  atributos extraídos, canción elegida con su motivo, puntuación y ranking de
+  candidatas, prompt/guion, vídeo renderizado y, después, las métricas del canal
+  (impresiones, CTR, retención, vistas, suscripciones...).
+  - `youber.journal`: `DecisionJournal` (SQLite en `~/.youber/journal.db`),
+    modelos pydantic y almacén con métricas por ventana.
+  - **Dataset + análisis**: `dataset` (features → resultados) y `analyze`
+    (correlaciones de Pearson por feature y medias por grupo) para estudiar qué
+    características del matching predicen un vídeo que funciona.
+  - **Importación**: `youber-journal import <csv>` cruza un export de YouTube
+    Studio (modo avanzado) con las decisiones por id de vídeo o título.
+  - Integrado en `youber-workflow` (clásico y `--lyrics-video`) con
+    `--journal-db` / `--no-journal`; docs en `docs/DECISION_JOURNAL.md`.
+- `youber.music.selector`: `score_breakdown` (desglose auditable del scoring
+  por señal: tema, sentimiento, mood, keywords, favorita y uso previo).
+
 ## [0.1.0] - 2026-08-29
 
 Primera publicación (Alpha).

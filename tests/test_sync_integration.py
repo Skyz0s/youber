@@ -309,7 +309,9 @@ async def test_workflow_sync_y_upload(tmp_path: Path, monkeypatch):
 
         def search(self, text=None, **kwargs):
             return [
-                SimpleNamespace(file_path=track_file, title="Tema", artist="Banda")
+                SimpleNamespace(
+                    id="tema1", file_path=track_file, title="Tema", artist="Banda"
+                )
             ]
 
         def close(self):

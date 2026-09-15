@@ -42,6 +42,34 @@ class TrackMatch(BaseModel):
     reason: str = ""
 
 
+class TrackBreakdown(BaseModel):
+    """Desglose del scoring de una pista: cada señal y cuánto aportó.
+
+    Permite auditar *por qué* ganó una canción y —registrado en el
+    decision journal— estudiar después qué señal predice mejor el resultado.
+    """
+
+    total: float = 0.0
+    theme_score: float = 0.0
+    sentiment_score: float = 0.0
+    mood_score: float = 0.0
+    keyword_score: float = 0.0
+    favorite_bonus: float = 0.0
+    usage_penalty: float = 0.0
+    matched_themes: list[str] = Field(default_factory=list)
+    keyword_hits: int = 0
+
+    @property
+    def sentiment_match(self) -> bool:
+        """``True`` si el sentimiento de la letra coincide con el del vídeo."""
+        return self.sentiment_score > 0
+
+    @property
+    def mood_match(self) -> bool:
+        """``True`` si el mood etiquetado coincide con el objetivo."""
+        return self.mood_score > 0
+
+
 def theme_profile(text: str, analyzer: LyricsAnalyzer | None = None) -> LyricsAnalysis:
     """Perfil temático del texto de los metadatos (temas + sentimiento).
 
@@ -61,6 +89,61 @@ def _text_score(track: Track, keywords: Sequence[str]) -> float:
     return float(
         sum(1.0 for word in keywords if word and word.lower() in haystack)
     )
+
+
+def score_breakdown(
+    track: Track,
+    *,
+    themes: dict[str, float] | None = None,
+    sentiment: str = "neutral",
+    mood: Mood | None = None,
+    keywords: Sequence[str] = (),
+) -> TrackBreakdown:
+    """Desglosa la puntuación de una pista señal a señal.
+
+    Es la versión auditable de :func:`score_track_for_profile`: devuelve la
+    aportación de cada señal (tema, sentimiento, mood, keywords, favorita y
+    penalización por uso) además del total.
+
+    Args:
+        track: Pista del catálogo.
+        themes: Temas del vídeo → peso (0..1).
+        sentiment: Sentimiento del vídeo (``positive``/``negative``/``neutral``).
+        mood: Mood objetivo (opcional).
+        keywords: Palabras clave del vídeo (opcional).
+
+    Returns:
+        El :class:`TrackBreakdown` con el total y cada aportación.
+    """
+    profile = themes or {}
+    breakdown = TrackBreakdown()
+
+    for theme, video_weight in sorted(
+        profile.items(), key=lambda item: item[1], reverse=True
+    ):
+        track_weight = track.lyrical_themes.get(theme)
+        if track_weight:
+            breakdown.theme_score += THEME_WEIGHT * float(video_weight) * float(track_weight)
+            breakdown.matched_themes.append(theme)
+
+    if sentiment != "neutral" and track.lyrical_sentiment == sentiment:
+        breakdown.sentiment_score = SENTIMENT_WEIGHT
+    if mood is not None and mood in track.moods:
+        breakdown.mood_score = MOOD_WEIGHT
+    breakdown.keyword_hits = int(_text_score(track, keywords))
+    breakdown.keyword_score = KEYWORD_WEIGHT * breakdown.keyword_hits
+    if track.favorite:
+        breakdown.favorite_bonus = FAVORITE_BONUS
+    breakdown.usage_penalty = USAGE_PENALTY * track.usage_count
+    breakdown.total = (
+        breakdown.theme_score
+        + breakdown.sentiment_score
+        + breakdown.mood_score
+        + breakdown.keyword_score
+        + breakdown.favorite_bonus
+        - breakdown.usage_penalty
+    )
+    return breakdown
 
 
 def score_track_for_profile(
@@ -83,27 +166,10 @@ def score_track_for_profile(
     Returns:
         ``(puntuación, temas_compartidos)`` con los temas ordenados por peso.
     """
-    profile = themes or {}
-    score = 0.0
-    matched: list[str] = []
-
-    for theme, video_weight in sorted(
-        profile.items(), key=lambda item: item[1], reverse=True
-    ):
-        track_weight = track.lyrical_themes.get(theme)
-        if track_weight:
-            score += THEME_WEIGHT * float(video_weight) * float(track_weight)
-            matched.append(theme)
-
-    if sentiment != "neutral" and track.lyrical_sentiment == sentiment:
-        score += SENTIMENT_WEIGHT
-    if mood is not None and mood in track.moods:
-        score += MOOD_WEIGHT
-    score += KEYWORD_WEIGHT * _text_score(track, keywords)
-    if track.favorite:
-        score += FAVORITE_BONUS
-    score -= USAGE_PENALTY * track.usage_count
-    return score, matched
+    breakdown = score_breakdown(
+        track, themes=themes, sentiment=sentiment, mood=mood, keywords=keywords
+    )
+    return breakdown.total, list(breakdown.matched_themes)
 
 
 def _reason(

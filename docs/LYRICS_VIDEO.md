@@ -24,6 +24,14 @@ el vídeo **en local** con clips de **Pexels/Pixabay** + la canción elegida.
 Artefactos: `<slug>_final.mp4`, `<slug>_brief.json`, `<slug>_guion.json`,
 `<canal>.json`, `<canal>.md` y los clips en `clips/`.
 
+Cada ejecución deja además su **decisión registrada** en el *decision
+journal* (`docs/DECISION_JOURNAL.md`): patrón detectado, perfil temático,
+canción elegida con su motivo y puntuación, ranking de candidatas, artefactos y
+vídeo generado. Después se le pegan las métricas del canal
+(`youber-journal import` / `performance`) para estudiar qué features predicen
+un vídeo que funciona. Flags: `--no-journal` (no registrar) y
+`--journal-db <ruta>` (otra base de datos que `~/.youber/journal.db`).
+
 ## CLI
 
 ```bash
