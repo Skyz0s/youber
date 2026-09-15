@@ -61,6 +61,11 @@ Por defecto el vídeo dura **lo que dura la canción elegida**, para que no
 haya desajustes (música cortada o vídeo que sigue en silencio). Si indicas
 `--duration N`, esa manda; y si no hay catálogo, se usa la media del canal.
 
+Además, como las transiciones (`xfade`) **se solapan** y acortarían el
+montaje, la duración objetivo se compensa con ese solape (se ve en consola:
+«Transiciones compensadas (+6.0 s)»), de forma que el vídeo final dura lo
+mismo que la canción.
+
 ## Desde código
 
 ```python

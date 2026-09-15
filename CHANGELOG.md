@@ -28,7 +28,9 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
   indicas `--duration`, el vídeo dura lo que la canción elegida (sin
   desajustes de audio); `--duration N` sigue teniendo prioridad y, sin
   catálogo, se usa la media del canal. El journal guarda la duración de la
-  canción (`track_duration`) como feature para el análisis.
+  canción (`track_duration`) como feature para el análisis. Las transiciones
+  solapadas se compensan para que el vídeo final dure exactamente lo mismo
+  que la canción.
 
 ## [0.1.0] - 2026-08-29
 

@@ -279,6 +279,26 @@ async def test_lyrics_video_duracion_sigue_a_la_cancion(offline, tmp_path: Path)
     assert script["total_duration"] == brief["target_duration"]
 
 
+async def test_lyrics_video_cuadra_la_duracion_con_la_cancion(offline, tmp_path: Path) -> None:
+    """Las transiciones solapadas se compensan para que el montaje dure la canción."""
+    result = await run_lyrics_video(
+        demo=True,
+        topic="Cuadre",
+        output_dir=str(tmp_path / "out-cuadre"),
+        library_dir=str(tmp_path / "music-cuadre"),
+        stock="pexels",
+    )
+
+    project = offline["rendered"]["project"]
+    total = sum(clip.duration for clip in project.clips) - sum(
+        transition.duration for transition in project.transitions
+    )
+    # La pista ficticia dura 120 s: el montaje debe cuadrar con ella.
+    assert abs(total - 120.0) <= 0.2
+    brief = json.loads(Path(result["brief"]).read_text(encoding="utf-8"))
+    assert brief["target_duration"] > 120.0  # incluye el solape compensado
+
+
 async def test_lyrics_video_duracion_explicita_manda(offline, tmp_path: Path) -> None:
     """Si indicas --duration, esa manda sobre la duración de la canción."""
     result = await run_lyrics_video(

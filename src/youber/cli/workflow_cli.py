@@ -385,6 +385,21 @@ def _journal_record(record: DecisionRecord, journal_db: str | None) -> str:
     return record.id
 
 
+def _project_duration(project: Any) -> float | None:
+    """Duración del montaje según el proyecto (sin renderizar).
+
+    Las transiciones se solapan (``xfade``), así que acortan el total: el
+    montaje dura la suma de los clips menos la suma de las transiciones. Si
+    algún clip no tiene duración explícita, devuelve ``None`` (habría que
+    sondear el fichero).
+    """
+    if any(clip.duration is None for clip in project.clips):
+        return None
+    clips = sum(float(clip.duration or 0.0) for clip in project.clips)
+    transitions = sum(float(transition.duration) for transition in project.transitions)
+    return round(clips - transitions, 3)
+
+
 def _slug(text: str) -> str:
     """Convierte un texto en un nombre de fichero seguro (ASCII)."""
     return (
@@ -906,6 +921,34 @@ async def run_lyrics_video(
                 music_track_id=match.track_id if match else None,
                 music_volume=music_volume,
             )
+            # Las transiciones solapadas acortan el montaje: se compensan para
+            # que el vídeo dure exactamente lo mismo que la canción.
+            if audio_duration is not None and not duration:
+                current = _project_duration(project)
+                gap = round(audio_duration - current, 3) if current is not None else 0.0
+                if abs(gap) > 0.2:
+                    brief = build_video_brief(
+                        insights,
+                        topic=clean_topic,
+                        duration=audio_duration + gap,
+                        profile=profile,
+                        metadata_text=metadata_text,
+                        track_match=match,
+                    )
+                    script = brief_to_script(brief, insights)
+                    project = build_project(
+                        script,
+                        clips=clip_paths,
+                        library=library,
+                        editor=editor,
+                        title=brief.topic,
+                        music_track_id=match.track_id if match else None,
+                        music_volume=music_volume,
+                    )
+                    console.print(
+                        f"⏱️  Transiciones compensadas ({gap:+.1f} s) para cuadrar con "
+                        f"la canción ({audio_duration:g} s)"
+                    )
             final_video = out / f"{_slug(brief.topic)}_final.mp4"
             console.print(f"🎛️  Renderizando (FFmpeg) → [bold]{final_video}[/]")
             await editor.render(project, final_video)
