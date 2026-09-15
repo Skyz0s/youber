@@ -83,6 +83,8 @@ class TrackDecision(BaseModel):
     chosen_id: str | None = None
     chosen_title: str | None = None
     chosen_artist: str | None = None
+    #: Duración de la canción elegida (s): el vídeo se ajusta a ella.
+    duration_seconds: float | None = None
     score: float = 0.0
     reason: str = ""
     matched_themes: list[str] = Field(default_factory=list)

@@ -24,6 +24,11 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
     `--journal-db` / `--no-journal`; docs en `docs/DECISION_JOURNAL.md`.
 - `youber.music.selector`: `score_breakdown` (desglose auditable del scoring
   por señal: tema, sentimiento, mood, keywords, favorita y uso previo).
+- **La duración del vídeo sigue a la canción**: en `--lyrics-video`, si no
+  indicas `--duration`, el vídeo dura lo que la canción elegida (sin
+  desajustes de audio); `--duration N` sigue teniendo prioridad y, sin
+  catálogo, se usa la media del canal. El journal guarda la duración de la
+  canción (`track_duration`) como feature para el análisis.
 
 ## [0.1.0] - 2026-08-29
 

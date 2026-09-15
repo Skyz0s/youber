@@ -85,8 +85,8 @@ herramientas.
 - **features** *(lo que el algoritmo sabía al decidir)*: `chosen_score`,
   `theme_score`, `matched_theme_count`, `sentiment_match`, `mood_match`,
   `favorite`, `usage_count`, `keyword_hits`, `candidate_margin`,
-  `catalog_size`, `theme_count`, `target_duration`, `scene_count`,
-  `clip_count`, `video_duration`, `forced`...
+  `catalog_size`, `theme_count`, `target_duration`, `track_duration`,
+  `scene_count`, `clip_count`, `video_duration`, `forced`...
 - **resultados** *(lo que pasó después)*: `views`, `impressions`, `ctr`,
   `retention`, `avg_view_duration_seconds`, `watch_time_minutes`, `likes`,
   `comments`, `shares`, `subscribers_gained`, `net_subscribers`,

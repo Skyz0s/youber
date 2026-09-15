@@ -39,6 +39,10 @@ un vídeo que funciona. Flags: `--no-journal` (no registrar) y
 youber-workflow --lyrics-video --channel @python -n 10 \
     --topic "Mi vídeo" --library music --lyrics-dir letras -o reports
 
+# El vídeo dura lo que la canción elegida; si quieres forzar la duración:
+youber-workflow --lyrics-video --channel @python --duration 60 \
+    --library music --lyrics-dir letras -o reports
+
 # Sin red: canal sintético + clip sintético si no hay key de stock
 youber-workflow --lyrics-video --demo --topic "Demo" \
     --library music --stock none -o reports
@@ -49,7 +53,13 @@ youber-workflow --lyrics-video --demo --topic "Demo" --no-render
 
 Flags: `--topic`, `--lyrics-dir`, `--clips` (tus propios clips), `--stock`
 (`auto|pexels|pixabay|none`), `--track` (fuerza una canción del catálogo),
-`--no-render`.
+`--music-volume` (volumen de la canción, 0..1; por defecto 1.0), `--no-render`.
+
+## Duración: manda la canción
+
+Por defecto el vídeo dura **lo que dura la canción elegida**, para que no
+haya desajustes (música cortada o vídeo que sigue en silencio). Si indicas
+`--duration N`, esa manda; y si no hay catálogo, se usa la media del canal.
 
 ## Desde código
 

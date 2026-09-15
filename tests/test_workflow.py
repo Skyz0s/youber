@@ -29,7 +29,7 @@ def test_parser_defaults():
     assert args.output_dir == "reports"
     assert args.video is None
     assert args.music is None
-    assert args.duration == 30
+    assert args.duration is None  # en --lyrics-video manda la canción; el clásico usa 30 s
     assert args.demo is False
 
 

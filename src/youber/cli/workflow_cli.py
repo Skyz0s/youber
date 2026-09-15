@@ -56,6 +56,7 @@ from youber.journal import (
     record_from_workflow_run,
 )
 from youber.music.library import MusicLibrary, find_track
+from youber.music.models import Track
 from youber.music.selector import TrackMatch, select_tracks, theme_profile
 from youber.research.channel_analyzer import ChannelAnalyzer
 from youber.research.data_models import ChannelData, VideoData
@@ -99,8 +100,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--duration",
         type=int,
-        default=DEFAULT_DURATION,
-        help=f"Duración del vídeo/música generados (por defecto: {DEFAULT_DURATION}s)",
+        default=None,
+        help=(
+            "Duración del vídeo en segundos. Con --lyrics-video, si no se indica, el "
+            "vídeo dura lo que la canción elegida (así no hay desajustes de audio); el "
+            f"flujo clásico usa {DEFAULT_DURATION}s para los medios de prueba."
+        ),
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -689,6 +694,7 @@ async def run_lyrics_video(
     track: str | None = None,
     render: bool = True,
     music_volume: float = 1.0,
+    duration_from_audio: bool = True,
     channel_data: ChannelData | None = None,
     journal: bool = True,
     journal_db: str | None = None,
@@ -714,6 +720,9 @@ async def run_lyrics_video(
         music_volume: Volumen de la canción en el vídeo final (0..1). Aquí la
             canción *es* la banda sonora (no música de fondo), así que por
             defecto va a 1.0.
+        duration_from_audio: Si no se indica ``duration`` y hay canción elegida,
+            el vídeo dura lo que la canción (evita desajustes entre audio y
+            vídeo).
         channel_data: Canal ya construido que usar en lugar de investigar
             (útil para pruebas y flujos offline deterministas).
         journal: Registrar la decisión completa en el decision journal.
@@ -774,6 +783,7 @@ async def run_lyrics_video(
                 f"{summary.get('updated', 0)} actualizadas ({library.count()} pistas)"
             )
         match: TrackMatch | None = None
+        chosen_track: Track | None = None
         if track:
             forced = find_track(library, track)
             if forced is None:
@@ -790,12 +800,14 @@ async def run_lyrics_video(
                 reason="elegida a mano (--track)",
             )
             match = forced_match
+            chosen_track = forced
             candidates = [forced_match]
         else:
             candidates = select_tracks(
                 library.all(), profile, keywords=profile.top_words, limit=5
             )
             match = candidates[0] if candidates else None
+            chosen_track = library.get(match.track_id) if match is not None else None
         if match is not None:
             artist = f" — {match.artist}" if match.artist else ""
             console.print(
@@ -808,6 +820,17 @@ async def run_lyrics_video(
                 "(escanea con: youber-music scan --lyrics-dir <letras>)"
             )
 
+        # Duración del vídeo: la de la canción elegida (el audio manda) salvo
+        # que se indique una explícita, en cuyo caso manda esa.
+        audio_duration: float | None = None
+        if chosen_track is not None and duration_from_audio and chosen_track.duration > 0:
+            audio_duration = float(chosen_track.duration)
+        target_duration = float(duration) if duration else audio_duration
+        if audio_duration is not None and not duration:
+            console.print(
+                f"⏱️  Duración del vídeo = la de la canción ([bold]{audio_duration:g} s[/])"
+            )
+
         # Paso 5: prompt de producción + guion
         console.print(
             Panel.fit("[bold cyan]Paso 5/6 · Prompt y guion[/]", border_style="cyan")
@@ -815,7 +838,7 @@ async def run_lyrics_video(
         brief = build_video_brief(
             insights,
             topic=clean_topic,
-            duration=float(duration) if duration else None,
+            duration=target_duration,
             profile=profile,
             metadata_text=metadata_text,
             track_match=match,
@@ -913,9 +936,7 @@ async def run_lyrics_video(
                     profile=profile,
                     match=match,
                     candidates=candidates,
-                    chosen_track=(
-                        library.get(match.track_id) if match is not None else None
-                    ),
+                    chosen_track=chosen_track,
                     forced=bool(track),
                     catalog_size=library.count(),
                     prompt=brief.prompt,
@@ -1016,7 +1037,7 @@ def main() -> None:
                     max_videos=args.max_videos,
                     output_dir=args.output_dir,
                     topic=args.topic,
-                    duration=args.duration if args.duration != DEFAULT_DURATION else None,
+                    duration=args.duration,
                     mode="api" if args.api else "html",
                     demo=args.demo,
                     library_dir=args.library,
@@ -1041,7 +1062,7 @@ def main() -> None:
                 output_dir=args.output_dir,
                 video_path=args.video,
                 music_path=args.music,
-                duration=args.duration,
+                duration=args.duration or DEFAULT_DURATION,
                 mode="api" if args.api else "html",
                 demo=args.demo,
                 track=args.track,

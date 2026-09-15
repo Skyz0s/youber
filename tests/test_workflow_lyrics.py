@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -252,6 +253,82 @@ async def test_lyrics_video_track_forzado(offline) -> None:
     assert result["track"] is not None
     assert result["track"]["id"] == "happy"
     assert "a mano" in result["track"]["reason"]
+
+
+# ---------------------------------------------------------------------------
+# Duración del vídeo = duración de la canción (sin desajustes)
+# ---------------------------------------------------------------------------
+
+
+async def test_lyrics_video_duracion_sigue_a_la_cancion(offline, tmp_path: Path) -> None:
+    """Sin --duration, el vídeo dura lo que la canción elegida."""
+    result = await run_lyrics_video(
+        demo=True,
+        topic="Duración",
+        output_dir=str(tmp_path / "out-dur"),
+        library_dir=str(tmp_path / "music-dur"),
+        stock="none",
+        render=False,
+    )
+
+    assert result["track"] is not None and result["track"]["id"] == "sad"
+    brief = json.loads(Path(result["brief"]).read_text(encoding="utf-8"))
+    script = json.loads(Path(result["script"]).read_text(encoding="utf-8"))
+    # Las pistas ficticias del catálogo duran 120 s.
+    assert brief["target_duration"] == 120.0
+    assert script["total_duration"] == brief["target_duration"]
+
+
+async def test_lyrics_video_duracion_explicita_manda(offline, tmp_path: Path) -> None:
+    """Si indicas --duration, esa manda sobre la duración de la canción."""
+    result = await run_lyrics_video(
+        demo=True,
+        topic="Duración fija",
+        output_dir=str(tmp_path / "out-dur2"),
+        library_dir=str(tmp_path / "music-dur2"),
+        stock="none",
+        duration=45,
+        render=False,
+    )
+    brief = json.loads(Path(result["brief"]).read_text(encoding="utf-8"))
+    assert brief["target_duration"] == 45.0
+
+
+async def test_lyrics_video_sin_cancion_usa_la_media_del_canal(
+    offline, tmp_path: Path, monkeypatch
+) -> None:
+    """Sin catálogo no hay audio al que ajustarse: cae a la media del canal."""
+    import youber.cli.workflow_cli as workflow_cli
+
+    monkeypatch.setattr(workflow_cli, "select_tracks", lambda *args, **kwargs: [])
+    result = await run_lyrics_video(
+        demo=True,
+        topic="Sin catálogo",
+        output_dir=str(tmp_path / "out-dur3"),
+        library_dir=str(tmp_path / "music-dur3"),
+        stock="none",
+        render=False,
+    )
+    brief = json.loads(Path(result["brief"]).read_text(encoding="utf-8"))
+    assert result["track"] is None
+    assert brief["target_duration"] == 60.0  # DEFAULT_DURATION del generador
+
+
+async def test_lyrics_video_duracion_desde_audio_se_puede_desactivar(
+    offline, tmp_path: Path
+) -> None:
+    """Con duration_from_audio=False se vuelve a la media del canal."""
+    result = await run_lyrics_video(
+        demo=True,
+        topic="Media del canal",
+        output_dir=str(tmp_path / "out-dur4"),
+        library_dir=str(tmp_path / "music-dur4"),
+        stock="none",
+        render=False,
+        duration_from_audio=False,
+    )
+    brief = json.loads(Path(result["brief"]).read_text(encoding="utf-8"))
+    assert brief["target_duration"] == 60.0
 
 
 async def test_lyrics_video_track_inexistente_falla(offline) -> None:

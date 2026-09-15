@@ -129,6 +129,7 @@ def track_decision_from_match(
     decision.matched_themes = list(match.matched_themes)
 
     if track is not None:
+        decision.duration_seconds = round(float(track.duration), 3)
         breakdown = score_breakdown(
             track,
             themes=profile.themes if profile is not None else {},
