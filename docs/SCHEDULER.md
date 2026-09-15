@@ -1,8 +1,9 @@
 # Programador de tareas (`youber.scheduler`)
 
 Ejecuta trabajos programados en segundo plano: investigación de canales,
-flujo completo de edición, subida a YouTube y escaneo del catálogo de
-música. Programación por una vez, diaria, semanal o con expresión cron.
+flujo completo de edición, subida a YouTube, escaneo del catálogo de música y
+recordatorio de métricas del registro de decisiones. Programación por una vez,
+diaria, semanal o con expresión cron.
 
 ## Estructura
 
@@ -25,6 +26,10 @@ youber-schedule add --name "research @python" --type research --schedule daily -
 # Añadir una subida puntual
 youber-schedule add --name "subir vídeo" --type upload --schedule once --at "2026-09-15 10:00:00" --param video=final.mp4 --param title="Mi Video"
 
+# Recordatorio semanal: pegar el CSV de YouTube Studio en el journal
+# (notify=true envía además el aviso por Telegram si TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID están definidos)
+youber-schedule add --name "métricas Studio" --type journal_reminder --schedule weekly --at "monday 09:00" --param notify=true
+
 # Listar / eliminar / activar / desactivar
 youber-schedule list
 youber-schedule remove <id>
@@ -46,6 +51,7 @@ youber-schedule daemon --interval 60
 | `workflow` | Flujo completo (investigación + edición) | `channel`, `demo`, `output_dir` |
 | `upload` | Sube un vídeo a YouTube | `video`, `title`, `description`, `tags` |
 | `music_scan` | Escanea el catálogo de música | `library` |
+| `journal_reminder` | Avisa de qué vídeos publicados siguen sin métricas (`youber-journal pending`) | `db`, `windows`, `min_age_days`, `notify` |
 
 ## Tipos de programación (`ScheduleType`)
 

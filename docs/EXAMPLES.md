@@ -69,6 +69,26 @@ Cada reporte contiene: fecha, totales, tabla de violaciones (ID, impacto,
 descripción, elementos afectados, enlace WCAG) y checks superados. Ver
 [ACCESSIBILITY.md](ACCESSIBILITY.md) para saber cómo interpretarlo.
 
+## Prueba de funcionamiento de todo el proceso (end-to-end)
+
+Valida la cadena completa sobre datos sintéticos, **sin red**: catálogo de
+música + letras → workflow `--lyrics-video` (canción elegida por la letra,
+prompt, render con FFmpeg) → decisión en el journal → subida + métricas →
+importación del CSV de YouTube Studio → dataset features→resultados → informe
+de correlaciones → recordatorio de métricas.
+
+```bash
+python examples/e2e_pipeline.py                            # escribe en ./e2e-run
+python examples/e2e_pipeline.py --workdir C:/tmp/e2e --duration 6
+```
+
+Imprime una tabla con el estado de cada una de las 8 etapas (✅/❌) y sale con
+código 0 solo si todas pasan. Los artefactos (vídeo final, CSV, informe,
+journal) quedan en el directorio de trabajo para inspeccionarlos.
+
+En la suite es `tests/test_e2e_pipeline.py` (se salta si no hay FFmpeg), así que
+`pytest tests/test_e2e_pipeline.py` ejecuta el mismo proceso.
+
 ## Integración con tests
 
 Los ejemplos se prueban en `tests/test_examples.py` usando una página local

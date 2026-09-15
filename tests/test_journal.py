@@ -267,7 +267,12 @@ def test_performance_por_id_o_video_y_upsert(tmp_path: Path) -> None:
     journal.record(_record("dec-1"))
     journal.attach_upload("dec-1", video_id="abc123")
 
-    journal.record_performance("abc123", PerformanceSnapshot(window="7d", views=100))
+    journal.record_performance(
+        "abc123",
+        PerformanceSnapshot(
+            window="7d", views=100, captured_at=datetime(2026, 9, 15, 9, 0)
+        ),
+    )
     journal.record_performance(
         "dec-1",
         PerformanceSnapshot(

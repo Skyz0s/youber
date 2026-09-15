@@ -20,6 +20,8 @@ class JobType(StrEnum):
     WORKFLOW = "workflow"
     UPLOAD = "upload"
     MUSIC_SCAN = "music_scan"
+    #: Recordatorio de pegar las métricas de Studio en el decision journal.
+    JOURNAL_REMINDER = "journal_reminder"
 
 
 class ScheduleType(StrEnum):

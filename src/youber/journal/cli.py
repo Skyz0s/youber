@@ -9,6 +9,7 @@ Comandos:
 - ``import``    — pega un CSV de YouTube Studio a las decisiones que coincidan.
 - ``dataset``   — exporta el dataset plano (features + resultados).
 - ``analyze``   — informe de qué características correlacionan con un buen resultado.
+- ``pending``   — vídeos publicados a los que les faltan métricas (para el CSV de Studio).
 - ``stats``     — resumen del journal.
 
 Uso:
@@ -21,6 +22,8 @@ Uso:
     youber-journal performance dec-1a2b3c4d5e6f --window 7d --views 1200 --ctr 4.5
     youber-journal import studio_analytics.csv --window 28d
     youber-journal analyze --metric ctr -o reports/informe.md
+    youber-journal pending                    # ¿qué vídeos siguen sin métricas?
+    youber-journal pending --windows 7d --json
 """
 
 from __future__ import annotations
@@ -45,6 +48,11 @@ from youber.journal.analytics import (
 from youber.journal.importers import import_analytics_csv
 from youber.journal.journal import DecisionJournal, default_journal_path
 from youber.journal.models import DecisionRecord, PerformanceSnapshot
+from youber.journal.reminders import (
+    DEFAULT_MIN_AGE_DAYS,
+    DEFAULT_WINDOWS,
+    pending_metrics,
+)
 
 console = Console()
 
@@ -152,6 +160,26 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("-o", "--output", default=None, help="Guardar el informe en Markdown")
     analyze.add_argument(
         "--min-n", type=int, default=3, help="Pares mínimos para calcular correlaciones"
+    )
+
+    pending = sub.add_parser(
+        "pending", help="Vídeos publicados a los que les faltan métricas de Studio"
+    )
+    pending.add_argument(
+        "--windows",
+        default=",".join(DEFAULT_WINDOWS),
+        help=f"Ventanas a vigilar (default: {','.join(DEFAULT_WINDOWS)})",
+    )
+    pending.add_argument(
+        "--min-age-days",
+        type=float,
+        default=DEFAULT_MIN_AGE_DAYS,
+        help=f"Antigüedad mínima del vídeo en días (default: {DEFAULT_MIN_AGE_DAYS:g})",
+    )
+    pending.add_argument(
+        "--include-unpublished",
+        action="store_true",
+        help="Incluir también decisiones sin vídeo publicado (no medibles en la plataforma)",
     )
 
     sub.add_parser("stats", help="Resumen del journal")
@@ -514,6 +542,32 @@ def _run_analyze(journal: DecisionJournal, args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_pending(journal: DecisionJournal, args: argparse.Namespace) -> int:
+    windows = tuple(part.strip() for part in args.windows.split(",") if part.strip())
+    report = pending_metrics(
+        journal,
+        windows=windows or DEFAULT_WINDOWS,
+        min_age_days=args.min_age_days,
+        require_upload=not args.include_unpublished,
+    )
+    if args.json:
+        console.print(
+            json.dumps(
+                json.loads(report.model_dump_json()), ensure_ascii=False, indent=2
+            ),
+            markup=False,
+            soft_wrap=True,
+        )
+        return 0
+    console.print(
+        report.message(),
+        style="yellow" if report.needs_attention else "green",
+        markup=False,
+        soft_wrap=True,
+    )
+    return 0
+
+
 def _run_stats(journal: DecisionJournal, args: argparse.Namespace) -> int:
     stats = journal.stats()
     if args.json:
@@ -554,6 +608,7 @@ _COMMANDS = {
     "import": _run_import,
     "dataset": _run_dataset,
     "analyze": _run_analyze,
+    "pending": _run_pending,
     "stats": _run_stats,
     "remove": _run_remove,
 }

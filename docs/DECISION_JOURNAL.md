@@ -102,6 +102,32 @@ La separación features/resultados es deliberada: ninguna feature usa
 información del futuro, así que el dataset sirve como base para un modelo
 predictivo (con suficientes datos) en vez de ser una profecía autocumplida.
 
+## Recordatorio semanal de métricas
+
+`youber-journal pending` dice a qué vídeos **ya publicados** les faltan
+ventanas de métricas (`7d`, `28d`...), así que es el recordatorio natural para
+que el journal no se quede a medias:
+
+```bash
+youber-journal pending                      # lista de deberes
+youber-journal pending --windows 7d --json  # para encadenar
+youber-journal pending --min-age-days 0 --include-unpublished
+```
+
+Y en el scheduler de BARF es un tipo de trabajo más:
+
+```bash
+youber-schedule add --name "métricas Studio" --type journal_reminder \
+    --schedule weekly --at "monday 09:00" --param notify=true
+youber-schedule daemon --interval 600   # necesario para que se dispare
+```
+
+- Params: `db` (ruta del journal), `windows` (`"7d,28d"`), `min_age_days`
+  (antigüedad mínima del vídeo), `notify` (aviso por Telegram, usando
+  `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`; best-effort, sin romper el daemon).
+- El runner solo avisa de vídeos **con id de vídeo** (los que se pueden medir
+  en la plataforma) y deja pasar los publicados hace menos de `min_age_days`.
+
 ## Desde código
 
 ```python
@@ -117,6 +143,18 @@ for row in journal.dataset(window="7d"):
 
 journal.export("dataset.csv", fmt="csv")
 ```
+
+## Prueba de funcionamiento
+
+`python examples/e2e_pipeline.py` ejecuta y comprueba **todo el proceso** en
+local (offline): catálogo sintético de música + letras → workflow
+`--lyrics-video` con render real (FFmpeg) → decisión en el journal → subida +
+métricas 7d → importación del CSV de Studio (28d) → dataset + informe →
+recordatorio. Imprime una tabla ✅/❌ por etapa y sale con código 0 solo si
+todas pasan.
+
+En la suite: `pytest tests/test_e2e_pipeline.py` (se salta sin FFmpeg).
+Detalles en `docs/EXAMPLES.md`.
 
 ## Integración con el workflow
 

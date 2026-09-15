@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from youber.scheduler.cli import _job_type, _param, _schedule_type, build_parser
 from youber.scheduler.daemon import Daemon, run_daemon
 from youber.scheduler.executor import JobExecutor, next_run_for
-from youber.scheduler.jobs import run_job
+from youber.scheduler.jobs import JOB_RUNNERS, run_job
 from youber.scheduler.models import JobType, ScheduledJob, ScheduleType
 from youber.scheduler.scheduler import Scheduler
 from youber.scheduler.storage import JobStorage
@@ -333,3 +333,77 @@ def test_cli_parser():
     assert args.param == [("channel", "@python")]
     assert parser.parse_args(["list"]).command == "list"
     assert parser.parse_args(["daemon", "--interval", "5"]).interval == 5
+
+
+# ---------------------------------------------------------------------------
+# journal_reminder: recordatorio de pegar el CSV de Studio en el journal
+# ---------------------------------------------------------------------------
+
+
+def test_journal_reminder_registrado() -> None:
+    assert JobType.JOURNAL_REMINDER in JOB_RUNNERS
+    assert JobType.JOURNAL_REMINDER.value == "journal_reminder"
+
+
+def _journal_with_pending(tmp_path: Path, *, days: int = 10) -> str:
+    """Crea un journal con un vídeo publicado y sin métricas."""
+    from datetime import timedelta
+
+    from youber.journal import DecisionJournal, DecisionRecord
+
+    db = tmp_path / "journal.db"
+    journal = DecisionJournal(db)
+    journal.record(
+        DecisionRecord(
+            id="dec-1", topic="La noche", created_at=datetime.now() - timedelta(days=days)
+        )
+    )
+    journal.attach_upload(
+        "dec-1", video_id="abc123", published_at=datetime.now() - timedelta(days=days)
+    )
+    return str(db)
+
+
+def test_journal_reminder_ejecuta(tmp_path: Path) -> None:
+    job = make_job(job_type=JobType.JOURNAL_REMINDER, params={"db": _journal_with_pending(tmp_path)})
+    result = asyncio.run(run_job(job))
+
+    assert result["pending"] == 1
+    assert result["published"] == 1
+    assert result["notified"] is False
+    assert "Toca pegar el CSV" in result["message"]
+    assert "dec-1" in result["message"]
+
+
+def test_journal_reminder_ventanas_y_notificacion(tmp_path: Path, monkeypatch) -> None:
+    import youber.journal.reminders as reminders
+
+    enviados: list[str] = []
+    monkeypatch.setattr(reminders, "notify_telegram", lambda text: enviados.append(text) or True)
+
+    job = make_job(
+        job_type=JobType.JOURNAL_REMINDER,
+        params={"db": _journal_with_pending(tmp_path), "notify": True, "windows": "7d"},
+    )
+    result = asyncio.run(run_job(job))
+
+    assert result["notified"] is True
+    assert enviados and "youber-journal import" in enviados[0]
+    assert "7d" in result["message"]
+
+
+def test_journal_reminder_al_dia(tmp_path: Path, monkeypatch) -> None:
+    from datetime import datetime
+
+    from youber.journal import DecisionJournal, PerformanceSnapshot
+
+    db = _journal_with_pending(tmp_path)
+    journal = DecisionJournal(db)
+    for window in ("7d", "28d"):
+        journal.record_performance("dec-1", PerformanceSnapshot(window=window, views=10))
+
+    job = make_job(job_type=JobType.JOURNAL_REMINDER, params={"db": db})
+    result = asyncio.run(run_job(job))
+    assert result["pending"] == 0
+    assert "al día" in result["message"]
+    assert datetime.now()  # sanity
