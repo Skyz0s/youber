@@ -19,13 +19,13 @@ HAS_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is n
 
 @pytest.mark.skipif(not HAS_FFMPEG, reason="Requiere FFmpeg/ffprobe")
 async def test_e2e_todo_el_proceso(tmp_path: Path) -> None:
-    """Las 8 etapas del proceso pasan y dejan artefactos reales."""
+    """Las 9 etapas del proceso pasan y dejan artefactos reales."""
     outcome = await run_e2e(tmp_path / "e2e", duration=4)
 
     fallos = [f"{check.name}: {check.detail}" for check in outcome["checks"] if not check.ok]
     assert not fallos, f"etapas fallidas: {fallos}"
     assert outcome["ok"] is True
-    assert len(outcome["checks"]) == 8
+    assert len(outcome["checks"]) == 9
 
     artefactos = outcome["artifacts"]
     assert artefactos["vídeo final"].is_file()

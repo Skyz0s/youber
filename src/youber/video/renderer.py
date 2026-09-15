@@ -151,8 +151,13 @@ async def render_project(
             f"afade=t=out:st={fade_out_start:.3f}:d=2,"
             f"atrim=0:{total:.3f},asetpts=PTS-STARTPTS[mbg]"
         )
+        # ``normalize=0``: sin esto, amix divide por el número de entradas
+        # (−6 dB) y, como los clips sin audio aportan silencio, la música
+        # quedaba inaudible. Los niveles son ahora los que se configuran
+        # (volume de música × volume del clip).
         parts.append(
-            f"[{audio_label}][mbg]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+            f"[{audio_label}][mbg]amix=inputs=2:duration=first:dropout_transition=0:"
+            "normalize=0[aout]"
         )
         audio_label = "aout"
 

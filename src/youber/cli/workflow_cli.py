@@ -200,6 +200,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Con --lyrics-video: solo brief + guion (sin renderizar el vídeo)",
     )
     parser.add_argument(
+        "--music-volume",
+        type=float,
+        default=1.0,
+        help="Con --lyrics-video: volumen de la canción en el vídeo (0..1, default: 1.0)",
+    )
+    parser.add_argument(
         "--journal-db",
         default=None,
         help="Base de datos del registro de decisiones (default: ~/.youber/journal.db)",
@@ -682,6 +688,8 @@ async def run_lyrics_video(
     stock: str = "auto",
     track: str | None = None,
     render: bool = True,
+    music_volume: float = 1.0,
+    channel_data: ChannelData | None = None,
     journal: bool = True,
     journal_db: str | None = None,
     run_id: str | None = None,
@@ -703,6 +711,11 @@ async def run_lyrics_video(
         stock: Banco de B-roll: ``auto``, ``pexels``, ``pixabay`` o ``none``.
         track: Fuerza una canción del catálogo (ID o texto) en vez de elegirla.
         render: Si ``False``, solo se generan brief + guion (sin vídeo).
+        music_volume: Volumen de la canción en el vídeo final (0..1). Aquí la
+            canción *es* la banda sonora (no música de fondo), así que por
+            defecto va a 1.0.
+        channel_data: Canal ya construido que usar en lugar de investigar
+            (útil para pruebas y flujos offline deterministas).
         journal: Registrar la decisión completa en el decision journal.
         journal_db: Base de datos del journal (por defecto
             ``YOUBER_JOURNAL_DB`` o ``~/.youber/journal.db``).
@@ -717,7 +730,10 @@ async def run_lyrics_video(
 
     # Paso 1: metadatos del canal
     console.print(Panel.fit("[bold cyan]Paso 1/6 · Metadatos del canal[/]", border_style="cyan"))
-    if demo:
+    if channel_data is not None:
+        channel = channel_data
+        console.print(f"📺 Canal proporcionado (offline): [bold]{channel.name}[/]")
+    elif demo:
         channel = demo_channel()
         console.print(f"📺 Canal sintético: [bold]{channel.name}[/] (sin red)")
     else:
@@ -865,6 +881,7 @@ async def run_lyrics_video(
                 editor=editor,
                 title=brief.topic,
                 music_track_id=match.track_id if match else None,
+                music_volume=music_volume,
             )
             final_video = out / f"{_slug(brief.topic)}_final.mp4"
             console.print(f"🎛️  Renderizando (FFmpeg) → [bold]{final_video}[/]")
@@ -1008,6 +1025,7 @@ def main() -> None:
                     stock=args.stock,
                     track=args.track,
                     render=not args.no_render,
+                    music_volume=args.music_volume,
                     journal=not args.no_journal,
                     journal_db=args.journal_db,
                 )

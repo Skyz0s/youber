@@ -5,17 +5,19 @@ cuentas externas, comprobando cada etapa y saliendo con código 0 solo si todo
 pasa:
 
 1. **Catálogo**: genera audio (FFmpeg) + letras `.txt` (una triste, una alegre).
-2. **Clips propios**: dos clips de vídeo sintéticos (los pasa el flujo como
-   clips locales, sin depender de stock).
+2. **Clips propios**: dos clips sintéticos con degradados en movimiento (los
+   pasa el flujo como clips locales, sin depender de stock).
 3. **Pipeline**: ``youber-workflow --lyrics-video`` (canal sintético temático)
    → perfil de metadatos → canción elegida por su letra → prompt/guion →
    render con FFmpeg.
-4. **Journal**: la decisión queda registrada (atributos, canción + motivo,
+4. **Audio**: comprueba con ``volumedetect`` que la banda sonora se oye
+   (pico y media por encima de los umbrales).
+5. **Journal**: la decisión queda registrada (atributos, canción + motivo,
    ranking de candidatas, artefactos, vídeo).
-5. **Subida + métricas**: se asocia un id de vídeo y se anotan métricas de 7d.
-6. **Importación**: CSV de YouTube Studio (modo avanzado, es-ES) → ventana 28d.
-7. **Dataset + análisis**: features → resultados + informe de correlaciones.
-8. **Recordatorio**: `pending_metrics` detecta lo que falta medir.
+6. **Subida + métricas**: se asocia un id de vídeo y se anotan métricas de 7d.
+7. **Importación**: CSV de YouTube Studio (modo avanzado, es-ES) → ventana 28d.
+8. **Dataset + análisis**: features → resultados + informe de correlaciones.
+9. **Recordatorio**: `pending_metrics` detecta lo que falta medir.
 
 Uso:
 
@@ -43,7 +45,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from youber.cli import workflow_cli
 from youber.cli.workflow_cli import run_lyrics_video
 from youber.journal import (
     DecisionJournal,
@@ -62,6 +63,17 @@ SAD_LYRICS = (
     "todo está perdido, adiós, la tristeza me acompaña."
 )
 HAPPY_LYRICS = "Hoy es un día feliz, alegría y risas, celebramos el amor y la luz."
+
+#: Melodías sintéticas (una nota por segundo) para que la banda sonora se oiga
+#: de verdad: la triste desciende, la alegre sube.
+SAD_MELODY = [220, 196, 175, 165, 147, 165, 175, 196]
+HAPPY_MELODY = [523, 659, 784, 1047, 784, 659, 784, 523]
+
+#: Paletas de los clips sintéticos (degradados en movimiento, no cartas de test).
+CLIP_PALETTES = (
+    ("0x0b1a2b", "0x1f3a5f"),
+    ("0x2b1030", "0x5f2a3a"),
+)
 
 E2E_VIDEO_ID = "e2e0001abc"
 
@@ -84,23 +96,66 @@ class Step:
 def _run_ffmpeg(args: list[str]) -> None:
     """Ejecuta FFmpeg y falla con un mensaje claro si algo va mal."""
     result = subprocess.run(
-        ["ffmpeg", *args], capture_output=True, text=True
+        ["ffmpeg", *args], capture_output=True, text=True, encoding="utf-8", errors="replace"
     )
     if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg falló: {result.stderr[-500:]}")
+        raise RuntimeError(f"FFmpeg falló: {(result.stderr or '')[-500:]}")
+
+
+def melody_expr(notes: list[int], *, seconds_per_note: float = 1.0, amplitude: float = 0.65) -> str:
+    """Expresión ``aevalsrc`` que toca una melodía (una nota por compás).
+
+    Cada nota lleva una envolvente lineal para que no chasquee al cambiar.
+    """
+    terms = "+".join(
+        f"{amplitude}*sin(2*PI*t*{freq})"
+        f"*between(t,{index * seconds_per_note:g},{(index + 1) * seconds_per_note:g})"
+        f"*(1-mod(t,{seconds_per_note:g}))"
+        for index, freq in enumerate(notes)
+    )
+    return f"aevalsrc='{terms}':s=44100:d={len(notes) * seconds_per_note:g}"
+
+
+def audio_level(path: Path) -> tuple[float | None, float | None]:
+    """Nivel de audio de un fichero: ``(media_dB, pico_dB)`` (o ``None``)."""
+    result = subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-i", str(path),
+            "-af", "volumedetect", "-f", "null", "-",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return (
+        _decibels(result.stderr or "", "mean_volume"),
+        _decibels(result.stderr or "", "max_volume"),
+    )
+
+
+def _decibels(stderr: str, key: str) -> float | None:
+    """Extrae un valor ``key: -12.0 dB`` de la salida de ``volumedetect``."""
+    for line in stderr.splitlines():
+        if f"{key}:" in line:
+            try:
+                return float(line.split(f"{key}:")[1].split("dB")[0].strip())
+            except (IndexError, ValueError):  # pragma: no cover - salida inesperada
+                return None
+    return None
 
 
 def build_catalog(workdir: Path) -> tuple[Path, Path]:
-    """Genera el catálogo de música (2 pistas) y las letras (2 ficheros)."""
+    """Genera el catálogo de música (2 melodías) y las letras (2 ficheros)."""
     music_dir = workdir / "music"
     lyrics_dir = workdir / "letras"
     music_dir.mkdir(parents=True, exist_ok=True)
     lyrics_dir.mkdir(parents=True, exist_ok=True)
-    for name, freq in (("Adios", 220), ("Alegria", 660)):
+    for name, notes in (("Adios", SAD_MELODY), ("Alegria", HAPPY_MELODY)):
         _run_ffmpeg(
             [
-                "-y", "-f", "lavfi", "-i", f"sine=frequency={freq}:duration=8",
-                "-c:a", "libmp3lame", str(music_dir / f"{name}.mp3"),
+                "-y", "-f", "lavfi", "-i", melody_expr(notes),
+                "-c:a", "libmp3lame", "-b:a", "128k", str(music_dir / f"{name}.mp3"),
             ]
         )
     (lyrics_dir / "Adios.txt").write_text(SAD_LYRICS, encoding="utf-8")
@@ -109,17 +164,20 @@ def build_catalog(workdir: Path) -> tuple[Path, Path]:
 
 
 def build_clips(workdir: Path, duration: int) -> list[Path]:
-    """Genera dos clips de vídeo sintéticos (B-roll propio)."""
+    """Genera dos clips de vídeo sintéticos con degradados (B-roll propio).
+
+    Se usan degradados en movimiento en vez de cartas de test para que el
+    montaje sea legible: el texto del guion se dibuja encima.
+    """
     clips_dir = workdir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
-    sources = ["testsrc", "smptebars"]
     clips: list[Path] = []
-    for index, source in enumerate(sources):
+    for index, (start, end) in enumerate(CLIP_PALETTES):
         clip = clips_dir / f"clip{index}.mp4"
         _run_ffmpeg(
             [
                 "-y", "-f", "lavfi",
-                "-i", f"{source}=duration={duration}:size=640x360:rate=25",
+                "-i", f"gradients=s=960x540:c0={start}:c1={end}:d={duration}:speed=0.12",
                 "-c:v", "libx264", "-pix_fmt", "yuv420p", str(clip),
             ]
         )
@@ -130,9 +188,9 @@ def build_clips(workdir: Path, duration: int) -> list[Path]:
 def themed_channel() -> ChannelData:
     """Canal sintético con metadatos tristes (para que el matching sea visible).
 
-    Con ``--demo`` el flujo usa un canal genérico de programación; aquí se
-    sustituye por uno temático para comprobar que la canción elegida por la
-    letra encaja con el contenido.
+    Se pasa a ``run_lyrics_video(channel_data=...)``: con ``--demo`` el flujo
+    usaría un canal genérico de programación, y aquí se sustituye por uno
+    temático para comprobar que la canción elegida por la letra encaja.
     """
     base = "https://www.youtube.com/@e2e"
     return ChannelData(
@@ -237,11 +295,11 @@ async def run_e2e(workdir: Path, *, duration: int = 6) -> dict[str, Any]:
     )
 
     # --- 3. Pipeline metadatos → letras → prompt → vídeo ----------------
-    workflow_cli.demo_channel = themed_channel
     journal_db = workdir / "journal.db"
     out_dir = workdir / "out"
     result = await run_lyrics_video(
         demo=True,
+        channel_data=themed_channel(),
         topic="La noche y el adiós",
         output_dir=str(out_dir),
         library_dir=str(music_dir),
@@ -264,13 +322,25 @@ async def run_e2e(workdir: Path, *, duration: int = 6) -> dict[str, Any]:
         )
     )
 
+    # --- 4. La banda sonora se oye de verdad ---------------------------
+    mean_db, peak_db = audio_level(final_video) if final_video else (None, None)
+    checks.append(
+        Step(
+            "4. Audio audible en el vídeo final",
+            bool(peak_db is not None and peak_db > -15.0 and mean_db is not None and mean_db > -25.0),
+            f"pico {peak_db:g} dB · media {mean_db:g} dB"
+            if peak_db is not None and mean_db is not None
+            else "sin audio",
+        )
+    )
+
     # --- 4. Decisión registrada en el journal ---------------------------
     journal = DecisionJournal(journal_db)
     record = journal.get(str(result["decision_id"])) if result["decision_id"] else None
     chosen = record.track.chosen_title if record else None
     checks.append(
         Step(
-            "4. Decisión en el journal",
+            "5. Decisión en el journal",
             bool(
                 record
                 and chosen == "Adios"  # gana la canción triste (metadatos tristes)
@@ -308,7 +378,7 @@ async def run_e2e(workdir: Path, *, duration: int = 6) -> dict[str, Any]:
     week = journal.latest_performance(str(result["decision_id"]), window="7d")
     checks.append(
         Step(
-            "5. Subida + métricas 7d",
+            "6. Subida + métricas 7d",
             bool(week and week.views == 410 and week.ctr == 5.0),
             f"vistas {week.views} · CTR {week.ctr} % · retención {week.retention} %"
             if week
@@ -327,7 +397,7 @@ async def run_e2e(workdir: Path, *, duration: int = 6) -> dict[str, Any]:
     month = journal.latest_performance(str(result["decision_id"]), window="28d")
     checks.append(
         Step(
-            "6. Importación CSV de Studio (28d)",
+            "7. Importación CSV de Studio (28d)",
             bool(
                 import_result.applied == 1
                 and import_result.matched
@@ -354,7 +424,7 @@ async def run_e2e(workdir: Path, *, duration: int = 6) -> dict[str, Any]:
     artifacts["informe de análisis"] = report_path
     checks.append(
         Step(
-            "7. Dataset + informe",
+            "8. Dataset + informe",
             bool(
                 row
                 and row.outcomes.get("views") == 1310
@@ -388,7 +458,7 @@ async def run_e2e(workdir: Path, *, duration: int = 6) -> dict[str, Any]:
     con_pendientes = pending_metrics(journal, min_age_days=0)
     checks.append(
         Step(
-            "8. Recordatorio de métricas",
+            "9. Recordatorio de métricas",
             not al_dia.needs_attention and len(con_pendientes.pending) == 1,
             "al día con el vídeo medido · detecta el pendiente"
             if not al_dia.needs_attention and len(con_pendientes.pending) == 1

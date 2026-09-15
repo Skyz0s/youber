@@ -166,9 +166,11 @@ def test_parser_journal_flags():
     args = build_parser().parse_args([])
     assert args.no_journal is False
     assert args.journal_db is None
+    assert args.music_volume == 1.0
     args = build_parser().parse_args(["--no-journal", "--journal-db", "x.db"])
     assert args.no_journal is True
     assert args.journal_db == "x.db"
+    assert build_parser().parse_args(["--music-volume", "0.3"]).music_volume == 0.3
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +199,8 @@ async def test_lyrics_video_elige_cancion_y_renderiza(offline) -> None:
 
     project = offline["rendered"]["project"]
     assert project.music_track_id == "sad"
+    # La canción es la banda sonora (no música de fondo): volumen a tope.
+    assert project.music_volume == 1.0
     assert project.clips
     assert result["track"]["title"] in result["prompt"]
 

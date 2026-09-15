@@ -390,6 +390,8 @@ async def test_render_project_with_music(mock_render_deps):
     assert "-stream_loop -1 -i musica.mp3" in cmd
     assert "amix=inputs=2:duration=first" in cmd
     assert "volume=0.300" in cmd
+    # Sin normalización: amix no debe atenuar la música por el silencio del clip.
+    assert "normalize=0" in cmd
 
 
 async def test_render_project_no_clips(monkeypatch):
