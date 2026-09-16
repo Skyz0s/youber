@@ -380,6 +380,9 @@ async def test_render_project_command(mock_render_deps):
     assert "drawtext=" in cmd
     assert "-map [vt0]" in cmd  # overlay de texto: vx1 → vt0
     assert "-map [ax1]" in cmd
+    # El audio final va a 192 kbps estéreo (a 128 kbps por defecto suena flojo).
+    assert "-b:a 192k" in cmd
+    assert "-ac 2" in cmd
 
 
 async def test_render_project_with_music(mock_render_deps):

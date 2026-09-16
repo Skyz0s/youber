@@ -53,7 +53,34 @@ youber-workflow --lyrics-video --demo --topic "Demo" --no-render
 
 Flags: `--topic`, `--lyrics-dir`, `--clips` (tus propios clips), `--stock`
 (`auto|pexels|pixabay|none`), `--track` (fuerza una canción del catálogo),
-`--music-volume` (volumen de la canción, 0..1; por defecto 1.0), `--no-render`.
+`--music-volume` (volumen de la canción, 0..1; por defecto 1.0), `--no-render`,
+`--clip-audio` (conserva el audio original de los clips; por defecto se
+silencia) y `--preview` (genera `<nombre>_preview.mp4` ligero para compartir).
+
+## Audio: niveles y calidad
+
+La canción *es* la banda sonora, así que el flujo hace dos cosas para no
+ensuciar la mezcla:
+
+- **El audio de los clips se silencia por defecto** (`volume=0.0`). Los clips
+de B-roll traen su propio audio (voces, ambiente...) y, mezclado con una
+canción masterizada a tope, ensucia la mezcla y hace recortar picos. Si lo
+quieres, `--clip-audio` lo conserva.
+- **El render final sale a 192 kbps estéreo AAC** (`-b:a 192k`). El valor por
+defecto de AAC (~128 kbps) deja siseo/artefactos en los agudos de la música.
+
+### Compartir el vídeo
+
+Un render 1080p de una canción completa pesa ~60 MB: demasiado para
+Telegram/WhatsApp. `--preview` genera al lado una versión ligera **480p con
+audio estéreo a 128 kbps** (`youber.video.preview.make_preview`).
+
+```bash
+youber-workflow --lyrics-video --demo --topic "Demo" --preview
+```
+
+> Ojo con recodificar "a lo bruto" (mono y 48 kbps): la música suena metálica
+y con siseo. Por debajo de ~96 kbps estéreo ya se nota.
 
 ## Duración: manda la canción
 

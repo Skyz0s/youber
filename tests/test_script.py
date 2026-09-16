@@ -145,6 +145,19 @@ def test_build_project_sin_biblioteca(tmp_path: Path):
         start += scene.duration
 
 
+def test_build_project_silencia_audio_de_clips(tmp_path: Path):
+    """Con ``clip_audio=False`` (banda sonora = canción) los clips van mudos."""
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"fake")
+    script = generate_script(_insights(), topic="Mi vídeo", duration=60)
+    mudo = build_project(script, clips=[clip], clip_audio=False)
+    assert mudo.clips
+    assert all(c.volume == 0.0 for c in mudo.clips)
+    # Por defecto se mantiene el comportamiento de siempre (audio del clip).
+    normal = build_project(script, clips=[clip])
+    assert all(c.volume == 1.0 for c in normal.clips)
+
+
 def test_build_project_sin_clips():
     script = generate_script(_insights(), topic="X")
     with pytest.raises(ValueError):

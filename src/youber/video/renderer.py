@@ -24,6 +24,10 @@ from youber.video.transitions import audio_transition_chain, video_transition_ch
 
 VIDEO_CODECS = {"mp4": "libx264", "mkv": "libx264"}
 AUDIO_CODECS = {"mp4": "aac", "mkv": "aac"}
+#: Bitrate de audio del render final. El valor por defecto de AAC (~128 kbps)
+#: es flojo para una banda sonora musical (siseo/artefactos en los agudos);
+#: 192 kbps estéreo ya es prácticamente transparente.
+AUDIO_BITRATES = {"mp4": "192k", "mkv": "192k"}
 
 
 def _validate_output(output_path: str, output_format: str) -> Path:
@@ -178,6 +182,10 @@ async def render_project(
         "yuv420p",
         "-c:a",
         AUDIO_CODECS[project.output_format],
+        "-b:a",
+        AUDIO_BITRATES[project.output_format],
+        "-ac",
+        "2",
         "-shortest",
         str(output),
     ]

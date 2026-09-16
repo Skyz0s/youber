@@ -68,6 +68,7 @@ def build_project(
     with_texts: bool = True,
     music_track_id: str | None = None,
     music_volume: float = 0.25,
+    clip_audio: bool = True,
 ) -> Project:
     """Construye el :class:`Project` de edición a partir del guion.
 
@@ -87,6 +88,9 @@ def build_project(
             (p. ej. la elegida por sus letras en ``youber.music.selector``).
             Si se indica, tiene prioridad sobre la sugerencia por mood.
         music_volume: Volumen de la música de fondo (0..1).
+        clip_audio: Si ``False``, silencia el audio de los clips (útil cuando
+            la canción *es* la banda sonora: si no, el audio original de los
+            clips se mezcla con la música y ensucia la mezcla).
 
     Returns:
         Proyecto listo para ``editor.render(project, out, ...)``.
@@ -116,7 +120,12 @@ def build_project(
         for _sub in range(n):
             clip = clip_paths[cursor % len(clip_paths)]
             cursor += 1
-            editor.add_clip(project, clip, duration=segment)
+            editor.add_clip(
+                project,
+                clip,
+                duration=segment,
+                volume=1.0 if clip_audio else 0.0,
+            )
             clip_index = len(project.clips) - 1
             if clip_index > 0:
                 editor.add_transition(

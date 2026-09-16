@@ -211,6 +211,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Con --lyrics-video: volumen de la canción en el vídeo (0..1, default: 1.0)",
     )
     parser.add_argument(
+        "--clip-audio",
+        action="store_true",
+        help=(
+            "Con --lyrics-video: conservar el audio original de los clips "
+            "(por defecto se silencia: la canción es la banda sonora)"
+        ),
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help=(
+            "Con --lyrics-video: generar además una versión ligera del vídeo "
+            "(480p, audio estéreo 128 kbps) lista para compartir"
+        ),
+    )
+    parser.add_argument(
         "--journal-db",
         default=None,
         help="Base de datos del registro de decisiones (default: ~/.youber/journal.db)",
@@ -710,6 +726,8 @@ async def run_lyrics_video(
     render: bool = True,
     music_volume: float = 1.0,
     duration_from_audio: bool = True,
+    clip_audio: bool = False,
+    preview: bool = False,
     channel_data: ChannelData | None = None,
     journal: bool = True,
     journal_db: str | None = None,
@@ -738,6 +756,13 @@ async def run_lyrics_video(
         duration_from_audio: Si no se indica ``duration`` y hay canción elegida,
             el vídeo dura lo que la canción (evita desajustes entre audio y
             vídeo).
+        clip_audio: Si ``True``, se conserva el audio original de los clips.
+            Por defecto se silencia: la canción es la banda sonora y mezclar
+            el audio de los clips con ella ensucia la mezcla (además de que
+            una canción masterizada a tope + audio encima recorta).
+        preview: Si ``True``, genera además una versión ligera del vídeo
+            (``<nombre>_preview.mp4``) con audio estéreo a 128 kbps, lista
+            para compartir por mensajería.
         channel_data: Canal ya construido que usar en lugar de investigar
             (útil para pruebas y flujos offline deterministas).
         journal: Registrar la decisión completa en el decision journal.
@@ -910,6 +935,7 @@ async def run_lyrics_video(
         console.print(f"🎞️  Clips: [bold]{len(clip_paths)}[/]")
 
         final_video: Path | None = None
+        preview_video: Path | None = None
         if render:
             editor = VideoEditor(library=library)
             project = build_project(
@@ -920,6 +946,7 @@ async def run_lyrics_video(
                 title=brief.topic,
                 music_track_id=match.track_id if match else None,
                 music_volume=music_volume,
+                clip_audio=clip_audio,
             )
             # Las transiciones solapadas acortan el montaje: se compensan para
             # que el vídeo dure exactamente lo mismo que la canción.
@@ -944,6 +971,7 @@ async def run_lyrics_video(
                         title=brief.topic,
                         music_track_id=match.track_id if match else None,
                         music_volume=music_volume,
+                        clip_audio=clip_audio,
                     )
                     console.print(
                         f"⏱️  Transiciones compensadas ({gap:+.1f} s) para cuadrar con "
@@ -953,6 +981,12 @@ async def run_lyrics_video(
             console.print(f"🎛️  Renderizando (FFmpeg) → [bold]{final_video}[/]")
             await editor.render(project, final_video)
             console.print(f"✅ Vídeo final + canción: [bold green]{final_video}[/]")
+            if preview:
+                from youber.video.preview import make_preview
+
+                console.print("📱 Generando preview ligero (480p · audio estéreo 128 kbps)...")
+                preview_video = Path(await make_preview(final_video))
+                console.print(f"✅ Preview para compartir: [bold green]{preview_video}[/]")
         else:
             console.print("⏭️  Render omitido (--no-render)")
 
@@ -1031,6 +1065,7 @@ async def run_lyrics_video(
         "clips": [str(clip) for clip in clip_paths],
         "clip_source": clip_source,
         "final_video": str(final_video) if final_video else None,
+        "preview_video": str(preview_video) if preview_video else None,
         "decision_id": decision_id,
     }
 
@@ -1090,6 +1125,8 @@ def main() -> None:
                     track=args.track,
                     render=not args.no_render,
                     music_volume=args.music_volume,
+                    clip_audio=args.clip_audio,
+                    preview=args.preview,
                     journal=not args.no_journal,
                     journal_db=args.journal_db,
                 )
