@@ -227,6 +227,61 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--visuals",
+        choices=("off", "ai"),
+        default="off",
+        help=(
+            "Con --lyrics-video: 'ai' crea los planos de cero (IA local) en vez de "
+            "montar clips propios o de stock"
+        ),
+    )
+    parser.add_argument(
+        "--ai-model",
+        default=None,
+        help=(
+            "Modelo de imagen para --visuals ai (default: stabilityai/sdxl-turbo; "
+            "'stub' genera degradados sin GPU)"
+        ),
+    )
+    parser.add_argument(
+        "--ai-steps", type=int, default=2, help="Pasos de inferencia del modelo (default: 2)"
+    )
+    parser.add_argument(
+        "--ai-shots", type=int, default=None, help="Número de planos (default: según duración)"
+    )
+    parser.add_argument(
+        "--ai-seed", type=int, default=1234, help="Semilla base de los planos (default: 1234)"
+    )
+    parser.add_argument(
+        "--ai-aspect",
+        choices=("16:9", "9:16", "1:1"),
+        default="16:9",
+        help="Formato del vídeo con IA (default: 16:9)",
+    )
+    parser.add_argument(
+        "--ai-style",
+        choices=("cinematic", "dreamy", "dark", "vibrant", "minimal"),
+        default="cinematic",
+        help="Estilo visual de los planos (default: cinematic)",
+    )
+    parser.add_argument(
+        "--ai-texts",
+        action="store_true",
+        help="Con --visuals ai: superponer los textos del guion sobre los planos",
+    )
+    parser.add_argument(
+        "--short",
+        nargs="?",
+        type=float,
+        const=75.0,
+        default=None,
+        metavar="SEGUNDOS",
+        help=(
+            "Con --visuals ai: generar además el corte vertical (9:16) del trozo con "
+            "más energía de la canción (default: 75 s)"
+        ),
+    )
+    parser.add_argument(
         "--journal-db",
         default=None,
         help="Base de datos del registro de decisiones (default: ~/.youber/journal.db)",
@@ -732,6 +787,15 @@ async def run_lyrics_video(
     journal: bool = True,
     journal_db: str | None = None,
     run_id: str | None = None,
+    visuals: str = "off",
+    ai_model: str | None = None,
+    ai_steps: int = 2,
+    ai_shots: int | None = None,
+    ai_seed: int = 1234,
+    aspect: str = "16:9",
+    ai_style: str = "cinematic",
+    ai_texts: bool = False,
+    short: float | None = None,
 ) -> dict[str, Any]:
     """Metadatos del canal → letras → prompt → vídeo local (Pexels) + canción.
 
@@ -769,6 +833,19 @@ async def run_lyrics_video(
         journal_db: Base de datos del journal (por defecto
             ``YOUBER_JOURNAL_DB`` o ``~/.youber/journal.db``).
         run_id: Identificador de la ejecución (para agrupar decisiones).
+        visuals: ``"off"`` monta clips (propios o de stock); ``"ai"`` **crea**
+            los planos con un modelo local (ruta C de :mod:`youber.visuals`).
+        ai_model: Modelo de imagen (por defecto ``stabilityai/sdxl-turbo``;
+            ``"stub"`` genera degradados sin GPU).
+        ai_steps: Pasos de inferencia del modelo.
+        ai_shots: Número de planos (por defecto, según la duración).
+        ai_seed: Semilla base de los planos.
+        aspect: Formato del vídeo generado (``16:9``, ``9:16`` o ``1:1``).
+        ai_style: Estilo visual de los planos (``cinematic``, ``dreamy``...).
+        ai_texts: Superponer los textos del guion sobre los planos.
+        short: Si es un número, además del máster se genera el **corte
+            vertical** (9:16) de esos segundos, elegido en el trozo con más
+            energía de la canción (el estribillo).
 
     Returns:
         Diccionario con el prompt, el guion, la canción elegida y las rutas
@@ -896,7 +973,104 @@ async def run_lyrics_video(
         )
         clip_paths = [Path(clip) for clip in (clips or [])]
         clip_source = "local" if clip_paths else "none"
-        if not clip_paths:
+        final_video: Path | None = None
+        preview_video: Path | None = None
+        short_video: Path | None = None
+        short_start: float | None = None
+        visual_plan: Any = None
+        plan_path: Path | None = None
+        if visuals == "ai":
+            from youber.audio._ffmpeg import probe_duration
+            from youber.visuals.generator import create_generator
+            from youber.visuals.render import render_visuals
+            from youber.visuals.short import extract_window, pick_window
+
+            if chosen_track is None or chosen_track.file_path is None:
+                raise RuntimeError(
+                    "La ruta visual con IA necesita una canción local del catálogo. "
+                    "Escanea con: youber-music scan --library <dir> [--lyrics-dir <letras>]"
+                )
+            if not render:
+                console.print("⏭️  Render omitido (--no-render): no se generan planos")
+            else:
+                ai_song = Path(chosen_track.file_path)
+                generator = create_generator(ai_model, steps=ai_steps)
+                clip_source = f"ai:{generator.name}"
+                aspect_slug = aspect.replace(":", "x")
+                mood_value = brief.music_mood.value if brief.music_mood else None
+                console.print(
+                    f"🎨 Planos creados de cero con [bold]{generator.name}[/] · {aspect} "
+                    f"({ai_shots or 'auto'} planos) · estilo {ai_style}"
+                )
+                master = await render_visuals(
+                    topic=clean_topic,
+                    output=out / f"{_slug(clean_topic)}_{aspect_slug}.mp4",
+                    song=ai_song,
+                    scenes=script.scenes,
+                    duration=target_duration,
+                    aspect=aspect,
+                    style=ai_style,
+                    mood=mood_value,
+                    tone=brief.tone,
+                    keywords=brief.keywords,
+                    shots=ai_shots,
+                    texts=ai_texts,
+                    generator=generator,
+                    seed=ai_seed,
+                    preview=preview,
+                    on_progress=lambda message: console.print(message),
+                )
+                final_video = master.video
+                preview_video = master.preview
+                clip_paths = list(master.clips)
+                visual_plan = master.plan
+                plan_path = out / f"{_slug(clean_topic)}_{aspect_slug}_plan.json"
+                plan_path.write_text(visual_plan.model_dump_json(indent=2), encoding="utf-8")
+                console.print(
+                    f"✅ Vídeo creado de cero: [bold green]{final_video}[/] "
+                    f"({master.duration:.1f} s · {len(visual_plan.shots)} planos)"
+                )
+                if short:
+                    song_seconds = await probe_duration(ai_song)
+                    short_seconds = min(float(short), song_seconds)
+                    short_start, _ = await pick_window(ai_song, short_seconds)
+                    console.print(
+                        f"✂️  Estribillo: desde [bold]{short_start:.1f} s[/] "
+                        f"({short_seconds:.0f} s de más energía de {song_seconds:.1f} s)"
+                    )
+                    cut = await extract_window(
+                        ai_song,
+                        out / f"{_slug(clean_topic)}_short_audio.m4a",
+                        start=short_start,
+                        duration=short_seconds,
+                    )
+                    short_result = await render_visuals(
+                        topic=clean_topic,
+                        output=out / f"{_slug(clean_topic)}_short_9x16.mp4",
+                        song=cut,
+                        scenes=script.scenes,
+                        aspect="9:16",
+                        style=ai_style,
+                        mood=mood_value,
+                        tone=brief.tone,
+                        keywords=brief.keywords,
+                        shots=ai_shots,
+                        texts=ai_texts,
+                        generator=generator,
+                        seed=ai_seed + 500,
+                        preview=preview,
+                        on_progress=lambda message: console.print(message),
+                    )
+                    short_video = short_result.video
+                    short_plan_path = out / f"{_slug(clean_topic)}_short_9x16_plan.json"
+                    short_plan_path.write_text(
+                        short_result.plan.model_dump_json(indent=2), encoding="utf-8"
+                    )
+                    console.print(
+                        f"✅ Short vertical: [bold green]{short_video}[/] "
+                        f"({short_result.duration:.1f} s)"
+                    )
+        elif not clip_paths:
             from youber.video.stock import available as stock_available
             from youber.video.stock import fetch_clips_for_scenes
 
@@ -934,9 +1108,7 @@ async def run_lyrics_video(
                 clip_source = "synthetic"
         console.print(f"🎞️  Clips: [bold]{len(clip_paths)}[/]")
 
-        final_video: Path | None = None
-        preview_video: Path | None = None
-        if render:
+        if render and visuals != "ai":
             editor = VideoEditor(library=library)
             project = build_project(
                 script,
@@ -987,7 +1159,7 @@ async def run_lyrics_video(
                 console.print("📱 Generando preview ligero (480p · audio estéreo 128 kbps)...")
                 preview_video = Path(await make_preview(final_video))
                 console.print(f"✅ Preview para compartir: [bold green]{preview_video}[/]")
-        else:
+        elif visuals != "ai":
             console.print("⏭️  Render omitido (--no-render)")
 
         # Exportación
@@ -1066,6 +1238,11 @@ async def run_lyrics_video(
         "clip_source": clip_source,
         "final_video": str(final_video) if final_video else None,
         "preview_video": str(preview_video) if preview_video else None,
+        "visuals": visuals,
+        "aspect": aspect if visuals == "ai" else None,
+        "plan": str(plan_path) if plan_path else None,
+        "short_video": str(short_video) if short_video else None,
+        "short_start": short_start,
         "decision_id": decision_id,
     }
 
@@ -1129,6 +1306,15 @@ def main() -> None:
                     preview=args.preview,
                     journal=not args.no_journal,
                     journal_db=args.journal_db,
+                    visuals=args.visuals,
+                    ai_model=args.ai_model,
+                    ai_steps=args.ai_steps,
+                    ai_shots=args.ai_shots,
+                    ai_seed=args.ai_seed,
+                    aspect=args.ai_aspect,
+                    ai_style=args.ai_style,
+                    ai_texts=args.ai_texts,
+                    short=args.short,
                 )
             )
             console.print(

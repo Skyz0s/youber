@@ -44,6 +44,9 @@ dev = [
 ]
 # Transcripción Whisper para timestamps precisos (youber-sync --whisper).
 sync = ["faster-whisper>=1.0"]
+# Generación visual local (youber-visuals --model stabilityai/sdxl-turbo).
+# Sin esto el flujo funciona con el generador de prueba '--model stub'.
+visuals = ["torch>=2.4", "diffusers>=0.30", "pillow>=10"]
 
 [project.scripts]
 youber-audit = "youber.cli:audit"
@@ -62,6 +65,7 @@ youber-produce = "youber.montage.cli:main"
 youber-sync = "youber.sync.cli:main"
 youber-api = "youber.api.cli:main"
 youber-journal = "youber.journal.cli:main"
+youber-visuals = "youber.visuals.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Skyz0s/youber"

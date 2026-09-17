@@ -24,7 +24,7 @@ sobre **Playwright**, con:
 - **Dashboard de métricas** (widgets visuales: catálogo, uso, tareas, actividad)
 - **Dashboard de Control UI** (plugin `youber-dashboard`: 5 páginas, jobs en vivo y descarga de MP4 desde el navegador)
 - **Sandbox de simulaciones** (geolocalización, red, dispositivos)
-- **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva), `youber-research`, `youber-workflow`, `youber-music`, `youber-edit` y `youber-upload`
+- **CLI**: `youber-audit`, `youber-sandbox`, `youber-client` (interactiva), `youber-research`, `youber-workflow`, `youber-music`, `youber-edit`, `youber-upload` y `youber-visuals`
 
 ## Propósito educativo
 
@@ -126,7 +126,6 @@ asyncio.run(main())
 - [Guía de laboratorio](docs/RESEARCH.md) - experimentos observacionales
 - [Ejemplos](docs/EXAMPLES.md) - guía de los ejemplos
 - [Registro de decisiones](docs/DECISION_JOURNAL.md) - qué decidió el algoritmo y cómo rindió cada vídeo
-
 ## Capturas (dashboard de Control UI)
 
 ![Dashboard](docs/img/dashboard-home.png)
