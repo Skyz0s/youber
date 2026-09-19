@@ -42,22 +42,25 @@ def _slug(text: str) -> str:
     return "-".join(part for part in "".join(safe).split("-") if part)[:60] or "video"
 
 
-async def _song_signals(song: Path) -> StyleSignals | None:
-    """Señales del audio de la canción (energía y dinámica medidas con FFmpeg).
+async def _song_signals(song: Path, *, topic: str = "", mood: str | None = None) -> StyleSignals:
+    """Señales de la pieza: audio medido con FFmpeg + el tema como metadatos.
 
-    Best-effort: si el análisis falla, el render sigue con señales neutras
-    (y entonces el estilo cae al de partida).
+    La energía y la dinámica salen de la canción (RMS por segundo); el tema
+    (``--topic``) hace de metadatos, así que sus palabras cuentan para el
+    estilo igual que lo harían el título y las etiquetas de YouTube. Si el
+    análisis de audio falla, el render sigue solo con el tema.
     """
     from youber.visuals.short import loudness_profile
 
+    energies: list[float] | None = None
     try:
         energies = await loudness_profile(song)
     except (RuntimeError, FileNotFoundError, OSError) as error:  # pragma: no cover - FFmpeg
-        console.print(f"⚠️  No se pudo medir el audio ({error}); señales neutras")
-        return None
-    signals = build_signals(energies=energies)
+        console.print(f"⚠️  No se pudo medir el audio ({error}); el tema manda")
+    signals = build_signals(energies=energies, metadata_text=topic, mood=mood)
     console.print(
-        f"🔎 Señales del audio: energía {signals.energy:.2f} · tensión {signals.tension:.2f}"
+        f"🔎 Señales: energía {signals.energy:.2f} · tensión {signals.tension:.2f} · "
+        f"valencia {signals.valence:.2f} ({', '.join(signals.sources) or 'sin datos'})"
     )
     return signals
 
@@ -146,7 +149,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         f"{aspect.render_size()[0]}x{aspect.render_size()[1]} (modelo {aspect.generate_size()[0]}x{aspect.generate_size()[1]})"
     )
 
-    signals = await _song_signals(song)
+    signals = await _song_signals(song, topic=args.topic, mood=args.mood)
     if args.style == AUTO_STYLE:
         console.print(
             "🔎 Estilo automático: el audio decide (añade --style para forzar uno)"
