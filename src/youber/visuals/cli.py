@@ -30,6 +30,7 @@ from youber.audio._ffmpeg import probe_duration
 from youber.visuals.generator import DEFAULT_MODEL, create_generator
 from youber.visuals.models import Aspect, VisualStyle
 from youber.visuals.render import render_visuals
+from youber.visuals.selector import AUTO_STYLE, StyleSignals, build_signals
 from youber.visuals.short import DEFAULT_SHORT_DURATION, extract_window, pick_window
 
 console = Console()
@@ -39,6 +40,26 @@ def _slug(text: str) -> str:
     """Nombre de fichero seguro a partir del tema."""
     safe = [char if char.isalnum() else "-" for char in text.lower()]
     return "-".join(part for part in "".join(safe).split("-") if part)[:60] or "video"
+
+
+async def _song_signals(song: Path) -> StyleSignals | None:
+    """Señales del audio de la canción (energía y dinámica medidas con FFmpeg).
+
+    Best-effort: si el análisis falla, el render sigue con señales neutras
+    (y entonces el estilo cae al de partida).
+    """
+    from youber.visuals.short import loudness_profile
+
+    try:
+        energies = await loudness_profile(song)
+    except (RuntimeError, FileNotFoundError, OSError) as error:  # pragma: no cover - FFmpeg
+        console.print(f"⚠️  No se pudo medir el audio ({error}); señales neutras")
+        return None
+    signals = build_signals(energies=energies)
+    console.print(
+        f"🔎 Señales del audio: energía {signals.energy:.2f} · tensión {signals.tension:.2f}"
+    )
+    return signals
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,9 +79,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--style",
-        choices=[style.value for style in VisualStyle],
-        default=VisualStyle.CINEMATIC.value,
-        help="Estilo visual de los planos (default: cinematic)",
+        choices=[AUTO_STYLE, *(style.value for style in VisualStyle)],
+        default=AUTO_STYLE,
+        help=(
+            "Estilo visual de los planos (default: auto → lo eligen el audio y los "
+            "metadatos; también vale cinematic/dreamy/dark/vibrant/minimal)"
+        ),
     )
     parser.add_argument("--mood", default=None, help="Mood de la canción (tinte de los prompts)")
     parser.add_argument(
@@ -81,7 +105,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shots", type=int, default=None, help="Número de planos (default: auto)")
     parser.add_argument("--fps", type=int, default=30, help="Fotogramas por segundo (default: 30)")
     parser.add_argument(
-        "--transition", type=float, default=0.8, help="Fundido entre planos en s (default: 0.8)"
+        "--transition",
+        type=float,
+        default=None,
+        help="Fundido entre planos en s (default: lo decide el audio, según el tempo)",
     )
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Modelo de imagen (default: {DEFAULT_MODEL}; 'stub' sin GPU)")
     parser.add_argument("--steps", type=int, default=2, help="Pasos de inferencia (default: 2)")
@@ -119,6 +146,12 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         f"{aspect.render_size()[0]}x{aspect.render_size()[1]} (modelo {aspect.generate_size()[0]}x{aspect.generate_size()[1]})"
     )
 
+    signals = await _song_signals(song)
+    if args.style == AUTO_STYLE:
+        console.print(
+            "🔎 Estilo automático: el audio decide (añade --style para forzar uno)"
+        )
+
     master = await render_visuals(
         topic=args.topic,
         output=out / f"{slug}_{aspect.value.replace(':', 'x')}.mp4",
@@ -126,6 +159,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         duration=args.duration,
         aspect=aspect,
         style=args.style,
+        signals=signals,
         mood=music_mood,
         tone=args.tone,
         keywords=args.keyword,
@@ -152,6 +186,12 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         "shots": len(master.plan.shots),
         "plan": str(plan_path),
         "generator": generator.name,
+        "style": master.plan.style,
+        "style_reason": master.plan.style_reason,
+        "style_scores": master.plan.style_scores,
+        "transition": master.plan.transition,
+        "seconds_per_shot": master.plan.seconds_per_shot,
+        "motion_offset": master.plan.motion_offset,
         "preview": str(master.preview) if master.preview else None,
     }
 
@@ -176,6 +216,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
             song=cut,
             aspect=Aspect.VERTICAL,
             style=args.style,
+            signals=signals,
             mood=music_mood,
             tone=args.tone,
             keywords=args.keyword,

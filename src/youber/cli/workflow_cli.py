@@ -260,9 +260,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ai-style",
-        choices=("cinematic", "dreamy", "dark", "vibrant", "minimal"),
-        default="cinematic",
-        help="Estilo visual de los planos (default: cinematic)",
+        choices=("auto", "cinematic", "dreamy", "dark", "vibrant", "minimal"),
+        default="auto",
+        help=(
+            "Estilo visual de los planos (default: auto → lo eligen el audio de la "
+            "canción y los metadatos; fíjalo solo si quieres forzar uno)"
+        ),
     )
     parser.add_argument(
         "--ai-texts",
@@ -765,6 +768,39 @@ def _default_topic(insights: dict[str, Any], channel: ChannelData) -> str:
     return ", ".join(hashtags) if hashtags else channel.name
 
 
+def _visual_signals(
+    *,
+    track_id: str | None = None,
+    themes: dict[str, float] | None = None,
+    sentiment: str | None = None,
+    metadata_text: str = "",
+    mood: str | None = None,
+) -> Any:
+    """Señales de audio + metadatos para elegir el estilo y el ritmo de los planos.
+
+    El perfil de audio sale del almacén de *audio features* del catálogo (si
+    la pista está enriquecida); los temas y el sentimiento, de los metadatos
+    del canal. Todo offline: si falta algo, se usan señales neutras.
+    """
+    from youber.visuals.selector import build_signals
+
+    audio_profile = None
+    if track_id:
+        from youber.music.audio_features import AudioFeatureStore
+
+        try:
+            audio_profile = AudioFeatureStore().get(track_id)
+        except (OSError, ValueError):  # pragma: no cover - almacén ilegible
+            audio_profile = None
+    return build_signals(
+        profile=audio_profile,
+        themes=themes or {},
+        sentiment=sentiment,
+        metadata_text=metadata_text,
+        mood=mood,
+    )
+
+
 async def run_lyrics_video(
     channel_ref: str = DEFAULT_CHANNEL,
     max_videos: int = 10,
@@ -793,7 +829,7 @@ async def run_lyrics_video(
     ai_shots: int | None = None,
     ai_seed: int = 1234,
     aspect: str = "16:9",
-    ai_style: str = "cinematic",
+    ai_style: str = "auto",
     ai_texts: bool = False,
     short: float | None = None,
 ) -> dict[str, Any]:
@@ -841,7 +877,9 @@ async def run_lyrics_video(
         ai_shots: Número de planos (por defecto, según la duración).
         ai_seed: Semilla base de los planos.
         aspect: Formato del vídeo generado (``16:9``, ``9:16`` o ``1:1``).
-        ai_style: Estilo visual de los planos (``cinematic``, ``dreamy``...).
+        ai_style: Estilo visual de los planos (``auto`` por defecto: lo eligen
+            el audio de la canción y los metadatos del canal; también vale
+            ``cinematic``, ``dreamy``, ``dark``, ``vibrant`` o ``minimal``).
         ai_texts: Superponer los textos del guion sobre los planos.
         short: Si es un número, además del máster se genera el **corte
             vertical** (9:16) de esos segundos, elegido en el trozo con más
@@ -998,9 +1036,21 @@ async def run_lyrics_video(
                 clip_source = f"ai:{generator.name}"
                 aspect_slug = aspect.replace(":", "x")
                 mood_value = brief.music_mood.value if brief.music_mood else None
+                visual_signals = _visual_signals(
+                    track_id=chosen_track.id,
+                    themes=profile.themes,
+                    sentiment=profile.sentiment,
+                    metadata_text=metadata_text,
+                    mood=mood_value,
+                )
                 console.print(
                     f"🎨 Planos creados de cero con [bold]{generator.name}[/] · {aspect} "
                     f"({ai_shots or 'auto'} planos) · estilo {ai_style}"
+                )
+                console.print(
+                    f"🔎 Señales: energía {visual_signals.energy:.2f} · valencia "
+                    f"{visual_signals.valence:.2f} · tension {visual_signals.tension:.2f} "
+                    f"({', '.join(visual_signals.sources) or 'sin datos'})"
                 )
                 master = await render_visuals(
                     topic=clean_topic,
@@ -1010,6 +1060,7 @@ async def run_lyrics_video(
                     duration=target_duration,
                     aspect=aspect,
                     style=ai_style,
+                    signals=visual_signals,
                     mood=mood_value,
                     tone=brief.tone,
                     keywords=brief.keywords,
@@ -1051,6 +1102,7 @@ async def run_lyrics_video(
                         scenes=script.scenes,
                         aspect="9:16",
                         style=ai_style,
+                        signals=visual_signals,
                         mood=mood_value,
                         tone=brief.tone,
                         keywords=brief.keywords,

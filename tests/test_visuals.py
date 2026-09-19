@@ -387,7 +387,8 @@ def test_cli_visuals_parser():
 
     args = build_parser().parse_args(["--topic", "tema", "--song", "x.wav"])
     assert args.aspect == "16:9"
-    assert args.style == "cinematic"
+    assert args.style == "auto"
+    assert args.transition is None
     assert args.short is None
     args = build_parser().parse_args(
         ["--topic", "tema", "--song", "x.wav", "--aspect", "9:16", "--short", "75", "--model", "stub"]
@@ -405,6 +406,7 @@ def test_workflow_parser_visuals_ai():
     assert args.visuals == "ai"
     assert args.short == 75.0
     assert args.ai_aspect == "16:9"
+    assert args.ai_style == "auto"
     assert build_parser().parse_args([]).visuals == "off"
 
 

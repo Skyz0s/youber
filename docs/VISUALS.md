@@ -44,12 +44,56 @@ Y dentro del flujo de metadatos → letras → vídeo:
 
 ```bash
 youber-workflow --lyrics-video --visuals ai \
-    --ai-shots 14 --ai-aspect 16:9 --ai-style cinematic \
+    --ai-shots 14 --ai-aspect 16:9 \
     --short 75 --preview
 ```
 
 `--short SEGUNDOS` genera **además** el corte vertical eligiendo el trozo con
 más energía de la canción (el estribillo), no el arranque.
+
+`--ai-style` (y `--style` en `youber-visuals`) aceptan `auto` —por defecto— o
+un estilo concreto (`cinematic`, `dreamy`, `dark`, `vibrant`, `minimal`) si
+quieres forzarlo.
+
+## Estilo automatico: el audio y los metadatos deciden
+
+Un estilo fijo quema el concepto: si todos los videos salen iguales, en una
+semana el canal parece el mismo video repetido. Por eso el estilo **ya no es
+fijo**: `youber.visuals.selector` lo deduce de senales medibles.
+
+**Fuentes**
+
+| Fuente | De donde sale | Que aporta |
+| --- | --- | --- |
+| Audio | `AudioProfile` del catalogo (`youber-music analyze`) | energia, valencia, tempo, baile, acustica, modo |
+| Sonoridad | FFmpeg sobre la cancion (RMS por segundo) | energia y dinamica (si no hay perfil) |
+| Metadatos | titulo, descripcion y etiquetas del canal/video | temas/sentimiento y palabras clave |
+| Guion | mood del brief | tinte adicional |
+
+Cada fuente aporta `(valor, peso)` por eje (`energy`, `valence`, `tempo`,
+`dance`, `tension`, `intimacy`) y el resultado es su media ponderada: cambiar
+un dato mueve el estilo, no lo sortea.
+
+**Que decide**
+
+- **Estilo** — puntuacion lineal de cada estilo sobre los ejes + bonus por
+  palabras clave (`lofi`->dreamy, `workout`->vibrant, `tutorial`/`python`->minimal,
+  `documental`/`viaje`->cinematic...). Si dos estilos empatan, la
+  `variation_key` (tema + formato + semilla) reparte de forma determinista:
+  dos videos distintos no reciben lo mismo.
+- **Fundidos** — tempo alto -> cortes agiles; lento -> fundidos largos (0.4-1.3 s).
+- **Planos** — mas energia -> planos mas cortos (10-24 s por plano).
+- **Movimientos** — el ciclo Ken Burns arranca en un punto distinto segun la
+  pieza, para que no se repita la secuencia.
+
+Todo queda escrito en la consola y en el `<nombre>_plan.json` (`style`,
+`style_reason`, `style_scores`, `style_signals`, `seed`), asi que cualquier
+render se puede **repetir** aun cambiando los valores por defecto.
+
+```bash
+# Forzar un estilo concreto (el ritmo y los fundidos siguen saliendo del audio)
+youber-visuals --topic "..." --song cancion.wav --out out/ --style dreamy
+```
 
 ## Formatos
 

@@ -17,8 +17,10 @@ from collections.abc import Sequence
 from youber.script.models import Scene, SceneType
 from youber.visuals.models import (
     DEFAULT_MOTION_CYCLE,
+    DEFAULT_SECONDS_PER_SHOT,
     STYLE_SUFFIXES,
     Aspect,
+    Motion,
     Shot,
     ShotPlan,
     VisualStyle,
@@ -76,19 +78,22 @@ MOOD_HINTS: dict[str, str] = {
 #: Duración mínima de un plano (por debajo de esto el zoompan se nota nervioso).
 MIN_SHOT_DURATION = 2.0
 
-#: Objetivo aproximado de segundos por plano cuando no se indica el número.
-DEFAULT_SECONDS_PER_SHOT = 16.0
-
 #: Rango sensato de planos por vídeo.
 MIN_SHOTS = 4
 MAX_SHOTS = 40
 
 
-def plan_shots_count(duration: float, shots: int | None = None) -> int:
+def plan_shots_count(
+    duration: float,
+    shots: int | None = None,
+    *,
+    seconds_per_shot: float = DEFAULT_SECONDS_PER_SHOT,
+) -> int:
     """Número de planos: el indicado o uno derivado de la duración."""
     if shots is not None:
         return max(1, int(shots))
-    suggested = round(max(duration, 1.0) / DEFAULT_SECONDS_PER_SHOT)
+    per_shot = seconds_per_shot if seconds_per_shot > 0 else DEFAULT_SECONDS_PER_SHOT
+    suggested = round(max(duration, 1.0) / per_shot)
     return max(MIN_SHOTS, min(MAX_SHOTS, suggested))
 
 
@@ -183,6 +188,8 @@ def build_shot_plan(
     shots: int | None = None,
     transition: float = 0.8,
     fps: int = 30,
+    motion_offset: int = 0,
+    seconds_per_shot: float = DEFAULT_SECONDS_PER_SHOT,
 ) -> ShotPlan:
     """Construye el plan visual de un vídeo a partir de su guion.
 
@@ -198,12 +205,20 @@ def build_shot_plan(
         shots: Número de planos (por defecto, derivado de la duración).
         transition: Duración del fundido entre planos (segundos).
         fps: Fotogramas por segundo del render.
+        motion_offset: Desplazamiento del ciclo de movimientos; cambiar el
+            punto de arranque varía la pieza sin tocar el estilo.
+        seconds_per_shot: Segundos objetivo por plano cuando ``shots`` es
+            ``None`` (lo dicta el selector según el audio).
 
     Returns:
         El :class:`ShotPlan` con los prompts y las duraciones ya resueltas.
     """
-    count = plan_shots_count(duration, shots)
+    count = plan_shots_count(duration, shots, seconds_per_shot=seconds_per_shot)
     keywords = list(dict.fromkeys(str(keyword) for keyword in keywords if keyword))
+    offset = int(motion_offset) % len(DEFAULT_MOTION_CYCLE)
+
+    def motion_for(index: int) -> Motion:
+        return DEFAULT_MOTION_CYCLE[(index + offset) % len(DEFAULT_MOTION_CYCLE)]
 
     # Sin escenas: planos genéricos equiespaciados.
     if not scenes:
@@ -216,6 +231,8 @@ def build_shot_plan(
             transition=transition,
             music_mood=mood,
             keywords=keywords[:8],
+            motion_offset=offset,
+            seconds_per_shot=seconds_per_shot,
         )
         for index, shot_duration in enumerate(durations):
             beat = GENERIC_BEATS[index % len(GENERIC_BEATS)]
@@ -230,7 +247,7 @@ def build_shot_plan(
                         tone=tone,
                         keywords=keywords,
                     ),
-                    motion=DEFAULT_MOTION_CYCLE[index % len(DEFAULT_MOTION_CYCLE)],
+                    motion=motion_for(index),
                     duration=shot_duration,
                     beat=beat,
                 )
@@ -249,6 +266,8 @@ def build_shot_plan(
         transition=transition,
         music_mood=mood,
         keywords=keywords[:8],
+        motion_offset=offset,
+        seconds_per_shot=seconds_per_shot,
     )
     index = 0
     for scene_index, (scene, scene_shots) in enumerate(zip(scenes, counts, strict=True)):
@@ -266,7 +285,7 @@ def build_shot_plan(
                         tone=tone,
                         keywords=keywords or scene.keywords,
                     ),
-                    motion=DEFAULT_MOTION_CYCLE[index % len(DEFAULT_MOTION_CYCLE)],
+                    motion=motion_for(index),
                     duration=durations[index],
                     scene_index=scene_index,
                     beat=beat,

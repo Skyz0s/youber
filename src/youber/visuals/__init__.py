@@ -13,6 +13,9 @@ El vídeo nace del guion, no de clips ajenos:
 :mod:`youber.visuals.short` elige y corta el trozo con más energía de una
 canción: el corte vertical (Shorts) sale de ahí.
 
+:mod:`youber.visuals.selector` decide el **estilo y el ritmo del montaje** a
+partir del audio y de los metadatos (un estilo fijo quema el concepto).
+
 Ética: los planos son **contenido original generado en local**; el modelo por
 defecto (SDXL-Turbo) es libre y no se envía nada a servicios externos.
 """
@@ -27,6 +30,7 @@ from youber.visuals.generator import (
     diffusers_available,
 )
 from youber.visuals.models import (
+    DEFAULT_SECONDS_PER_SHOT,
     Aspect,
     Motion,
     Shot,
@@ -41,6 +45,14 @@ from youber.visuals.render import (
     generate_images,
     render_visuals,
 )
+from youber.visuals.selector import (
+    AUTO_STYLE,
+    StyleChoice,
+    StyleSignals,
+    build_signals,
+    choose_style,
+    score_styles,
+)
 from youber.visuals.short import (
     DEFAULT_SHORT_DURATION,
     best_window_start,
@@ -50,7 +62,9 @@ from youber.visuals.short import (
 )
 
 __all__ = [
+    "AUTO_STYLE",
     "DEFAULT_MODEL",
+    "DEFAULT_SECONDS_PER_SHOT",
     "DEFAULT_SHORT_DURATION",
     "Aspect",
     "DiffusersGenerator",
@@ -59,13 +73,17 @@ __all__ = [
     "Shot",
     "ShotPlan",
     "StubGenerator",
+    "StyleChoice",
+    "StyleSignals",
     "VisualResult",
     "VisualStyle",
     "animate_clips",
     "animate_shot",
     "best_window_start",
     "build_shot_plan",
+    "build_signals",
     "build_visual_project",
+    "choose_style",
     "create_generator",
     "diffusers_available",
     "extract_window",
@@ -74,5 +92,6 @@ __all__ = [
     "loudness_profile",
     "pick_window",
     "render_visuals",
+    "score_styles",
     "shot_prompt",
 ]

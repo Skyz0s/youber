@@ -30,6 +30,12 @@ from youber.visuals.animate import DEFAULT_CRF, DEFAULT_PRESET, animate_shot
 from youber.visuals.generator import ImageGenerator, create_generator
 from youber.visuals.models import Aspect, ShotPlan, VisualStyle
 from youber.visuals.prompts import build_shot_plan
+from youber.visuals.selector import (
+    AUTO_STYLE,
+    StyleChoice,
+    StyleSignals,
+    choose_style,
+)
 
 #: Callback de progreso: recibe un mensaje ya formateado.
 ProgressCallback = Callable[[str], None]
@@ -48,6 +54,7 @@ class VisualResult(BaseModel):
         duration: Duración del montaje (segundos).
         generator: Generador de imagen usado (modelo o ``stub``).
         seed: Semilla base de las imágenes.
+        style_choice: Cómo se resolvió el estilo (señales, puntuaciones, motivo).
     """
 
     video: Path
@@ -59,6 +66,7 @@ class VisualResult(BaseModel):
     generator: str = ""
     seed: int = 0
     preview: Path | None = None
+    style_choice: StyleChoice | None = None
 
 
 def _report(on_progress: ProgressCallback | None, message: str) -> None:
@@ -254,13 +262,14 @@ async def render_visuals(
     scenes: Sequence[Scene] = (),
     duration: float | None = None,
     aspect: Aspect | str = Aspect.LANDSCAPE,
-    style: VisualStyle | str = VisualStyle.CINEMATIC,
+    style: VisualStyle | str = AUTO_STYLE,
+    signals: StyleSignals | None = None,
     mood: str | None = None,
     tone: str | None = None,
     keywords: Sequence[str] = (),
     shots: int | None = None,
     fps: int = 30,
-    transition: float = 0.8,
+    transition: float | None = None,
     texts: bool = False,
     generator: ImageGenerator | None = None,
     model: str | None = None,
@@ -283,13 +292,16 @@ async def render_visuals(
         scenes: Escenas del guion (reparten los planos y los textos).
         duration: Duración objetivo del montaje (por defecto, la de la canción).
         aspect: Formato de la pieza (``16:9``, ``9:16`` o ``1:1``).
-        style: Estilo visual de los planos.
+        style: Estilo visual de los planos; ``"auto"`` (por defecto) lo elige
+            a partir de :mod:`youber.visuals.selector` con las ``signals``.
+        signals: Señales de audio/metadatos para elegir estilo y ritmo.
         mood: Mood de la música (tinte atmosférico de los prompts).
         tone: Tono narrativo del brief.
         keywords: Palabras clave para los prompts.
-        shots: Número de planos (por defecto, según la duración).
+        shots: Número de planos (por defecto, según la duración y la energía).
         fps: Fotogramas por segundo.
-        transition: Duración del fundido entre planos (segundos).
+        transition: Duración del fundido entre planos (segundos). ``None`` la
+            deja al selector (tempo alto → fundidos cortos).
         texts: Superponer los textos del guion.
         generator: Generador de imágenes ya construido (por defecto, se crea
             con ``model``).
@@ -314,7 +326,6 @@ async def render_visuals(
     """
     ensure_ffmpeg()
     aspect = Aspect(aspect)
-    style = VisualStyle(style)
     target = Path(output)
 
     song_path = Path(song) if song is not None else None
@@ -325,23 +336,44 @@ async def render_visuals(
     if not total or total <= 0:
         raise ValueError("Indica una duración o pasa una canción de la que deducirla")
 
+    choice = choose_style(
+        style,
+        signals=signals,
+        variation_key=f"{topic}|{aspect.value}|{seed}",
+    )
+    effective_transition = transition if transition is not None else choice.transition
+
     plan = build_shot_plan(
         topic,
         scenes,
         duration=total,
         aspect=aspect,
-        style=style,
+        style=choice.style,
         mood=mood,
         tone=tone,
         keywords=keywords,
         shots=shots,
-        transition=transition,
+        transition=effective_transition,
         fps=fps,
+        motion_offset=choice.motion_offset,
+        seconds_per_shot=choice.seconds_per_shot,
     )
+    plan.style_reason = choice.reason
+    plan.style_scores = dict(choice.scores)
+    plan.style_signals = {axis: round(value, 4) for axis, value in choice.signals.as_axes().items()}
+    plan.seed = seed
     _report(
         on_progress,
         f"Plan: {len(plan.shots)} planos · {plan.total_duration:.1f} s · "
-        f"{aspect.value} {aspect.render_size()[0]}x{aspect.render_size()[1]} · estilo {style.value}",
+        f"{aspect.value} {aspect.render_size()[0]}x{aspect.render_size()[1]} · "
+        f"estilo {choice.style.value}",
+    )
+    _report(on_progress, f"🎨 {choice.reason}")
+    _report(
+        on_progress,
+        f"🎞️  Ritmo: {plan.seconds_per_shot:g} s/plano · fundidos {plan.transition:g} s · "
+        f"movimientos desde #{choice.motion_offset} · candidatos "
+        f"{', '.join(choice.candidates)}",
     )
 
     work = Path(workdir) if workdir is not None else target.with_name(f"{target.stem}_work")
@@ -378,6 +410,7 @@ async def render_visuals(
         duration=plan.total_duration,
         generator=(generator or create_generator(model)).name,
         seed=seed,
+        style_choice=choice,
     )
     if preview:
         from youber.video.preview import make_preview

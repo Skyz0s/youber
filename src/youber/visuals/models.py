@@ -100,6 +100,10 @@ DEFAULT_MOTION_CYCLE: tuple[Motion, ...] = (
 )
 
 
+#: Objetivo aproximado de segundos por plano (el selector lo ajusta por audio).
+DEFAULT_SECONDS_PER_SHOT = 16.0
+
+
 class VisualStyle(StrEnum):
     """Estilo visual de los planos (se añade al prompt de cada uno)."""
 
@@ -172,6 +176,12 @@ class ShotPlan(BaseModel):
         shots: Planos ordenados.
         music_mood: Mood de la música que inspira el estilo (informativo).
         keywords: Palabras clave usadas para los prompts.
+        motion_offset: Desplazamiento del ciclo de movimientos (variedad).
+        seconds_per_shot: Objetivo de segundos por plano usado para repartir.
+        style_reason: Por qué se eligió (o quién pidió) este estilo.
+        style_scores: Puntuación de cada estilo con las señales de la pieza.
+        style_signals: Señales (ejes) que decidieron el estilo.
+        seed: Semilla base de las imágenes (para poder repetir el render).
     """
 
     topic: str = Field(min_length=1)
@@ -182,6 +192,12 @@ class ShotPlan(BaseModel):
     shots: list[Shot] = Field(default_factory=list)
     music_mood: str | None = None
     keywords: list[str] = Field(default_factory=list)
+    motion_offset: int = Field(default=0, ge=0)
+    seconds_per_shot: float = Field(default=DEFAULT_SECONDS_PER_SHOT, gt=0)
+    style_reason: str = ""
+    style_scores: dict[str, float] = Field(default_factory=dict)
+    style_signals: dict[str, float] = Field(default_factory=dict)
+    seed: int | None = None
 
     @property
     def total_duration(self) -> float:

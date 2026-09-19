@@ -8,6 +8,23 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Added
 
+- **Estilo visual automático** (`youber.visuals.selector`): el estilo de los
+  planos ya no es fijo — se deduce del **audio** (energía, valencia, tempo,
+  baile, acústica, modo del `AudioProfile`; o la sonoridad medida con FFmpeg si
+  no hay perfil) y de los **metadatos de YouTube** (temas/sentimiento y
+  palabras clave del título, descripción y etiquetas).
+  - `build_signals` (mezcla ponderada de fuentes), `score_styles` /
+    `choose_style` (puntuación lineal + bonus por palabras clave y desempate
+    determinista por `variation_key`), `transition_for` (tempo → fundidos),
+    `seconds_per_shot_for` (energía → planos) y `motion_offset_for` (variedad
+    del ciclo Ken Burns).
+  - `--style auto` / `--ai-style auto` pasan a ser el **valor por defecto**
+    (antes `cinematic`); forzar un estilo sigue disponible.
+  - El plan guarda `style_reason`, `style_scores`, `style_signals`, `seed`,
+    `motion_offset` y `seconds_per_shot`: cualquier render se puede repetir.
+  - 26 tests nuevos en `tests/test_visuals_selector.py`; docs en
+    `docs/VISUALS.md`.
+
 - **Registro de decisiones** (`youber/journal`, CLI `youber-journal`): cada
   vídeo generado deja una huella auditable — patrón detectado en los metadatos,
   atributos extraídos, canción elegida con su motivo, puntuación y ranking de
