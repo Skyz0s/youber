@@ -32,6 +32,7 @@ from youber.visuals.models import Aspect, VisualStyle
 from youber.visuals.render import render_visuals
 from youber.visuals.selector import AUTO_STYLE, StyleSignals, build_signals
 from youber.visuals.short import DEFAULT_SHORT_DURATION, extract_window, pick_window
+from youber.visuals.tempo import BeatGrid
 
 console = Console()
 
@@ -42,17 +43,19 @@ def _slug(text: str) -> str:
     return "-".join(part for part in "".join(safe).split("-") if part)[:60] or "video"
 
 
-async def _song_signals(song: Path, *, topic: str = "", mood: str | None = None) -> StyleSignals:
-    """Señales de la pieza: audio medido con FFmpeg + el tema como metadatos.
+async def _song_signals(
+    song: Path, *, topic: str = "", mood: str | None = None
+) -> tuple[StyleSignals, BeatGrid | None]:
+    """Señales de la pieza y su rejilla de pulsos.
 
-    La energía y la dinámica salen de la canción (RMS por segundo) y el tempo
-    se mide por onsets (:func:`youber.visuals.tempo.detect_tempo`); el tema
+    La energía y la dinámica salen de la canción (RMS por segundo) y el pulso
+    se mide por onsets (:func:`youber.visuals.tempo.detect_grid`); el tema
     (``--topic``) hace de metadatos, así que sus palabras cuentan para el
     estilo igual que lo harían el título y las etiquetas de YouTube. Si el
     análisis de audio falla, el render sigue con lo que haya.
     """
     from youber.visuals.short import loudness_profile
-    from youber.visuals.tempo import detect_tempo
+    from youber.visuals.tempo import detect_grid
 
     energies: list[float] | None = None
     try:
@@ -60,27 +63,33 @@ async def _song_signals(song: Path, *, topic: str = "", mood: str | None = None)
     except (RuntimeError, FileNotFoundError, OSError) as error:  # pragma: no cover - FFmpeg
         console.print(f"⚠️  No se pudo medir el audio ({error}); el tema manda")
 
-    tempo_bpm: float | None = None
+    grid: BeatGrid | None = None
     try:
-        estimate = await detect_tempo(song)
-        if estimate.detected:
-            tempo_bpm = estimate.bpm
+        grid = await detect_grid(song)
+        if grid.detected:
             console.print(
-                f"🥁 Tempo medido: [bold]{estimate.bpm:.0f} BPM[/] "
-                f"(confianza {estimate.confidence:.2f})"
+                f"🥁 Pulso: [bold]{grid.bpm:.0f} BPM[/] · primer beat {grid.offset:.2f} s "
+                f"(confianza {grid.confidence:.2f}, fase {grid.phase_strength:.2f})"
             )
+        if grid.reliable():
+            console.print("🔪 Los planos se cortarán al beat")
+        else:
+            console.print("🔪 Pulso poco firme: los planos se reparten uniformes")
     except (RuntimeError, FileNotFoundError, OSError) as error:  # pragma: no cover - FFmpeg
-        console.print(f"⚠️  No se pudo medir el tempo ({error})")
+        console.print(f"⚠️  No se pudo medir el pulso ({error})")
 
     signals = build_signals(
-        energies=energies, tempo_bpm=tempo_bpm, metadata_text=topic, mood=mood
+        energies=energies,
+        tempo_bpm=grid.bpm if grid and grid.detected else None,
+        metadata_text=topic,
+        mood=mood,
     )
     console.print(
         f"🔎 Señales: energía {signals.energy:.2f} · tensión {signals.tension:.2f} · "
         f"valencia {signals.valence:.2f} · tempo {signals.tempo:.2f} "
         f"({', '.join(signals.sources) or 'sin datos'})"
     )
-    return signals
+    return signals, (grid if grid and grid.reliable() else None)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -144,6 +153,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SEGUNDOS",
         help=f"Generar además el corte vertical del estribillo (default: {DEFAULT_SHORT_DURATION:g} s)",
     )
+    parser.add_argument(
+        "--no-beat",
+        action="store_true",
+        help="No cortar los planos al beat (reparto uniforme aunque el pulso sea claro)",
+    )
     parser.add_argument("--preview", action="store_true", help="Generar preview ligero (480p)")
     parser.add_argument("--force", action="store_true", help="Regenerar stills y clips existentes")
     parser.add_argument("--json", action="store_true", help="Volcar el resumen en JSON")
@@ -167,7 +181,10 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         f"{aspect.render_size()[0]}x{aspect.render_size()[1]} (modelo {aspect.generate_size()[0]}x{aspect.generate_size()[1]})"
     )
 
-    signals = await _song_signals(song, topic=args.topic, mood=args.mood)
+    signals, grid = await _song_signals(song, topic=args.topic, mood=args.mood)
+    if args.no_beat:
+        grid = None
+        console.print("🔪 Cortes al beat desactivados (--no-beat)")
     if args.style == AUTO_STYLE:
         console.print(
             "🔎 Estilo automático: el audio decide (añade --style para forzar uno)"
@@ -181,6 +198,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         aspect=aspect,
         style=args.style,
         signals=signals,
+        beat_grid=grid,
         mood=music_mood,
         tone=args.tone,
         keywords=args.keyword,
@@ -213,6 +231,9 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         "transition": master.plan.transition,
         "seconds_per_shot": master.plan.seconds_per_shot,
         "motion_offset": master.plan.motion_offset,
+        "beat_bpm": master.plan.beat_bpm,
+        "beat_offset": master.plan.beat_offset,
+        "beat_aligned": master.plan.beat_aligned,
         "preview": str(master.preview) if master.preview else None,
     }
 
@@ -231,6 +252,9 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
             start=start,
             duration=short_duration,
         )
+        # El fragmento empieza en ``start``: la rejilla se desplaza con él para
+        # que los cortes sigan cayendo en el pulso de la canción original.
+        short_grid = grid.shifted(start) if grid is not None else None
         short = await render_visuals(
             topic=args.topic,
             output=out / f"{slug}_short_9x16.mp4",
@@ -238,6 +262,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
             aspect=Aspect.VERTICAL,
             style=args.style,
             signals=signals,
+            beat_grid=short_grid,
             mood=music_mood,
             tone=args.tone,
             keywords=args.keyword,

@@ -20,7 +20,7 @@ from youber.visuals.tempo import (
     ANALYSIS_SAMPLE_RATE,
     FRAME_SIZE,
     HOP_SIZE,
-    TempoEstimate,
+    BeatGrid,
     attack_envelope,
     detect_tempo,
     onset_time_offset,
@@ -158,8 +158,8 @@ def test_choose_style_acorta_los_fundidos_con_tempo_alto():
     assert slow.transition <= 1.3
 
 
-def test_song_signals_usa_el_tempo_medido(monkeypatch, tmp_path: Path):
-    """El CLI de visuals mide el tempo y lo pasa a las señales."""
+def test_song_signals_usa_el_pulso_medido(monkeypatch, tmp_path: Path):
+    """El CLI de visuals mide el pulso y lo pasa a las señales y al render."""
     import youber.visuals.cli as visuals_cli
     import youber.visuals.short as short_module
     import youber.visuals.tempo as tempo_module
@@ -167,15 +167,38 @@ def test_song_signals_usa_el_tempo_medido(monkeypatch, tmp_path: Path):
     async def fake_loudness(song, **kwargs):
         return [5000.0, 6000.0, 7000.0]
 
-    async def fake_tempo(song, **kwargs):
-        return TempoEstimate(bpm=176.0, confidence=0.42, seconds=12.0, onsets=900)
+    async def fake_grid(song, **kwargs):
+        return BeatGrid(
+            bpm=176.0, offset=0.3, confidence=0.5, phase_strength=0.4, seconds=12.0
+        )
 
     monkeypatch.setattr(short_module, "loudness_profile", fake_loudness)
-    monkeypatch.setattr(tempo_module, "detect_tempo", fake_tempo)
+    monkeypatch.setattr(tempo_module, "detect_grid", fake_grid)
 
-    signals = asyncio.run(visuals_cli._song_signals(tmp_path / "song.wav", topic="tema"))
+    signals, grid = asyncio.run(visuals_cli._song_signals(tmp_path / "song.wav", topic="tema"))
     assert signals.tempo_bpm == 176.0
     assert "tempo medido" in signals.sources
+    assert grid is not None and grid.reliable()
+
+
+def test_song_signals_descarta_un_pulso_flojo(monkeypatch, tmp_path: Path):
+    """Con pulso poco firme se devuelve ``None``: cortes uniformes, no a ciegas."""
+    import youber.visuals.cli as visuals_cli
+    import youber.visuals.short as short_module
+    import youber.visuals.tempo as tempo_module
+
+    async def fake_loudness(song, **kwargs):
+        return [5000.0]
+
+    async def fake_grid(song, **kwargs):
+        return BeatGrid(bpm=100.0, offset=0.1, confidence=0.2, phase_strength=0.05)
+
+    monkeypatch.setattr(short_module, "loudness_profile", fake_loudness)
+    monkeypatch.setattr(tempo_module, "detect_grid", fake_grid)
+
+    signals, grid = asyncio.run(visuals_cli._song_signals(tmp_path / "song.wav"))
+    assert grid is None
+    assert signals.tempo_bpm == 100.0  # el tempo sí se usa para el estilo
 
 
 # ---------------------------------------------------------------------------

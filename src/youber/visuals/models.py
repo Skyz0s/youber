@@ -178,6 +178,9 @@ class ShotPlan(BaseModel):
         keywords: Palabras clave usadas para los prompts.
         motion_offset: Desplazamiento del ciclo de movimientos (variedad).
         seconds_per_shot: Objetivo de segundos por plano usado para repartir.
+        beat_bpm: Pulso medido de la canción, si se midió (informativo).
+        beat_offset: Segundo del primer beat de la canción, si se midió.
+        beat_aligned: ``True`` si los cortes cayeron sobre el pulso.
         style_reason: Por qué se eligió (o quién pidió) este estilo.
         style_scores: Puntuación de cada estilo con las señales de la pieza.
         style_signals: Señales (ejes) que decidieron el estilo.
@@ -194,6 +197,9 @@ class ShotPlan(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     motion_offset: int = Field(default=0, ge=0)
     seconds_per_shot: float = Field(default=DEFAULT_SECONDS_PER_SHOT, gt=0)
+    beat_bpm: float | None = Field(default=None, gt=0)
+    beat_offset: float | None = Field(default=None, ge=0)
+    beat_aligned: bool = False
     style_reason: str = ""
     style_scores: dict[str, float] = Field(default_factory=dict)
     style_signals: dict[str, float] = Field(default_factory=dict)

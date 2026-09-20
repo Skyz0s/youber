@@ -768,6 +768,21 @@ def _default_topic(insights: dict[str, Any], channel: ChannelData) -> str:
     return ", ".join(hashtags) if hashtags else channel.name
 
 
+async def _beat_grid(song: str | Path) -> Any:
+    """Rejilla de pulsos de la canción, si el pulso es lo bastante firme.
+
+    Si la medición falla o el pulso es flojo devuelve ``None``: en ese caso el
+    montaje se reparte de forma uniforme (mejor que cortar a un pulso inventado).
+    """
+    from youber.visuals.tempo import detect_grid
+
+    try:
+        grid = await detect_grid(song)
+    except (RuntimeError, FileNotFoundError, OSError):  # pragma: no cover - FFmpeg
+        return None
+    return grid if grid.reliable() else None
+
+
 async def _visual_signals(
     *,
     track_id: str | None = None,
@@ -1056,6 +1071,12 @@ async def run_lyrics_video(
                 clip_source = f"ai:{generator.name}"
                 aspect_slug = aspect.replace(":", "x")
                 mood_value = brief.music_mood.value if brief.music_mood else None
+                beat_grid = await _beat_grid(ai_song)
+                if beat_grid is not None:
+                    console.print(
+                        f"🥁 Pulso {beat_grid.bpm:.0f} BPM · primer beat "
+                        f"{beat_grid.offset:.2f} s · los planos se cortarán al beat"
+                    )
                 visual_signals = await _visual_signals(
                     track_id=chosen_track.id,
                     song=ai_song,
@@ -1088,6 +1109,7 @@ async def run_lyrics_video(
                     aspect=aspect,
                     style=ai_style,
                     signals=visual_signals,
+                    beat_grid=beat_grid,
                     mood=mood_value,
                     tone=brief.tone,
                     keywords=brief.keywords,
@@ -1130,6 +1152,9 @@ async def run_lyrics_video(
                         aspect="9:16",
                         style=ai_style,
                         signals=visual_signals,
+                        beat_grid=(
+                            beat_grid.shifted(short_start) if beat_grid is not None else None
+                        ),
                         mood=mood_value,
                         tone=brief.tone,
                         keywords=brief.keywords,

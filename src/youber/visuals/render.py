@@ -36,6 +36,7 @@ from youber.visuals.selector import (
     StyleSignals,
     choose_style,
 )
+from youber.visuals.tempo import BeatGrid
 
 #: Callback de progreso: recibe un mensaje ya formateado.
 ProgressCallback = Callable[[str], None]
@@ -264,6 +265,7 @@ async def render_visuals(
     aspect: Aspect | str = Aspect.LANDSCAPE,
     style: VisualStyle | str = AUTO_STYLE,
     signals: StyleSignals | None = None,
+    beat_grid: BeatGrid | None = None,
     mood: str | None = None,
     tone: str | None = None,
     keywords: Sequence[str] = (),
@@ -295,6 +297,8 @@ async def render_visuals(
         style: Estilo visual de los planos; ``"auto"`` (por defecto) lo elige
             a partir de :mod:`youber.visuals.selector` con las ``signals``.
         signals: Señales de audio/metadatos para elegir estilo y ritmo.
+        beat_grid: Rejilla de pulsos de la canción (:func:`youber.visuals.tempo.detect_grid`);
+            con ella los cortes entre planos caen sobre el beat.
         mood: Mood de la música (tinte atmosférico de los prompts).
         tone: Tono narrativo del brief.
         keywords: Palabras clave para los prompts.
@@ -357,6 +361,7 @@ async def render_visuals(
         fps=fps,
         motion_offset=choice.motion_offset,
         seconds_per_shot=choice.seconds_per_shot,
+        beat_grid=beat_grid,
     )
     plan.style_reason = choice.reason
     plan.style_scores = dict(choice.scores)
@@ -375,6 +380,12 @@ async def render_visuals(
         f"movimientos desde #{choice.motion_offset} · candidatos "
         f"{', '.join(choice.candidates)}",
     )
+    if plan.beat_bpm:
+        _report(
+            on_progress,
+            f"🥁 Pulso {plan.beat_bpm:.0f} BPM (primer beat {plan.beat_offset:.2f} s) · "
+            + ("cortes al beat" if plan.beat_aligned else "los cortes no caben al beat"),
+        )
 
     work = Path(workdir) if workdir is not None else target.with_name(f"{target.stem}_work")
     work.mkdir(parents=True, exist_ok=True)

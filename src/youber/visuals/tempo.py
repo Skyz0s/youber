@@ -62,6 +62,10 @@ SMOOTHING_SECONDS = 0.4
 #: Un pulso de otra octava solo sustituye al ganador si puntúa casi igual.
 OCTAVE_TOLERANCE = 0.85
 
+#: Mínimos para fiarse del pulso al cortar los planos (ver ``BeatGrid.reliable``).
+MIN_CUT_CONFIDENCE = 0.3
+MIN_CUT_PHASE = 0.15
+
 #: Autocorrelación normalizada (energía que sigue al pulso / energía total) a
 #: partir de la cual se considera que el pulso es de fiar. En música real con
 #: mezcla y voz el pulso suele quedar en 0.10-0.30 (medido sobre el catálogo de
@@ -257,6 +261,151 @@ def tempo_from_envelope(
     return 60.0 * rate / chosen, _clamp(scores[chosen] / CONFIDENCE_REFERENCE)
 
 
+def beat_offset(
+    envelope: Sequence[float],
+    *,
+    rate: float,
+    interval: float,
+) -> tuple[float, float]:
+    """Fase del pulso: instante del primer *beat* (segundos) y su fuerza.
+
+    Con el intervalo ya medido solo falta saber **dónde** cae el pulso. Se
+    prueban todas las fases posibles (resolución de un fotograma) y se elige la
+    que más energía de ataque acumula sobre la rejilla: si el ritmo es real,
+    los golpes caen siempre en la misma fase.
+
+    Args:
+        envelope: Envolvente de ataques (:func:`attack_envelope`).
+        rate: Fotogramas por segundo de la envolvente.
+        interval: Segundos entre pulsos (``60 / bpm``).
+
+    Returns:
+        ``(offset, fuerza)`` con el offset en segundos (``>= 0``) y la fuerza
+        en ``0..1`` (cuánta energía extra cae en la rejilla respecto a la media).
+    """
+    if interval <= 0 or rate <= 0 or not envelope:
+        return 0.0, 0.0
+    period_frames = interval * rate
+    mean = statistics.fmean(envelope)
+    if mean <= 0:
+        return 0.0, 0.0
+    steps = max(1, int(round(period_frames)))
+    best_phase = 0
+    best_score = -1.0
+    for phase in range(steps):
+        total = 0.0
+        count = 0
+        position = float(phase)
+        while position < len(envelope):
+            index = int(round(position))
+            if index < len(envelope):
+                total += envelope[index]
+                count += 1
+            position += period_frames
+        score = total / count if count else 0.0
+        if score > best_score:
+            best_score = score
+            best_phase = phase
+    return best_phase / rate, _clamp((best_score - mean) / mean)
+
+
+class BeatGrid(BaseModel):
+    """Rejilla de pulsos de una pieza: cada cuánto suena el beat y desde dónde.
+
+    Attributes:
+        bpm: Pulsos por minuto (``0.0`` si no se pudo medir).
+        offset: Segundo del primer pulso (dentro de ``[0, interval)``).
+        confidence: Confianza del tempo (ver :class:`TempoEstimate`).
+        phase_strength: Cuánta energía extra cae sobre la rejilla (``0..1``).
+        seconds: Segundos de audio analizados.
+    """
+
+    bpm: float = Field(default=0.0, ge=0.0)
+    offset: float = Field(default=0.0, ge=0.0)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    phase_strength: float = Field(default=0.0, ge=0.0, le=1.0)
+    seconds: float = Field(default=0.0, ge=0.0)
+
+    @property
+    def interval(self) -> float:
+        """Segundos entre pulsos (``0.0`` si no hay tempo)."""
+        return 60.0 / self.bpm if self.bpm > 0 else 0.0
+
+    @property
+    def detected(self) -> bool:
+        """``True`` si se pudo medir el pulso."""
+        return self.bpm > 0.0
+
+    def reliable(
+        self,
+        *,
+        min_confidence: float = MIN_CUT_CONFIDENCE,
+        min_phase: float = MIN_CUT_PHASE,
+    ) -> bool:
+        """``True`` si el pulso es lo bastante firme para cortar los planos ahí.
+
+        Un tempo flojo o una fase difusa no deben mandar sobre el montaje: sin
+        esto, alinear los cortes a un pulso inventado quedaría peor que un
+        reparto uniforme.
+        """
+        return (
+            self.detected
+            and self.confidence >= min_confidence
+            and self.phase_strength >= min_phase
+        )
+
+    def next_beat(self, time: float) -> float:
+        """Primer pulso ``>= time`` (``time`` si no hay tempo)."""
+        interval = self.interval
+        if interval <= 0:
+            return time
+        steps = math.ceil((time - self.offset) / interval - 1e-9)
+        return self.offset + max(steps, 0) * interval
+
+    def nearest_beat(self, time: float) -> float:
+        """Pulso más cercano a ``time``."""
+        interval = self.interval
+        if interval <= 0:
+            return time
+        return self.offset + round((time - self.offset) / interval) * interval
+
+    def beat_times(self, *, start: float = 0.0, end: float | None = None) -> list[float]:
+        """Pulsos dentro de ``[start, end)`` (sin fin si ``end`` es ``None``)."""
+        interval = self.interval
+        if interval <= 0:
+            return []
+        times: list[float] = []
+        current = self.next_beat(start)
+        while end is None or current < end:
+            times.append(round(current, 4))
+            current += interval
+        return times
+
+    def shifted(self, delta: float) -> BeatGrid:
+        """Copia con la rejilla desplazada ``delta`` segundos.
+
+        Sirve cuando se trabaja sobre un trozo de la pieza (por ejemplo el
+        corte vertical del Short): la fase se recalcula dentro del fragmento.
+        """
+        interval = self.interval
+        if interval <= 0:
+            return self.model_copy()
+        offset = (self.offset - delta) % interval
+        return self.model_copy(update={"offset": round(offset, 4)})
+
+
+async def _analyse(
+    song: str | Path,
+    *,
+    sample_rate: int,
+    max_seconds: float,
+) -> tuple[list[float], float, float]:
+    """Envolvente de ataques, fotogramas por segundo y segundos analizados."""
+    samples = await decode_mono_pcm(song, sample_rate=sample_rate, seconds=max_seconds)
+    envelope = attack_envelope(samples, sample_rate=sample_rate)
+    return envelope, sample_rate / HOP_SIZE, len(samples) / sample_rate
+
+
 async def detect_tempo(
     song: str | Path,
     *,
@@ -277,10 +426,10 @@ async def detect_tempo(
         FileNotFoundError: si el fichero no existe.
         RuntimeError: si FFmpeg falta o falla.
     """
-    samples = await decode_mono_pcm(song, sample_rate=sample_rate, seconds=max_seconds)
-    seconds = len(samples) / sample_rate
-    envelope = attack_envelope(samples, sample_rate=sample_rate)
-    bpm, confidence = tempo_from_envelope(envelope, rate=sample_rate / HOP_SIZE)
+    envelope, rate, seconds = await _analyse(
+        song, sample_rate=sample_rate, max_seconds=max_seconds
+    )
+    bpm, confidence = tempo_from_envelope(envelope, rate=rate)
     logger.info(
         f"Tempo medido: {bpm:.1f} BPM (confianza {confidence:.2f}, "
         f"{seconds:.0f} s, {len(envelope)} fotogramas)"
@@ -290,4 +439,47 @@ async def detect_tempo(
         confidence=round(confidence, 3),
         seconds=round(seconds, 2),
         onsets=len(envelope),
+    )
+
+
+async def detect_grid(
+    song: str | Path,
+    *,
+    sample_rate: int = ANALYSIS_SAMPLE_RATE,
+    max_seconds: float = MAX_ANALYSIS_SECONDS,
+) -> BeatGrid:
+    """Mide tempo **y fase** del pulso: la rejilla de *beats* de la pieza.
+
+    Es una sola pasada de análisis (decodifica una vez) y sirve para cortar los
+    planos justo en el pulso.
+
+    Args:
+        song: Fichero de audio (wav/mp3/m4a...).
+        sample_rate: Frecuencia de muestreo del análisis.
+        max_seconds: Tope de audio analizado (segundos).
+
+    Returns:
+        La :class:`BeatGrid` medida; ``bpm == 0.0`` si no se pudo medir.
+
+    Raises:
+        FileNotFoundError: si el fichero no existe.
+        RuntimeError: si FFmpeg falta o falla.
+    """
+    envelope, rate, seconds = await _analyse(
+        song, sample_rate=sample_rate, max_seconds=max_seconds
+    )
+    bpm, confidence = tempo_from_envelope(envelope, rate=rate)
+    if bpm <= 0:
+        return BeatGrid(seconds=round(seconds, 2))
+    offset, strength = beat_offset(envelope, rate=rate, interval=60.0 / bpm)
+    logger.info(
+        f"Pulso medido: {bpm:.1f} BPM, primer beat en {offset:.2f} s "
+        f"(confianza {confidence:.2f}, fase {strength:.2f}, {seconds:.0f} s)"
+    )
+    return BeatGrid(
+        bpm=round(bpm, 1),
+        offset=round(offset, 3),
+        confidence=round(confidence, 3),
+        phase_strength=round(strength, 3),
+        seconds=round(seconds, 2),
     )

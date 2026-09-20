@@ -12,6 +12,7 @@ mejor las descripciones visuales.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 
 from youber.script.models import Scene, SceneType
@@ -25,6 +26,7 @@ from youber.visuals.models import (
     ShotPlan,
     VisualStyle,
 )
+from youber.visuals.tempo import BeatGrid
 
 #: Encuadres por papel de escena (se recorren en ciclo dentro de cada escena).
 BEATS_BY_SCENE: dict[SceneType, tuple[str, ...]] = {
@@ -123,6 +125,80 @@ def fit_durations(target: float, count: int, transition: float) -> list[float]:
     return durations
 
 
+def beat_durations(
+    target: float,
+    count: int,
+    transition: float,
+    grid: BeatGrid,
+) -> list[float] | None:
+    """Duraciones con **cada corte sobre el pulso**, o ``None`` si no cabe.
+
+    El corte entre el plano ``i`` y el ``i+1`` cae en el instante
+    ``c_i = offset + k_i * intervalo``: los planos cambian justo cuando suena
+    el beat, no cada N segundos. Cada plano dura ``c_i - c_i-1`` más el solape
+    de la transición, y el último llega justo hasta la duración objetivo (sin
+    sumar otro solape, que alargaría el vídeo más allá de la canción).
+
+    Args:
+        target: Duración objetivo del montaje (segundos).
+        count: Número de planos.
+        transition: Duración del fundido entre planos (segundos).
+        grid: Rejilla de pulsos medida de la canción.
+
+    Returns:
+        Las duraciones (suma - transiciones = ``target``), o ``None`` si el
+        pulso no deja cumplir las duraciones mínimas (entonces el plan se
+        reparte de forma uniforme).
+    """
+    interval = grid.interval
+    if count < 1 or interval <= 0:
+        return None
+    per_shot = target / count
+    # Separación mínima entre cortes, en pulsos: cada plano tiene que durar al
+    # menos MIN_SHOT_DURATION (parte del solape lo aporta la transición).
+    minimum_gap = max(interval, MIN_SHOT_DURATION - transition)
+    step_min = max(1, math.ceil(minimum_gap / interval - 1e-9))
+
+    cuts: list[float] = []
+    previous_steps: int | None = None
+    for index in range(1, count):
+        ideal = index * per_shot
+        steps = round((ideal - grid.offset) / interval)
+        if previous_steps is not None:
+            steps = max(steps, previous_steps + step_min)
+        cuts.append(grid.offset + steps * interval)
+        previous_steps = steps
+
+    if cuts and cuts[0] + transition < MIN_SHOT_DURATION:
+        return None
+    if target - cuts[-1] < MIN_SHOT_DURATION:
+        return None
+    durations = [round(cuts[0] + transition, 3)]
+    for previous, current in zip(cuts[:-1], cuts[1:], strict=True):
+        durations.append(round(current - previous + transition, 3))
+    durations.append(round(target - cuts[-1], 3))
+    return durations
+
+
+def plan_durations(
+    target: float,
+    count: int,
+    transition: float,
+    grid: BeatGrid | None = None,
+) -> list[float]:
+    """Duraciones del plan: cortes al pulso si se puede, reparto uniforme si no.
+
+    Raises:
+        ValueError: si ``target`` no da para ``count`` planos de duración
+            mínima y no hay rejilla con la que intentarlo.
+    """
+    if grid is not None and grid.detected:
+        aligned = beat_durations(target, count, transition, grid)
+        if aligned is not None:
+            return aligned
+    return fit_durations(target, count, transition)
+
+
 def scene_shot_counts(
     scenes: Sequence[Scene], total_shots: int
 ) -> list[int]:
@@ -190,6 +266,7 @@ def build_shot_plan(
     fps: int = 30,
     motion_offset: int = 0,
     seconds_per_shot: float = DEFAULT_SECONDS_PER_SHOT,
+    beat_grid: BeatGrid | None = None,
 ) -> ShotPlan:
     """Construye el plan visual de un vídeo a partir de su guion.
 
@@ -209,6 +286,8 @@ def build_shot_plan(
             punto de arranque varía la pieza sin tocar el estilo.
         seconds_per_shot: Segundos objetivo por plano cuando ``shots`` es
             ``None`` (lo dicta el selector según el audio).
+        beat_grid: Rejilla de pulsos de la canción; si se pasa, los cortes
+            caen sobre el beat (cuando las duraciones mínimas lo permiten).
 
     Returns:
         El :class:`ShotPlan` con los prompts y las duraciones ya resueltas.
@@ -220,9 +299,17 @@ def build_shot_plan(
     def motion_for(index: int) -> Motion:
         return DEFAULT_MOTION_CYCLE[(index + offset) % len(DEFAULT_MOTION_CYCLE)]
 
+    def beat_fields(shots_count: int) -> tuple[float | None, float | None, bool]:
+        """Anota en el plan si los cortes quedaron sobre el pulso."""
+        if beat_grid is None or not beat_grid.detected:
+            return None, None, False
+        aligned = beat_durations(duration, shots_count, transition, beat_grid) is not None
+        return beat_grid.bpm, beat_grid.offset, aligned
+
     # Sin escenas: planos genéricos equiespaciados.
     if not scenes:
-        durations = fit_durations(duration, count, transition)
+        durations = plan_durations(duration, count, transition, beat_grid)
+        beat_bpm, beat_offset, beat_aligned = beat_fields(count)
         plan = ShotPlan(
             topic=topic,
             style=style,
@@ -233,6 +320,9 @@ def build_shot_plan(
             keywords=keywords[:8],
             motion_offset=offset,
             seconds_per_shot=seconds_per_shot,
+            beat_bpm=beat_bpm,
+            beat_offset=beat_offset,
+            beat_aligned=beat_aligned,
         )
         for index, shot_duration in enumerate(durations):
             beat = GENERIC_BEATS[index % len(GENERIC_BEATS)]
@@ -257,7 +347,9 @@ def build_shot_plan(
     counts = scene_shot_counts(scenes, count)
     # El reparto puede subir el número de planos (mínimo uno por escena): las
     # duraciones se calculan sobre los planos que de verdad va a haber.
-    durations = fit_durations(duration, sum(counts), transition)
+    total_shots = sum(counts)
+    durations = plan_durations(duration, total_shots, transition, beat_grid)
+    beat_bpm, beat_offset, beat_aligned = beat_fields(total_shots)
     plan = ShotPlan(
         topic=topic,
         style=style,
@@ -268,6 +360,9 @@ def build_shot_plan(
         keywords=keywords[:8],
         motion_offset=offset,
         seconds_per_shot=seconds_per_shot,
+        beat_bpm=beat_bpm,
+        beat_offset=beat_offset,
+        beat_aligned=beat_aligned,
     )
     index = 0
     for scene_index, (scene, scene_shots) in enumerate(zip(scenes, counts, strict=True)):

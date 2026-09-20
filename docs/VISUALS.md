@@ -83,6 +83,7 @@ un dato mueve el estilo, no lo sortea.
   `variation_key` (tema + formato + semilla) reparte de forma determinista:
   dos videos distintos no reciben lo mismo.
 - **Fundidos** — tempo alto -> cortes agiles; lento -> fundidos largos (0.4-1.3 s).
+- **Cortes** — con pulso fiable, cada plano cambia en el beat (ver abajo).
 - **Planos** — mas energia -> planos mas cortos (10-24 s por plano).
 - **Movimientos** — el ciclo Ken Burns arranca en un punto distinto segun la
   pieza, para que no se repita la secuencia.
@@ -130,6 +131,37 @@ print(estimate.bpm, estimate.confidence)   # 172.3 0.53
 El desfase es determinista (el ataque aparece hasta un fotograma antes del
 instante real; `onset_time_offset()` lo documenta): no cambia los intervalos y
 por tanto no toca el BPM.
+
+### Cortes al beat
+
+Con el pulso medido, los planos ya no cambian "cada N segundos": cambian
+**cuando suena el beat**. `detect_grid()` mide tempo **y fase** (el segundo del
+primer beat) y `youber.visuals.prompts` reparte las duraciones con cada corte
+en la rejilla:
+
+- **Fase** — se prueban todas las fases posibles y gana la que mas energia de
+  ataque acumula sobre la rejilla (`beat_offset`); `phase_strength` dice cuanto
+destaca.
+- **Duraciones** — `beat_durations()` pone cada corte en `offset + k * intervalo`
+  y la ultima toma llega justo al final de la cancion, asi que el video sigue
+  cuadrando al milisegundo.
+- **Red de seguridad** — si el pulso es flojo (`BeatGrid.reliable()`) o los
+  cortes no dejan planos de la duracion minima, se cae al reparto uniforme de
+  siempre. Cortar mal es peor que no cortar.
+- El fragmento del Short usa `grid.shifted(start)`: al recortar el estribillo
+  la rejilla se desplaza con el, y los cortes siguen cayendo en el pulso de
+  la cancion original.
+
+```bash
+youber-visuals --topic "..." --song cancion.wav --out out/          # cortes al beat
+youber-visuals --topic "..." --song cancion.wav --out out/ --no-beat # reparto uniforme
+```
+
+El plan JSON lo deja escrito: `beat_bpm`, `beat_offset` y `beat_aligned`.
+
+**Medido sobre el catalogo real** (5 planos en 40 s): el peor desvio entre
+corte y beat fue **0,4-1,4 ms** con `Argumentos` (172,3 BPM), `Caos` (94,0),
+`Justodelante` (184,6), `StormonYou` (123,0) y `Solootromodo` (117,5).
 
 ## Formatos
 

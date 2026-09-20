@@ -37,7 +37,13 @@ from youber.visuals.models import (
     ShotPlan,
     VisualStyle,
 )
-from youber.visuals.prompts import build_shot_plan, fit_durations, shot_prompt
+from youber.visuals.prompts import (
+    beat_durations,
+    build_shot_plan,
+    fit_durations,
+    plan_durations,
+    shot_prompt,
+)
 from youber.visuals.render import (
     VisualResult,
     animate_clips,
@@ -61,8 +67,11 @@ from youber.visuals.short import (
     pick_window,
 )
 from youber.visuals.tempo import (
+    BeatGrid,
     TempoEstimate,
     attack_envelope,
+    beat_offset,
+    detect_grid,
     detect_tempo,
     tempo_from_envelope,
 )
@@ -73,6 +82,7 @@ __all__ = [
     "DEFAULT_SECONDS_PER_SHOT",
     "DEFAULT_SHORT_DURATION",
     "Aspect",
+    "BeatGrid",
     "DiffusersGenerator",
     "ImageGenerator",
     "Motion",
@@ -87,12 +97,15 @@ __all__ = [
     "animate_clips",
     "animate_shot",
     "attack_envelope",
+    "beat_durations",
+    "beat_offset",
     "best_window_start",
     "build_shot_plan",
     "build_signals",
     "build_visual_project",
     "choose_style",
     "create_generator",
+    "detect_grid",
     "detect_tempo",
     "diffusers_available",
     "extract_window",
@@ -100,6 +113,7 @@ __all__ = [
     "generate_images",
     "loudness_profile",
     "pick_window",
+    "plan_durations",
     "render_visuals",
     "score_styles",
     "shot_prompt",
