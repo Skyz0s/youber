@@ -768,9 +768,10 @@ def _default_topic(insights: dict[str, Any], channel: ChannelData) -> str:
     return ", ".join(hashtags) if hashtags else channel.name
 
 
-def _visual_signals(
+async def _visual_signals(
     *,
     track_id: str | None = None,
+    song: str | Path | None = None,
     themes: dict[str, float] | None = None,
     sentiment: str | None = None,
     metadata_text: str = "",
@@ -779,10 +780,13 @@ def _visual_signals(
     """Señales de audio + metadatos para elegir el estilo y el ritmo de los planos.
 
     El perfil de audio sale del almacén de *audio features* del catálogo (si
-    la pista está enriquecida); los temas y el sentimiento, de los metadatos
-    del canal. Todo offline: si falta algo, se usan señales neutras.
+    la pista está enriquecida); si hay fichero local, el **tempo** se mide por
+    onsets y la sonoridad con FFmpeg; los temas y el sentimiento, de los
+    metadatos del canal. Todo offline: si falta algo, se usan señales neutras.
     """
     from youber.visuals.selector import build_signals
+    from youber.visuals.short import loudness_profile
+    from youber.visuals.tempo import detect_tempo
 
     audio_profile = None
     if track_id:
@@ -792,8 +796,24 @@ def _visual_signals(
             audio_profile = AudioFeatureStore().get(track_id)
         except (OSError, ValueError):  # pragma: no cover - almacén ilegible
             audio_profile = None
+
+    energies: list[float] | None = None
+    tempo_bpm: float | None = None
+    if song:
+        try:
+            energies = await loudness_profile(song)
+        except (RuntimeError, FileNotFoundError, OSError):  # pragma: no cover - FFmpeg
+            energies = None
+        try:
+            estimate = await detect_tempo(song)
+            tempo_bpm = estimate.bpm if estimate.detected else None
+        except (RuntimeError, FileNotFoundError, OSError):  # pragma: no cover - FFmpeg
+            tempo_bpm = None
+
     return build_signals(
         profile=audio_profile,
+        energies=energies,
+        tempo_bpm=tempo_bpm,
         themes=themes or {},
         sentiment=sentiment,
         metadata_text=metadata_text,
@@ -1036,8 +1056,9 @@ async def run_lyrics_video(
                 clip_source = f"ai:{generator.name}"
                 aspect_slug = aspect.replace(":", "x")
                 mood_value = brief.music_mood.value if brief.music_mood else None
-                visual_signals = _visual_signals(
+                visual_signals = await _visual_signals(
                     track_id=chosen_track.id,
+                    song=ai_song,
                     themes=profile.themes,
                     sentiment=profile.sentiment,
                     metadata_text=metadata_text,
@@ -1049,8 +1070,14 @@ async def run_lyrics_video(
                 )
                 console.print(
                     f"🔎 Señales: energía {visual_signals.energy:.2f} · valencia "
-                    f"{visual_signals.valence:.2f} · tension {visual_signals.tension:.2f} "
-                    f"({', '.join(visual_signals.sources) or 'sin datos'})"
+                    f"{visual_signals.valence:.2f} · tension {visual_signals.tension:.2f} · "
+                    f"tempo {visual_signals.tempo:.2f}"
+                    + (
+                        f" ({visual_signals.tempo_bpm:.0f} BPM medidos)"
+                        if visual_signals.tempo_bpm
+                        else ""
+                    )
+                    + f" ({', '.join(visual_signals.sources) or 'sin datos'})"
                 )
                 master = await render_visuals(
                     topic=clean_topic,

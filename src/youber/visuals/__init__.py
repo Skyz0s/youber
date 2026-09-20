@@ -60,6 +60,12 @@ from youber.visuals.short import (
     loudness_profile,
     pick_window,
 )
+from youber.visuals.tempo import (
+    TempoEstimate,
+    attack_envelope,
+    detect_tempo,
+    tempo_from_envelope,
+)
 
 __all__ = [
     "AUTO_STYLE",
@@ -75,16 +81,19 @@ __all__ = [
     "StubGenerator",
     "StyleChoice",
     "StyleSignals",
+    "TempoEstimate",
     "VisualResult",
     "VisualStyle",
     "animate_clips",
     "animate_shot",
+    "attack_envelope",
     "best_window_start",
     "build_shot_plan",
     "build_signals",
     "build_visual_project",
     "choose_style",
     "create_generator",
+    "detect_tempo",
     "diffusers_available",
     "extract_window",
     "fit_durations",
@@ -94,4 +103,5 @@ __all__ = [
     "render_visuals",
     "score_styles",
     "shot_prompt",
+    "tempo_from_envelope",
 ]

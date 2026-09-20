@@ -6,8 +6,9 @@ estilo se decide **midiendo señales** de la pieza:
 
 - **Audio**: energía, valencia (alegría), tempo, bailabilidad, acústica y
   modo (mayor/menor), de :class:`~youber.music.audio_features.models.AudioProfile`
-  si el catálogo está enriquecido, o de un perfil de sonoridad medido con
-  FFmpeg (:func:`youber.visuals.short.loudness_profile`) si solo hay fichero.
+  si el catálogo está enriquecido. Si solo hay fichero, se mide en local: el
+  **tempo** por onsets (:func:`youber.visuals.tempo.detect_tempo`) y la
+  sonoridad con FFmpeg (:func:`youber.visuals.short.loudness_profile`).
 - **Metadatos de YouTube**: el texto público del canal/vídeo (título,
   descripción, etiquetas: *lofi*, *workout*, *tutorial*...) y los
   **temas/sentimiento** que se extraen de él con el mismo léxico que las
@@ -196,10 +197,11 @@ class StyleSignals(BaseModel):
         tension: Tensión dramática (modo menor, misterio, tristeza).
         intimacy: Intimidad (acústica, poca energía, temas de amor/calma).
         mood: Mood principal de la música, si se conoce.
+        tempo_bpm: BPM medidos en local (:mod:`youber.visuals.tempo`), si los hay.
         themes: Temas emocionales con peso (mismo léxico que las letras).
         text: Metadatos usados para las palabras clave.
         sources: De dónde salió cada señal (``audio``, ``letras``, ``metadatos``,
-            ``sonoridad``).
+            ``sonoridad``, ``tempo medido``).
     """
 
     energy: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -209,6 +211,7 @@ class StyleSignals(BaseModel):
     tension: float = Field(default=0.5, ge=0.0, le=1.0)
     intimacy: float = Field(default=0.5, ge=0.0, le=1.0)
     mood: str | None = None
+    tempo_bpm: float | None = None
     themes: dict[str, float] = Field(default_factory=dict)
     text: str = ""
     sources: list[str] = Field(default_factory=list)
@@ -300,6 +303,17 @@ def signals_from_loudness(energies: Sequence[float]) -> dict[str, tuple[float, f
     }
 
 
+def signals_from_tempo(bpm: float) -> dict[str, tuple[float, float]]:
+    """Eje de tempo a partir de los BPM medidos en local.
+
+    El tempo es un dato duro (no una estimación de mood), así que entra con
+    peso completo: 180 BPM ≈ 1.0 y valores bajos hacia 0.0.
+    """
+    if bpm <= 0:
+        return {}
+    return {"tempo": (_clamp(bpm / TEMPO_REFERENCE), 1.0)}
+
+
 def signals_from_themes(
     themes: Mapping[str, float], sentiment: str | None = None
 ) -> dict[str, tuple[float, float]]:
@@ -340,6 +354,7 @@ def build_signals(
     *,
     profile: AudioProfile | None = None,
     energies: Sequence[float] | None = None,
+    tempo_bpm: float | None = None,
     themes: Mapping[str, float] | None = None,
     sentiment: str | None = None,
     metadata_text: str = "",
@@ -364,6 +379,8 @@ def build_signals(
     add(signals_from_audio(profile), "audio")
     if energies is not None:
         add(signals_from_loudness(energies), "sonoridad")
+    if tempo_bpm:
+        add(signals_from_tempo(tempo_bpm), "tempo medido")
     if themes:
         add(signals_from_themes(themes, sentiment), "temas")
 
@@ -385,6 +402,7 @@ def build_signals(
     return StyleSignals(
         **axes,
         mood=mood,
+        tempo_bpm=float(tempo_bpm) if tempo_bpm else None,
         themes={theme: round(float(weight), 4) for theme, weight in (themes or {}).items()},
         text=metadata_text,
         sources=sources,

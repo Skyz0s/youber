@@ -66,7 +66,8 @@ fijo**: `youber.visuals.selector` lo deduce de senales medibles.
 | Fuente | De donde sale | Que aporta |
 | --- | --- | --- |
 | Audio | `AudioProfile` del catalogo (`youber-music analyze`) | energia, valencia, tempo, baile, acustica, modo |
-| Sonoridad | FFmpeg sobre la cancion (RMS por segundo) | energia y dinamica (si no hay perfil) |
+| Sonoridad | FFmpeg sobre la cancion (RMS por segundo) | energia y dinamica |
+| Tempo | onsets sobre la cancion (`youber.visuals.tempo`) | tempo real (BPM) sin depender del catalogo |
 | Metadatos | titulo, descripcion y etiquetas del canal/video | temas/sentimiento y palabras clave |
 | Guion | mood del brief | tinte adicional |
 
@@ -94,6 +95,41 @@ render se puede **repetir** aun cambiando los valores por defecto.
 # Forzar un estilo concreto (el ritmo y los fundidos siguen saliendo del audio)
 youber-visuals --topic "..." --song cancion.wav --out out/ --style dreamy
 ```
+
+### Tempo medido en local (por onsets)
+
+El tempo es lo que mueve los fundidos, pero solo llegaba desde el
+`AudioProfile` del catalogo (Spotify o estimador). `youber.visuals.tempo` lo
+**mide del propio fichero**: sin red, sin dependencias extra y sin subir audio
+a ningun sitio.
+
+1. decodifica un tramo a PCM mono de 16 bits con FFmpeg (180 s como mucho),
+2. calcula la **envolvente de ataques**: filtro paso-alto por diferencias
+   (resalta la percusion), energia por fotograma solapado y solo el *subidon*
+   respecto al fotograma anterior,
+3. le resta una media movil (umbral adaptativo) y busca el **pulso** por
+   autocorrelacion en 60-200 BPM, plegando la ambiguedad de octava hacia
+   80-160 BPM (corcheas acentuadas a 150 no son "75 lento").
+
+La `confidence` es la energia que sigue al pulso sobre el total (normalizada):
+en el catalogo de prueba, musica mezclada con voz da 0,19-0,78 y un tren de
+clics sube a 1,0.
+
+```python
+from youber.visuals.tempo import detect_tempo
+
+estimate = await detect_tempo("cancion.wav")
+print(estimate.bpm, estimate.confidence)   # 172.3 0.53
+```
+
+```bash
+# En consola, el CLI imprime el tempo medido antes de elegir el estilo
+# make: 172 BPM -> fundido 0,40 s; 94 BPM -> fundido 0,78 s
+```
+
+El desfase es determinista (el ataque aparece hasta un fotograma antes del
+instante real; `onset_time_offset()` lo documenta): no cambia los intervalos y
+por tanto no toca el BPM.
 
 ## Formatos
 

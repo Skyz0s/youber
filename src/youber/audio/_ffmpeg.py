@@ -8,9 +8,11 @@ poder testearse con mocks sin necesitar FFmpeg instalado.
 
 from __future__ import annotations
 
+import array
 import asyncio
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -52,6 +54,61 @@ async def run_command(cmd: list[str]) -> subprocess.CompletedProcess:
         stderr = (result.stderr or "").strip()[-2000:]
         raise RuntimeError(f"FFmpeg falló ({result.returncode}): {stderr}")
     return result
+
+
+async def decode_mono_pcm(
+    path: str | Path,
+    *,
+    sample_rate: int,
+    seconds: float | None = None,
+) -> array.array:
+    """Decodifica un fichero de audio a PCM mono de 16 bits con signo.
+
+    Sirve para analizar el audio en Python (energía, ataques, tempo) sin
+    dependencias extra: FFmpeg hace la decodificación y el resultado se lee
+    como :class:`array.array` de enteros cortos.
+
+    Args:
+        path: Fichero de audio de entrada.
+        sample_rate: Frecuencia de muestreo del análisis (Hz).
+        seconds: Si se indica, solo se decodifican los primeros segundos
+            (basta para medir y evita leer canciones enteras).
+
+    Returns:
+        Las muestras PCM mono de 16 bits.
+
+    Raises:
+        FileNotFoundError: si el fichero no existe.
+        RuntimeError: si FFmpeg falta o falla.
+    """
+    source = Path(path)
+    if not source.exists():
+        raise FileNotFoundError(f"No existe el fichero de audio: {source}")
+    ensure_ffmpeg()
+    cmd = ["ffmpeg", "-y", "-v", "error"]
+    if seconds is not None and seconds > 0:
+        cmd += ["-t", f"{seconds:.3f}"]
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = Path(tmp) / "audio.pcm"
+        await run_command(
+            [
+                *cmd,
+                "-i",
+                str(source),
+                "-ac",
+                "1",
+                "-ar",
+                str(sample_rate),
+                "-f",
+                "s16le",
+                str(raw),
+            ]
+        )
+        samples = array.array("h")
+        samples.frombytes(raw.read_bytes())
+    if samples.itemsize != 2:  # pragma: no cover - depende de la plataforma
+        raise RuntimeError("Se esperaban muestras de 16 bits del análisis de audio")
+    return samples
 
 
 async def probe_duration(path: str | Path) -> float:

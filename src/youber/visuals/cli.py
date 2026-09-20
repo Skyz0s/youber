@@ -45,22 +45,40 @@ def _slug(text: str) -> str:
 async def _song_signals(song: Path, *, topic: str = "", mood: str | None = None) -> StyleSignals:
     """Señales de la pieza: audio medido con FFmpeg + el tema como metadatos.
 
-    La energía y la dinámica salen de la canción (RMS por segundo); el tema
+    La energía y la dinámica salen de la canción (RMS por segundo) y el tempo
+    se mide por onsets (:func:`youber.visuals.tempo.detect_tempo`); el tema
     (``--topic``) hace de metadatos, así que sus palabras cuentan para el
     estilo igual que lo harían el título y las etiquetas de YouTube. Si el
-    análisis de audio falla, el render sigue solo con el tema.
+    análisis de audio falla, el render sigue con lo que haya.
     """
     from youber.visuals.short import loudness_profile
+    from youber.visuals.tempo import detect_tempo
 
     energies: list[float] | None = None
     try:
         energies = await loudness_profile(song)
     except (RuntimeError, FileNotFoundError, OSError) as error:  # pragma: no cover - FFmpeg
         console.print(f"⚠️  No se pudo medir el audio ({error}); el tema manda")
-    signals = build_signals(energies=energies, metadata_text=topic, mood=mood)
+
+    tempo_bpm: float | None = None
+    try:
+        estimate = await detect_tempo(song)
+        if estimate.detected:
+            tempo_bpm = estimate.bpm
+            console.print(
+                f"🥁 Tempo medido: [bold]{estimate.bpm:.0f} BPM[/] "
+                f"(confianza {estimate.confidence:.2f})"
+            )
+    except (RuntimeError, FileNotFoundError, OSError) as error:  # pragma: no cover - FFmpeg
+        console.print(f"⚠️  No se pudo medir el tempo ({error})")
+
+    signals = build_signals(
+        energies=energies, tempo_bpm=tempo_bpm, metadata_text=topic, mood=mood
+    )
     console.print(
         f"🔎 Señales: energía {signals.energy:.2f} · tensión {signals.tension:.2f} · "
-        f"valencia {signals.valence:.2f} ({', '.join(signals.sources) or 'sin datos'})"
+        f"valencia {signals.valence:.2f} · tempo {signals.tempo:.2f} "
+        f"({', '.join(signals.sources) or 'sin datos'})"
     )
     return signals
 

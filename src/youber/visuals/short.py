@@ -12,12 +12,11 @@ from __future__ import annotations
 
 import array
 import math
-import tempfile
 from pathlib import Path
 
 from loguru import logger
 
-from youber.audio._ffmpeg import ensure_ffmpeg, run_command
+from youber.audio._ffmpeg import decode_mono_pcm, ensure_ffmpeg, run_command
 
 #: Duración por defecto del corte vertical (segundos).
 DEFAULT_SHORT_DURATION = 75.0
@@ -93,7 +92,7 @@ async def loudness_profile(
 ) -> list[float]:
     """Perfil de energía de una canción (RMS por ventana).
 
-    Decodifica a PCM mono 16 bits con FFmpeg en un fichero temporal y calcula
+    Decodifica a PCM mono 16 bits con FFmpeg (:func:`decode_mono_pcm`) y calcula
     la energía en Python: sin dependencias extra y reproducible.
 
     Args:
@@ -108,33 +107,7 @@ async def loudness_profile(
         FileNotFoundError: si el fichero no existe.
         RuntimeError: si FFmpeg falla.
     """
-    ensure_ffmpeg()
-    source = Path(song)
-    if not source.exists():
-        raise FileNotFoundError(f"No existe la canción: {source}")
-    with tempfile.TemporaryDirectory() as tmp:
-        raw = Path(tmp) / "audio.pcm"
-        await run_command(
-            [
-                "ffmpeg",
-                "-y",
-                "-v",
-                "error",
-                "-i",
-                str(source),
-                "-ac",
-                "1",
-                "-ar",
-                str(sample_rate),
-                "-f",
-                "s16le",
-                str(raw),
-            ]
-        )
-        samples = array.array("h")
-        samples.frombytes(raw.read_bytes())
-    if samples.itemsize != 2:  # pragma: no cover - depende de la plataforma
-        raise RuntimeError("Se esperaban muestras de 16 bits del análisis de audio")
+    samples = await decode_mono_pcm(song, sample_rate=sample_rate)
     return window_energies(samples, sample_rate=sample_rate, window=window)
 
 
