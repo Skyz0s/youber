@@ -27,12 +27,14 @@ contenido; no se analiza ni se copia material de terceros.
 from __future__ import annotations
 
 import hashlib
+import math
 import statistics
 from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, Field
 
 from youber.music.audio_features.models import AudioProfile
+from youber.script.models import Scene
 from youber.visuals.models import DEFAULT_MOTION_BARS, DEFAULT_MOTION_CYCLE, VisualStyle
 
 #: Valor de ``--style`` que activa la elección automática.
@@ -173,6 +175,19 @@ TIE_EPSILON = 0.35
 TEMPO_REFERENCE = 180.0
 RMS_REFERENCE = 8000.0
 DYNAMICS_REFERENCE = 1.2
+
+#: Ventana del perfil de sonoridad que usan las secciones (segundos).
+SECTION_WINDOW = 1.0
+
+#: Peso de la energía medida de la sección al reescribir las señales del tema.
+#: Con 1.0 el tramo manda del todo (el estribillo se ve distinto que la intro);
+#: con valores bajos apenas matiza. 0.7 deja sitio al resto del tema.
+SECTION_ENERGY_WEIGHT = 0.7
+
+#: Margen de empate entre estilos de escena. Cero: gana el que mejor encaja con
+#: el tramo. La rotación de "candidatos empatados" es para variar **vídeos
+#: enteros**; dentro de un vídeo, dos tramos iguales deben verse iguales.
+SCENE_TIE_EPSILON = 0.0
 
 #: Compases que dura un ciclo **completo** de movimiento de cámara (ida y
 #: vuelta del zoom/paneo), por estilo. Con la música medida, el movimiento
@@ -484,6 +499,103 @@ def motion_offset_for(variation_key: str) -> int:
 def _snap_bars(bars: int) -> int:
     """Ajusta ``bars`` al valor permitido más cercano (:data:`MOTION_BARS_ALLOWED`)."""
     return min(MOTION_BARS_ALLOWED, key=lambda allowed: (abs(allowed - bars), allowed))
+
+
+def section_energy(
+    energies: Sequence[float],
+    start: float,
+    duration: float,
+    *,
+    window: float = SECTION_WINDOW,
+) -> float | None:
+    """Energía media (``0..1``) del tramo ``[start, start+duration)`` de la canción.
+
+    El perfil de sonoridad (:func:`youber.visuals.short.loudness_profile`) trae
+    un RMS por ventana; aquí se calcula la media de las ventanas que cubre la
+    escena y se normaliza igual que en :func:`signals_from_loudness`, para que
+    sea comparable con el eje ``energy`` de las señales.
+
+    Returns:
+        La energía normalizada, o ``None`` si el tramo no tiene datos.
+    """
+    if not energies or duration <= 0 or window <= 0:
+        return None
+    first = max(0, int(math.floor(start / window)))
+    last = min(len(energies), max(first + 1, int(math.ceil((start + duration) / window))))
+    chunk = [float(value) for value in energies[first:last] if value > 0]
+    if not chunk:
+        return None
+    return _clamp(statistics.fmean(chunk) / RMS_REFERENCE)
+
+
+def signals_for_section(
+    base: StyleSignals,
+    energy: float | None,
+    *,
+    weight: float = SECTION_ENERGY_WEIGHT,
+) -> StyleSignals:
+    """Señales de una sección: la energía del tramo manda, el resto es del tema.
+
+    El tema (valencia, tensión, intimidad, temas, metadatos) se mantiene: lo que
+    cambia tramo a tramo es **cómo suena esa parte** de la canción (una intro
+    floja no se ve igual que un estribillo a tope). Determinista.
+    """
+    if energy is None:
+        return base
+    mixed = _clamp(base.energy * (1.0 - weight) + energy * weight)
+    return base.model_copy(update={"energy": round(mixed, 4)})
+
+
+def scene_section_energies(
+    scenes: Sequence[Scene], energies: Sequence[float] | None
+) -> list[float | None]:
+    """Energía medida del tramo de canción que cubre cada escena.
+
+    Las escenas van en orden y suman la duración del montaje: la primera cubre
+    desde el segundo 0 y cada una arranca donde acabó la anterior.
+    """
+    measured: list[float | None] = []
+    start = 0.0
+    for scene in scenes:
+        measured.append(section_energy(energies or (), start, scene.duration))
+        start += scene.duration
+    return measured
+
+
+def scene_choices(
+    base: StyleSignals,
+    scenes: Sequence[Scene],
+    *,
+    energies: Sequence[float] | None = None,
+    variation_key: str = "",
+) -> list[StyleChoice]:
+    """Estilo por escena según el tramo de la canción que le toca.
+
+    Las escenas del guion van en orden y suman la duración del montaje, así que
+    cada una se mapea a su ventana de la canción: se mide la energía de ese
+    tramo y se elige estilo con las señales del tema (valencia, tensión...) más
+    la energía local. Sin perfil de sonoridad, todas las escenas repiten el
+    estilo base.
+
+    Returns:
+        Un :class:`StyleChoice` por escena (mismo orden).
+    """
+    choices: list[StyleChoice] = []
+    for index, energy in enumerate(scene_section_energies(scenes, energies)):
+        signals = signals_for_section(base, energy)
+        # El sufijo por escena solo cuando hay medida del tramo: sin perfil,
+        # todas las escenas repiten la decisión del tema (no se reparten al azar).
+        key = (
+            f"{variation_key}|escena{index}"
+            if variation_key and energy is not None
+            else variation_key
+        )
+        choices.append(
+            choose_style(
+                AUTO_STYLE, signals=signals, variation_key=key, epsilon=SCENE_TIE_EPSILON
+            )
+        )
+    return choices
 
 
 def motion_bars_for(style: VisualStyle, signals: StyleSignals | None = None) -> int:

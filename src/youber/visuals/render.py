@@ -35,6 +35,8 @@ from youber.visuals.selector import (
     StyleChoice,
     StyleSignals,
     choose_style,
+    scene_choices,
+    scene_section_energies,
 )
 from youber.visuals.tempo import BeatGrid
 
@@ -75,6 +77,45 @@ def _report(on_progress: ProgressCallback | None, message: str) -> None:
     logger.debug(message)
     if on_progress is not None:
         on_progress(message)
+
+
+async def _scene_styles(
+    *,
+    base: StyleSignals,
+    scenes: Sequence[Scene],
+    song: Path | None,
+    loudness: Sequence[float] | None,
+    enabled: bool,
+    variation_key: str,
+) -> tuple[list[VisualStyle], list[str], list[float]]:
+    """Estilo de cada escena según el tramo de canción que le toca.
+
+    Mide el perfil de sonoridad de la canción (o usa el que le pasen) y reparte
+    las escenas por sus tramos: una intro floja no se ve como un estribillo a
+    tope. Sin guion de varias escenas, sin perfil o con la opción desactivada
+    devuelve listas vacías y el vídeo lleva un estilo único.
+    """
+    if not enabled or len(scenes) < 2:
+        return [], [], []
+    energies: list[float] = []
+    if loudness is not None:
+        energies = [float(value) for value in loudness]
+    elif song is not None:
+        from youber.visuals.short import loudness_profile
+
+        try:
+            energies = list(await loudness_profile(song))
+        except (RuntimeError, FileNotFoundError, OSError) as error:  # pragma: no cover - FFmpeg
+            logger.warning(f"Sin perfil de sonoridad para el estilo por escena: {error}")
+    if not energies:
+        return [], [], []
+    choices = scene_choices(base, scenes, energies=energies, variation_key=variation_key)
+    sections = [energy for energy in scene_section_energies(scenes, energies) if energy is not None]
+    return (
+        [choice.style for choice in choices],
+        [choice.reason for choice in choices],
+        [round(energy, 4) for energy in sections],
+    )
 
 
 def shot_path(workdir: Path, index: int) -> Path:
@@ -279,6 +320,8 @@ async def render_visuals(
     fps: int = 30,
     transition: float | None = None,
     motion_bars: int | None = None,
+    per_scene_style: bool = True,
+    loudness: Sequence[float] | None = None,
     texts: bool = False,
     generator: ImageGenerator | None = None,
     model: str | None = None,
@@ -315,6 +358,10 @@ async def render_visuals(
             deja al selector (tempo alto → fundidos cortos).
         motion_bars: Compases que dura un ciclo de movimiento de cámara
             (``None`` ⇒ lo decide el selector según estilo y energía).
+        per_scene_style: Elegir **un estilo por escena** según el tramo de la
+            canción (intro floja → estribillo fuerte), en vez de uno único.
+        loudness: Perfil de sonoridad de la canción (RMS por ventana) para el
+            estilo por escena; ``None`` ⇒ se mide del fichero.
         texts: Superponer los textos del guion.
         generator: Generador de imágenes ya construido (por defecto, se crea
             con ``model``).
@@ -358,6 +405,15 @@ async def render_visuals(
         choice.motion_bars = max(1, int(motion_bars))
     effective_transition = transition if transition is not None else choice.transition
 
+    scene_styles, scene_reasons, section_energies = await _scene_styles(
+        base=choice.signals,
+        scenes=scenes,
+        song=song_path,
+        loudness=loudness,
+        enabled=per_scene_style,
+        variation_key=f"{topic}|{aspect.value}|{seed}",
+    )
+
     plan = build_shot_plan(
         topic,
         scenes,
@@ -372,12 +428,15 @@ async def render_visuals(
         fps=fps,
         motion_offset=choice.motion_offset,
         motion_bars=choice.motion_bars,
+        scene_styles=scene_styles or None,
         seconds_per_shot=choice.seconds_per_shot,
         beat_grid=beat_grid,
     )
     plan.style_reason = choice.reason
     plan.style_scores = dict(choice.scores)
     plan.style_signals = {axis: round(value, 4) for axis, value in choice.signals.as_axes().items()}
+    plan.scene_reasons = scene_reasons
+    plan.section_energies = section_energies
     plan.seed = seed
     _report(
         on_progress,
@@ -386,6 +445,11 @@ async def render_visuals(
         f"estilo {choice.style.value}",
     )
     _report(on_progress, f"🎨 {choice.reason}")
+    if plan.scene_styles:
+        resumen = " · ".join(
+            f"escena {index + 1}: {style}" for index, style in enumerate(plan.scene_styles)
+        )
+        _report(on_progress, f"🎨 Estilo por escena (según el tramo de la canción): {resumen}")
     _report(
         on_progress,
         f"🎞️  Ritmo: {plan.seconds_per_shot:g} s/plano · fundidos {plan.transition:g} s · "

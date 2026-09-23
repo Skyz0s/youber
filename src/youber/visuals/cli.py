@@ -162,6 +162,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Generar además el corte vertical del estribillo (default: {DEFAULT_SHORT_DURATION:g} s)",
     )
     parser.add_argument(
+        "--no-scene-style",
+        action="store_true",
+        help=(
+            "Un único estilo para todo el vídeo; por defecto el estilo cambia por "
+            "escena según el tramo de la canción (intro floja ≠ estribillo)"
+        ),
+    )
+    parser.add_argument(
         "--no-beat",
         action="store_true",
         help="No cortar los planos al beat (reparto uniforme aunque el pulso sea claro)",
@@ -233,6 +241,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         fps=args.fps,
         transition=args.transition,
         motion_bars=motion_bars,
+        per_scene_style=not args.no_scene_style,
         texts=args.texts,
         generator=generator,
         seed=args.seed,
@@ -256,6 +265,8 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         "style": master.plan.style,
         "style_reason": master.plan.style_reason,
         "style_scores": master.plan.style_scores,
+        "scene_styles": master.plan.scene_styles,
+        "section_energies": master.plan.section_energies,
         "transition": master.plan.transition,
         "seconds_per_shot": master.plan.seconds_per_shot,
         "motion_offset": master.plan.motion_offset,
@@ -300,6 +311,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
             fps=args.fps,
             transition=args.transition,
             motion_bars=motion_bars,
+            per_scene_style=not args.no_scene_style,
             texts=args.texts,
             generator=generator,
             seed=args.seed + 500,

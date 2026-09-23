@@ -163,6 +163,43 @@ El plan JSON lo deja escrito: `beat_bpm`, `beat_offset` y `beat_aligned`.
 corte y beat fue **0,4-1,4 ms** con `Argumentos` (172,3 BPM), `Caos` (94,0),
 `Justodelante` (184,6), `StormonYou` (123,0) y `Solootromodo` (117,5).
 
+### Estilo por escena
+
+Un estilo único para todo el vídeo se queda corto cuando la canción tiene
+partes muy distintas: la intro floja y el estribillo a tope no piden lo mismo.
+Con guion de varias escenas, cada una se mapea a **su tramo de la canción**
+(las escenas van en orden y suman la duración del montaje) y se elige un estilo
+propio:
+
+- `scene_section_energies` mide la energía (RMS medio) del perfil de
+  sonoridad en la ventana de cada escena.
+- `signals_for_section` reescribe las señales del tema cambiando solo el eje de
+  **energía**: vale el 70 % la del tramo y el 30 % la global
+  (`SECTION_ENERGY_WEIGHT`). El resto (valencia, tensión, temas, metadatos) es
+  del tema entero: lo que cambia escena a escena es cómo suena esa parte.
+- `scene_choices` resuelve un estilo por escena con la misma lógica de siempre
+  (`choose_style`), pero **sin rotación de empatados**
+  (`SCENE_TIE_EPSILON = 0`): dentro de un vídeo gana el que mejor encaja con el
+  tramo; la rotación es para variar vídeos enteros.
+- Cada plano hereda el estilo de su escena: el prompt lleva su sufijo
+  (`STYLE_SUFFIXES`) y `Shot.style` lo deja escrito.
+
+Si no hay perfil de sonoridad, con una sola escena o con `--no-scene-style`,
+todo el vídeo lleva el estilo global de siempre (y el plan lo refleja:
+`scene_styles` vacío).
+
+```bash
+youber-visuals --topic "..." --song cancion.wav --out out/                 # por escena
+youber-visuals --topic "..." --song cancion.wav --out/ --no-scene-style   # uno solo
+```
+
+El plan JSON guarda el reparto: `scene_styles`, `scene_reasons` y
+`section_energies`.
+
+**Medido sobre una canción sintética** (mitad floja, mitad a tope, dos escenas
+de 5 s): la primera sale `minimal` y la segunda `vibrant`, con energías
+0,33 y 0,89. Determinista: mismas señales ⇒ mismo reparto.
+
 ## Formatos
 
 | Formato | Genera el modelo | Entrega | Uso |

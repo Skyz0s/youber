@@ -267,6 +267,7 @@ def build_shot_plan(
     fps: int = 30,
     motion_offset: int = 0,
     motion_bars: int = DEFAULT_MOTION_BARS,
+    scene_styles: Sequence[VisualStyle | str] | None = None,
     seconds_per_shot: float = DEFAULT_SECONDS_PER_SHOT,
     beat_grid: BeatGrid | None = None,
 ) -> ShotPlan:
@@ -288,6 +289,8 @@ def build_shot_plan(
             punto de arranque varía la pieza sin tocar el estilo.
         motion_bars: Compases que dura un ciclo de movimiento de cámara; con
             rejilla de beats, el zoom/paneo cierra su ciclo al compás.
+        scene_styles: Estilo por escena (:func:`youber.visuals.selector.scene_choices`);
+            los planos de cada escena usan el suyo y el resto hereda el del plan.
         seconds_per_shot: Segundos objetivo por plano cuando ``shots`` es
             ``None`` (lo dicta el selector según el audio).
         beat_grid: Rejilla de pulsos de la canción; si se pasa, los cortes
@@ -361,6 +364,7 @@ def build_shot_plan(
     total_shots = sum(counts)
     durations = plan_durations(duration, total_shots, transition, beat_grid)
     beat_bpm, beat_offset, beat_aligned = beat_fields(total_shots)
+    per_scene = [VisualStyle(item) for item in scene_styles] if scene_styles else []
     plan = ShotPlan(
         topic=topic,
         style=style,
@@ -372,6 +376,7 @@ def build_shot_plan(
         motion_offset=offset,
         motion_bars=bars,
         motion_period=motion_period,
+        scene_styles=[item.value for item in per_scene],
         seconds_per_shot=seconds_per_shot,
         beat_bpm=beat_bpm,
         beat_offset=beat_offset,
@@ -380,6 +385,7 @@ def build_shot_plan(
     index = 0
     for scene_index, (scene, scene_shots) in enumerate(zip(scenes, counts, strict=True)):
         beats = BEATS_BY_SCENE.get(scene.type, GENERIC_BEATS)
+        scene_style = per_scene[scene_index] if scene_index < len(per_scene) else style
         for beat_index in range(scene_shots):
             beat = beats[beat_index % len(beats)]
             plan.shots.append(
@@ -388,13 +394,14 @@ def build_shot_plan(
                     prompt=shot_prompt(
                         beat,
                         topic=topic,
-                        style=style,
+                        style=scene_style,
                         mood=mood,
                         tone=tone,
                         keywords=keywords or scene.keywords,
                     ),
                     motion=motion_for(index),
                     duration=durations[index],
+                    style=scene_style if scene_style is not style else None,
                     scene_index=scene_index,
                     beat=beat,
                 )

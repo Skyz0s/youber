@@ -153,6 +153,8 @@ class Shot(BaseModel):
         prompt: Prompt completo enviado al generador de imagen.
         motion: Movimiento de cámara aplicado al still.
         duration: Duración en el montaje final (segundos).
+        style: Estilo propio del plano; ``None`` hereda el del plan (con el
+            estilo por escena, el tramo de la canción decide el de cada grupo).
         scene_index: Escena del guion a la que pertenece (si procede).
         beat: Plantilla de encuadre usada (trazabilidad del prompt).
         image: Ruta del still generado (si ya se generó).
@@ -163,6 +165,7 @@ class Shot(BaseModel):
     prompt: str = Field(min_length=1)
     motion: Motion = Motion.ZOOM_IN
     duration: float = Field(gt=0)
+    style: VisualStyle | None = None
     scene_index: int | None = None
     beat: str = ""
     image: Path | None = None
@@ -182,6 +185,11 @@ class ShotPlan(BaseModel):
         music_mood: Mood de la música que inspira el estilo (informativo).
         keywords: Palabras clave usadas para los prompts.
         motion_offset: Desplazamiento del ciclo de movimientos (variedad).
+        scene_styles: Estilo resuelto para cada escena (mismo orden que el
+            guion); vacío si el estilo es único para todo el vídeo.
+        scene_reasons: Por qué se eligió el estilo de cada escena.
+        section_energies: Energía medida (``0..1``) del tramo de canción que
+            cubre cada escena.
         motion_bars: Compases que dura un ciclo completo de movimiento de
             cámara (ida y vuelta del zoom/paneo).
         motion_period: Duración de ese ciclo en segundos (si se midió el
@@ -205,6 +213,9 @@ class ShotPlan(BaseModel):
     music_mood: str | None = None
     keywords: list[str] = Field(default_factory=list)
     motion_offset: int = Field(default=0, ge=0)
+    scene_styles: list[str] = Field(default_factory=list)
+    scene_reasons: list[str] = Field(default_factory=list)
+    section_energies: list[float] = Field(default_factory=list)
     motion_bars: int = Field(default=DEFAULT_MOTION_BARS, ge=1)
     motion_period: float | None = Field(default=None, gt=0)
     seconds_per_shot: float = Field(default=DEFAULT_SECONDS_PER_SHOT, gt=0)
