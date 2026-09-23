@@ -80,6 +80,7 @@ async def test_simulate_network_offline_blocks(page):
         await page.goto(EXAMPLE_URL, timeout=8000)
 
 
+@pytest.mark.needs_network
 async def test_network_performance(page):
     results = await measure_performance(page, EXAMPLE_URL, ["4g"])
     assert len(results) == 1

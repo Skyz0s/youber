@@ -13,6 +13,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import pytest
+
 from youber.client.session import create_mcp_session
 from youber.client.tools import MCPTools
 
@@ -36,6 +38,7 @@ async def _client() -> AsyncIterator[MCPTools]:
         yield MCPTools(session)
 
 
+@pytest.mark.needs_network
 async def test_open_page():
     async with _client() as tools:
         result = await tools.open_page(EXAMPLE_URL)
@@ -65,6 +68,7 @@ async def test_simulate_geolocation():
         assert signals["navigator_language"] == "ja-JP"
 
 
+@pytest.mark.needs_network
 async def test_simulate_network():
     async with _client() as tools:
         spec = await tools.simulate_network(EXAMPLE_URL, "4g")
@@ -72,6 +76,7 @@ async def test_simulate_network():
         assert spec["offline"] is False
 
 
+@pytest.mark.needs_network
 async def test_simulate_device():
     async with _client() as tools:
         spec = await tools.simulate_device(EXAMPLE_URL, "iPhone")

@@ -181,6 +181,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Incluir también decisiones sin vídeo publicado (no medibles en la plataforma)",
     )
+    pending.add_argument(
+        "--now",
+        default=None,
+        metavar="ISO",
+        help=(
+            "Fecha de referencia (ISO-8601) para calcular antigüedades; "
+            "default: ahora (útil para probar/simular)"
+        ),
+    )
 
     sub.add_parser("stats", help="Resumen del journal")
 
@@ -542,13 +551,29 @@ def _run_analyze(journal: DecisionJournal, args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_now(raw: str | None) -> datetime | None:
+    """Fecha de referencia (ISO-8601) para calcular antigüedades.
+
+    ``None`` (o vacío) deja que ``pending_metrics`` use el reloj real; pasar una
+    fecha hace el informe reproducible (útil para probar y para simular).
+    """
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError as error:
+        raise ValueError(f"Fecha inválida en --now: {raw!r} (usa ISO-8601)") from error
+
+
 def _run_pending(journal: DecisionJournal, args: argparse.Namespace) -> int:
     windows = tuple(part.strip() for part in args.windows.split(",") if part.strip())
+    now = _parse_now(args.now)
     report = pending_metrics(
         journal,
         windows=windows or DEFAULT_WINDOWS,
         min_age_days=args.min_age_days,
         require_upload=not args.include_unpublished,
+        now=now,
     )
     if args.json:
         console.print(

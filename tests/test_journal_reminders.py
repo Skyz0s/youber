@@ -205,9 +205,29 @@ def test_cli_pending_al_dia_y_min_age(monkeypatch, tmp_path: Path, capsys) -> No
     journal = DecisionJournal(db)
     _published(journal, "dec-1", video_id="abc", days_ago=1)
 
-    _cli(monkeypatch, db, ["pending"])
+    # ``--now`` fija la fecha de referencia: sin él el informe mira el reloj real
+    # y el vídeo "de ayer" envejece con los días (el test se caía solo).
+    reference = ["--now", NOW.isoformat()]
+    _cli(monkeypatch, db, ["pending", *reference])
     assert "al día" in capsys.readouterr().out
 
-    _cli(monkeypatch, db, ["pending", "--min-age-days", "0", "--windows", "48h"])
+    _cli(
+        monkeypatch,
+        db,
+        ["pending", "--min-age-days", "0", "--windows", "48h", *reference],
+    )
     out = capsys.readouterr().out
     assert "Toca pegar el CSV" in out and "48h" in out
+
+
+def test_cli_pending_now_permite_simular(monkeypatch, tmp_path: Path, capsys) -> None:
+    """Con ``--now`` el informe es reproducible (misma foto siempre)."""
+    db = tmp_path / "cli.db"
+    journal = DecisionJournal(db)
+    _published(journal, "dec-1", video_id="abc", days_ago=1)
+
+    _cli(monkeypatch, db, ["pending", "--now", "2026-09-20T12:00"], global_flags=["--json"])
+    payload = json.loads(capsys.readouterr().out)
+    # Publicado el 14/09 (NOW − 1 d) y mirado el 20/09: 6 días, por encima de la
+    # antigüedad mínima por defecto (3 d), así que toca medirlo.
+    assert payload["pending"][0]["age_days"] == 6.0

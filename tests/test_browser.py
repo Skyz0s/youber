@@ -32,6 +32,7 @@ async def test_new_context_with_defaults():
         await manager.close()
 
 
+@pytest.mark.needs_network
 async def test_navigation():
     """Navega a una URL real y verifica la URL final."""
     manager = BrowserManager(headless=True)
@@ -45,6 +46,7 @@ async def test_navigation():
         await manager.close()
 
 
+@pytest.mark.needs_network
 async def test_get_title():
     """Obtiene el título de la página navegada."""
     manager = BrowserManager(headless=True)
@@ -66,6 +68,7 @@ async def test_new_context_without_launch_raises():
         await manager.new_context()
 
 
+@pytest.mark.needs_network
 async def test_sample_navigation_fixture():
     """El fixture devuelve título y logs del proceso."""
     result = await sample_navigation(headless=True)

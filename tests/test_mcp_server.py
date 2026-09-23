@@ -25,6 +25,7 @@ async def session():
     await s.close()
 
 
+@pytest.mark.needs_network
 async def test_open_page(session):
     """open_page abre una URL real y devuelve título, estado y logs."""
     result = await navigation.open_page(session, EXAMPLE_URL)
@@ -45,6 +46,7 @@ async def test_get_page_info(session):
     assert info.viewport == {"width": 1920, "height": 1080}
 
 
+@pytest.mark.needs_network
 async def test_navigate_to(session):
     """navigate_to navega desde una página existente a otra URL."""
     opened = await navigation.open_page(session, ACCESSIBLE_URL)
