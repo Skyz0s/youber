@@ -33,7 +33,7 @@ from collections.abc import Mapping, Sequence
 from pydantic import BaseModel, Field
 
 from youber.music.audio_features.models import AudioProfile
-from youber.visuals.models import DEFAULT_MOTION_CYCLE, VisualStyle
+from youber.visuals.models import DEFAULT_MOTION_BARS, DEFAULT_MOTION_CYCLE, VisualStyle
 
 #: Valor de ``--style`` que activa la elección automática.
 AUTO_STYLE = "auto"
@@ -174,6 +174,28 @@ TEMPO_REFERENCE = 180.0
 RMS_REFERENCE = 8000.0
 DYNAMICS_REFERENCE = 1.2
 
+#: Compases que dura un ciclo **completo** de movimiento de cámara (ida y
+#: vuelta del zoom/paneo), por estilo. Con la música medida, el movimiento
+#: cierra cada ciclo en un número entero de compases: "respira" al compás en
+#: vez de ir a su aire.
+MOTION_BARS_BY_STYLE: dict[VisualStyle, int] = {
+    VisualStyle.VIBRANT: 2,
+    VisualStyle.CINEMATIC: 4,
+    VisualStyle.DARK: 4,
+    VisualStyle.DREAMY: 8,
+    VisualStyle.MINIMAL: 8,
+}
+
+#: Ciclo de movimiento por defecto cuando no hay señales.
+#: (``DEFAULT_MOTION_BARS`` vive en :mod:`youber.visuals.models`.)
+
+#: Energía a partir de la cual el ciclo se acorta (y por debajo, se alarga).
+MOTION_ENERGY_HIGH = 0.68
+MOTION_ENERGY_LOW = 0.32
+
+#: Compases de ciclo que se permiten (2 y 4 son los habituales; 1 y 8, extremos).
+MOTION_BARS_ALLOWED = (1, 2, 4, 8)
+
 #: Rangos del ritmo del montaje (segundos).
 MIN_TRANSITION = 0.4
 MAX_TRANSITION = 1.3
@@ -243,6 +265,8 @@ class StyleChoice(BaseModel):
         transition: Duración sugerida de los fundidos (segundos).
         motion_offset: Desplazamiento del ciclo de movimientos (variedad
             determinista sin cambiar el estilo).
+        motion_bars: Compases que dura un ciclo completo de movimiento de
+            cámara (el zoom/paneo cierra su ciclo al compás).
         seconds_per_shot: Objetivo de segundos por plano.
     """
 
@@ -254,6 +278,7 @@ class StyleChoice(BaseModel):
     signals: StyleSignals = Field(default_factory=StyleSignals)
     transition: float = 0.8
     motion_offset: int = 0
+    motion_bars: int = DEFAULT_MOTION_BARS
     seconds_per_shot: float = 16.0
 
 
@@ -456,6 +481,30 @@ def motion_offset_for(variation_key: str) -> int:
     return _stable_hash(variation_key) % len(DEFAULT_MOTION_CYCLE)
 
 
+def _snap_bars(bars: int) -> int:
+    """Ajusta ``bars`` al valor permitido más cercano (:data:`MOTION_BARS_ALLOWED`)."""
+    return min(MOTION_BARS_ALLOWED, key=lambda allowed: (abs(allowed - bars), allowed))
+
+
+def motion_bars_for(style: VisualStyle, signals: StyleSignals | None = None) -> int:
+    """Compases que dura un ciclo **completo** de movimiento de cámara.
+
+    El estilo marca el punto de partida (un vídeo *vibrant* respira en ciclos
+    cortos de 2 compases; uno *dreamy* o *minimal*, en ciclos largos de 8) y la
+    energía lo corrige: mucha energía acorta el ciclo a la mitad y muy poca lo
+    dobla. El resultado se limita a :data:`MOTION_BARS_ALLOWED` para que el
+    ciclo siempre sea una cifra "musical" (1, 2, 4 u 8 compases).
+    """
+    bars = MOTION_BARS_BY_STYLE.get(style, DEFAULT_MOTION_BARS)
+    if signals is None:
+        return _snap_bars(bars)
+    if signals.energy >= MOTION_ENERGY_HIGH:
+        return _snap_bars(bars // 2)
+    if signals.energy <= MOTION_ENERGY_LOW:
+        return _snap_bars(bars * 2)
+    return _snap_bars(bars)
+
+
 def _reason(style: VisualStyle, signals: StyleSignals, scores: dict[VisualStyle, float]) -> str:
     """Motivo legible de la elección (se guarda en el plan)."""
     dominant = ", ".join(
@@ -513,6 +562,7 @@ def choose_style(
             signals=signals,
             transition=transition,
             motion_offset=offset,
+            motion_bars=motion_bars_for(chosen, signals),
             seconds_per_shot=pacing,
         )
 
@@ -531,5 +581,6 @@ def choose_style(
         signals=signals,
         transition=transition,
         motion_offset=offset,
+        motion_bars=motion_bars_for(chosen, signals),
         seconds_per_shot=pacing,
     )

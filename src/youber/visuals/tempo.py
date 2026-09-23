@@ -56,6 +56,11 @@ PREFERRED_HIGH = 160.0
 #: Tope de audio analizado (segundos): el tempo no cambia de un tramo a otro.
 MAX_ANALYSIS_SECONDS = 180.0
 
+#: Pulsos por compás. Se asume 4/4 (el compás más común de largo) porque del
+#: tempo solo no se puede deducir la métrica; es una convención de montaje, no
+#: una medida.
+BEATS_PER_BAR = 4
+
 #: Ventana del umbral adaptativo (segundos).
 SMOOTHING_SECONDS = 0.4
 
@@ -335,6 +340,17 @@ class BeatGrid(BaseModel):
     def detected(self) -> bool:
         """``True`` si se pudo medir el pulso."""
         return self.bpm > 0.0
+
+    @property
+    def bar_interval(self) -> float:
+        """Segundos que dura un compás de :data:`BEATS_PER_BAR` pulsos."""
+        return BEATS_PER_BAR * self.interval
+
+    def cycle_seconds(self, bars: int) -> float | None:
+        """Segundos que dura un ciclo de ``bars`` compases (``None`` sin pulso)."""
+        if bars <= 0 or not self.detected:
+            return None
+        return bars * self.bar_interval
 
     def reliable(
         self,

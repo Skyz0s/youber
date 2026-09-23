@@ -103,6 +103,11 @@ DEFAULT_MOTION_CYCLE: tuple[Motion, ...] = (
 #: Objetivo aproximado de segundos por plano (el selector lo ajusta por audio).
 DEFAULT_SECONDS_PER_SHOT = 16.0
 
+#: Compases que dura un ciclo **completo** de movimiento de cámara (ida y
+#: vuelta; el selector lo ajusta por estilo y energía). El ciclo cierra al
+#: compás cuando hay pulso medido.
+DEFAULT_MOTION_BARS = 4
+
 
 class VisualStyle(StrEnum):
     """Estilo visual de los planos (se añade al prompt de cada uno)."""
@@ -177,6 +182,10 @@ class ShotPlan(BaseModel):
         music_mood: Mood de la música que inspira el estilo (informativo).
         keywords: Palabras clave usadas para los prompts.
         motion_offset: Desplazamiento del ciclo de movimientos (variedad).
+        motion_bars: Compases que dura un ciclo completo de movimiento de
+            cámara (ida y vuelta del zoom/paneo).
+        motion_period: Duración de ese ciclo en segundos (si se midió el
+            pulso); ``None`` cuando no hay rejilla de beats.
         seconds_per_shot: Objetivo de segundos por plano usado para repartir.
         beat_bpm: Pulso medido de la canción, si se midió (informativo).
         beat_offset: Segundo del primer beat de la canción, si se midió.
@@ -196,6 +205,8 @@ class ShotPlan(BaseModel):
     music_mood: str | None = None
     keywords: list[str] = Field(default_factory=list)
     motion_offset: int = Field(default=0, ge=0)
+    motion_bars: int = Field(default=DEFAULT_MOTION_BARS, ge=1)
+    motion_period: float | None = Field(default=None, gt=0)
     seconds_per_shot: float = Field(default=DEFAULT_SECONDS_PER_SHOT, gt=0)
     beat_bpm: float | None = Field(default=None, gt=0)
     beat_offset: float | None = Field(default=None, ge=0)

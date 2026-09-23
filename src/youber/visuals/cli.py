@@ -30,11 +30,19 @@ from youber.audio._ffmpeg import probe_duration
 from youber.visuals.generator import DEFAULT_MODEL, create_generator
 from youber.visuals.models import Aspect, VisualStyle
 from youber.visuals.render import render_visuals
-from youber.visuals.selector import AUTO_STYLE, StyleSignals, build_signals
+from youber.visuals.selector import (
+    AUTO_STYLE,
+    MOTION_BARS_ALLOWED,
+    StyleSignals,
+    build_signals,
+)
 from youber.visuals.short import DEFAULT_SHORT_DURATION, extract_window, pick_window
 from youber.visuals.tempo import BeatGrid
 
 console = Console()
+
+#: Valor de ``--motion-bars`` que deja el ciclo al selector (estilo + energía).
+AUTO_MOTION_BARS = "auto"
 
 
 def _slug(text: str) -> str:
@@ -158,6 +166,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="No cortar los planos al beat (reparto uniforme aunque el pulso sea claro)",
     )
+    parser.add_argument(
+        "--motion-bars",
+        choices=[AUTO_MOTION_BARS, *(str(bars) for bars in MOTION_BARS_ALLOWED)],
+        default=AUTO_MOTION_BARS,
+        help=(
+            "Compases que dura cada ciclo de movimiento de cámara "
+            f"(default: {AUTO_MOTION_BARS} → lo deciden estilo y energía)"
+        ),
+    )
     parser.add_argument("--preview", action="store_true", help="Generar preview ligero (480p)")
     parser.add_argument("--force", action="store_true", help="Regenerar stills y clips existentes")
     parser.add_argument("--json", action="store_true", help="Volcar el resumen en JSON")
@@ -182,9 +199,19 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
     )
 
     signals, grid = await _song_signals(song, topic=args.topic, mood=args.mood)
+    motion_bars = None if args.motion_bars == AUTO_MOTION_BARS else int(args.motion_bars)
     if args.no_beat:
         grid = None
         console.print("🔪 Cortes al beat desactivados (--no-beat)")
+    elif grid is not None:
+        console.print(
+            "🎥 Movimiento de cámara al compás: "
+            + (
+                f"ciclos de {motion_bars} compases"
+                if motion_bars is not None
+                else "el estilo decide los compases del ciclo"
+            )
+        )
     if args.style == AUTO_STYLE:
         console.print(
             "🔎 Estilo automático: el audio decide (añade --style para forzar uno)"
@@ -205,6 +232,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         shots=args.shots,
         fps=args.fps,
         transition=args.transition,
+        motion_bars=motion_bars,
         texts=args.texts,
         generator=generator,
         seed=args.seed,
@@ -231,6 +259,8 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         "transition": master.plan.transition,
         "seconds_per_shot": master.plan.seconds_per_shot,
         "motion_offset": master.plan.motion_offset,
+        "motion_bars": master.plan.motion_bars,
+        "motion_period": master.plan.motion_period,
         "beat_bpm": master.plan.beat_bpm,
         "beat_offset": master.plan.beat_offset,
         "beat_aligned": master.plan.beat_aligned,
@@ -269,6 +299,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
             shots=args.shots,
             fps=args.fps,
             transition=args.transition,
+            motion_bars=motion_bars,
             texts=args.texts,
             generator=generator,
             seed=args.seed + 500,

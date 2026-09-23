@@ -175,10 +175,15 @@ async def animate_clips(
             shot.clip = target
             paths.append(target)
             continue
+        report_period = (
+            f", ciclo {plan.motion_period:.2f} s ({plan.motion_bars} compases)"
+            if plan.motion_period
+            else ""
+        )
         _report(
             on_progress,
             f"[{shot.index + 1}/{len(plan.shots)}] animando {target.name} "
-            f"({shot.motion.value}, {shot.duration:.1f} s)",
+            f"({shot.motion.value}, {shot.duration:.1f} s{report_period})",
         )
         await animate_shot(
             shot.image,
@@ -187,6 +192,7 @@ async def animate_clips(
             motion=shot.motion,
             size=size,
             fps=frame_rate,
+            motion_period=plan.motion_period,
             crf=crf,
             preset=preset,
         )
@@ -272,6 +278,7 @@ async def render_visuals(
     shots: int | None = None,
     fps: int = 30,
     transition: float | None = None,
+    motion_bars: int | None = None,
     texts: bool = False,
     generator: ImageGenerator | None = None,
     model: str | None = None,
@@ -306,6 +313,8 @@ async def render_visuals(
         fps: Fotogramas por segundo.
         transition: Duración del fundido entre planos (segundos). ``None`` la
             deja al selector (tempo alto → fundidos cortos).
+        motion_bars: Compases que dura un ciclo de movimiento de cámara
+            (``None`` ⇒ lo decide el selector según estilo y energía).
         texts: Superponer los textos del guion.
         generator: Generador de imágenes ya construido (por defecto, se crea
             con ``model``).
@@ -345,6 +354,8 @@ async def render_visuals(
         signals=signals,
         variation_key=f"{topic}|{aspect.value}|{seed}",
     )
+    if motion_bars is not None:
+        choice.motion_bars = max(1, int(motion_bars))
     effective_transition = transition if transition is not None else choice.transition
 
     plan = build_shot_plan(
@@ -360,6 +371,7 @@ async def render_visuals(
         transition=effective_transition,
         fps=fps,
         motion_offset=choice.motion_offset,
+        motion_bars=choice.motion_bars,
         seconds_per_shot=choice.seconds_per_shot,
         beat_grid=beat_grid,
     )
@@ -385,6 +397,12 @@ async def render_visuals(
             on_progress,
             f"🥁 Pulso {plan.beat_bpm:.0f} BPM (primer beat {plan.beat_offset:.2f} s) · "
             + ("cortes al beat" if plan.beat_aligned else "los cortes no caben al beat"),
+        )
+    if plan.motion_period:
+        _report(
+            on_progress,
+            f"🎥 Movimiento al compás: ciclo de {plan.motion_bars} compases "
+            f"({plan.motion_period:.2f} s)",
         )
 
     work = Path(workdir) if workdir is not None else target.with_name(f"{target.stem}_work")

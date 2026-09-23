@@ -192,6 +192,40 @@ canción`, así que el vídeo dura exactamente lo mismo que el audio.
 `static`, alternándose por defecto. El still se escala un 30 % por encima de
 la entrega y el `zoompan` de FFmpeg hace el resto (sin bordes vacíos).
 
+### Movimiento al compás
+
+Con el pulso medido, el zoom/paneo ya no completa un único barrido a lo largo
+del plano (que iba "a su aire": rápido en planos cortos, lento en largos):
+**cierra su ciclo cada N compases**. El movimiento es una onda triangular —
+entra, llega al pico a mitad de ciclo y vuelve — así que respira con la
+música en vez de deslizarse una sola vez.
+
+- **Compases por ciclo** (`motion_bars`): los pone el estilo y los corrige la
+  energía. `vibrant` respira en ciclos de **2** compases; `cinematic` y `dark`,
+  de **4**; `dreamy` y `minimal`, de **8**. Mucha energía (≥ 0,68) acorta el
+  ciclo a la mitad; muy poca (≤ 0,32) lo dobla. El resultado se limita a 1, 2,
+  4 u 8 compases (cifras musicales).
+- **Segundos de ciclo** (`motion_period`): `motion_bars × 4 × 60 / BPM`. Con la
+  rejilla del Short, el ciclo viaja con el recorte (`grid.shifted`).
+- **Se asume 4/4** (`BEATS_PER_BAR = 4`): del tempo solo no se puede deducir la
+  métrica, así que el compás es una convención de montaje.
+- Sin pulso (`--no-beat`, o tempo poco firme) todo esto se desactiva y vuelve
+  el barrido monótono de siempre.
+
+```bash
+# Ciclo automático (estilo + energía)
+youber-visuals --topic "..." --song cancion.wav --out out/
+# Forzar los compases del ciclo (1, 2, 4 u 8)
+youber-visuals --topic "..." --song cancion.wav --out out/ --motion-bars 8
+```
+
+El plan JSON lo deja escrito: `motion_bars` y `motion_period` (además de
+`motion_offset`, el desplazamiento del ciclo entre planos).
+
+**Medido sobre el catálogo real**: `Fog on glass` → 126 BPM, compás 1,905 s,
+2 compases por ciclo (3,81 s) con estilo `vibrant`; los planos de ~11 s dan
+casi 3 respiraciones completas cada uno.
+
 ## Short: el corte del estribillo
 
 `youber.visuals.short` decodifica la canción a PCM mono, calcula la energía

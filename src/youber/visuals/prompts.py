@@ -17,6 +17,7 @@ from collections.abc import Sequence
 
 from youber.script.models import Scene, SceneType
 from youber.visuals.models import (
+    DEFAULT_MOTION_BARS,
     DEFAULT_MOTION_CYCLE,
     DEFAULT_SECONDS_PER_SHOT,
     STYLE_SUFFIXES,
@@ -265,6 +266,7 @@ def build_shot_plan(
     transition: float = 0.8,
     fps: int = 30,
     motion_offset: int = 0,
+    motion_bars: int = DEFAULT_MOTION_BARS,
     seconds_per_shot: float = DEFAULT_SECONDS_PER_SHOT,
     beat_grid: BeatGrid | None = None,
 ) -> ShotPlan:
@@ -284,6 +286,8 @@ def build_shot_plan(
         fps: Fotogramas por segundo del render.
         motion_offset: Desplazamiento del ciclo de movimientos; cambiar el
             punto de arranque varía la pieza sin tocar el estilo.
+        motion_bars: Compases que dura un ciclo de movimiento de cámara; con
+            rejilla de beats, el zoom/paneo cierra su ciclo al compás.
         seconds_per_shot: Segundos objetivo por plano cuando ``shots`` es
             ``None`` (lo dicta el selector según el audio).
         beat_grid: Rejilla de pulsos de la canción; si se pasa, los cortes
@@ -295,6 +299,11 @@ def build_shot_plan(
     count = plan_shots_count(duration, shots, seconds_per_shot=seconds_per_shot)
     keywords = list(dict.fromkeys(str(keyword) for keyword in keywords if keyword))
     offset = int(motion_offset) % len(DEFAULT_MOTION_CYCLE)
+    bars = max(1, int(motion_bars))
+    # Ciclo del movimiento en segundos: un número entero de compases medidos.
+    motion_period = beat_grid.cycle_seconds(bars) if beat_grid is not None else None
+    if motion_period is not None:
+        motion_period = round(motion_period, 3)
 
     def motion_for(index: int) -> Motion:
         return DEFAULT_MOTION_CYCLE[(index + offset) % len(DEFAULT_MOTION_CYCLE)]
@@ -319,6 +328,8 @@ def build_shot_plan(
             music_mood=mood,
             keywords=keywords[:8],
             motion_offset=offset,
+            motion_bars=bars,
+            motion_period=motion_period,
             seconds_per_shot=seconds_per_shot,
             beat_bpm=beat_bpm,
             beat_offset=beat_offset,
@@ -359,6 +370,8 @@ def build_shot_plan(
         music_mood=mood,
         keywords=keywords[:8],
         motion_offset=offset,
+        motion_bars=bars,
+        motion_period=motion_period,
         seconds_per_shot=seconds_per_shot,
         beat_bpm=beat_bpm,
         beat_offset=beat_offset,

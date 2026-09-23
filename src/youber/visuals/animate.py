@@ -35,12 +35,20 @@ DEFAULT_CRF = 18
 DEFAULT_PRESET = "medium"
 
 
-def motion_expressions(motion: Motion, frames: int) -> tuple[str, str, str]:
+def motion_expressions(
+    motion: Motion, frames: int, *, cycle_frames: int | None = None
+) -> tuple[str, str, str]:
     """Expresiones ``(zoom, x, y)`` del filtro ``zoompan`` para un movimiento.
 
     Args:
         motion: Movimiento a aplicar.
         frames: Número de fotogramas del clip (define la velocidad).
+        cycle_frames: Fotogramas que dura un ciclo **completo** del movimiento
+            (ida y vuelta). Si se indica (el pulso de la canción lo dicta), el
+            movimiento es **periódico**: recorre su recorrido y vuelve, con el
+            pico a mitad de ciclo, así respira al compás en vez de completar un
+            único barrido a lo largo del plano. ``None`` (sin pulso) mantiene
+            el barrido monótono de siempre.
 
     Returns:
         La terna de expresiones que consume ``zoompan``.
@@ -49,6 +57,25 @@ def motion_expressions(motion: Motion, frames: int) -> tuple[str, str, str]:
     center_x = "iw/2-(iw/zoom/2)"
     center_y = "ih/2-(ih/zoom/2)"
     zoom_step = (OVERSCAN - 1.0) / frames
+    if cycle_frames is not None:
+        # Onda triangular: 0 → 1 → 0 dentro del ciclo (pico a mitad de ciclo).
+        cycle = max(1, int(round(cycle_frames)))
+        position = f"(mod(on,{cycle})/{cycle})"
+        triangle = f"min(2*{position},2-2*{position})"
+        amplitude = OVERSCAN - 1.0
+        if motion is Motion.ZOOM_IN:
+            return f"1+{amplitude:.6f}*{triangle}", center_x, center_y
+        if motion is Motion.ZOOM_OUT:
+            return f"{OVERSCAN}-{amplitude:.6f}*{triangle}", center_x, center_y
+        if motion is Motion.PAN_LEFT:
+            return f"{PAN_ZOOM}", f"(iw-iw/zoom)*(1-{triangle})", center_y
+        if motion is Motion.PAN_RIGHT:
+            return f"{PAN_ZOOM}", f"(iw-iw/zoom)*{triangle}", center_y
+        if motion is Motion.TILT_UP:
+            return f"{PAN_ZOOM}", center_x, f"(ih-ih/zoom)*(1-{triangle})"
+        if motion is Motion.TILT_DOWN:
+            return f"{PAN_ZOOM}", center_x, f"(ih-ih/zoom)*{triangle}"
+        return f"{STATIC_ZOOM}", center_x, center_y
     if motion is Motion.ZOOM_IN:
         return f"min(1+{zoom_step:.6f}*on,{OVERSCAN})", center_x, center_y
     if motion is Motion.ZOOM_OUT:
@@ -71,12 +98,27 @@ def _even(value: float) -> int:
 
 
 def animate_filter(
-    motion: Motion, *, duration: float, size: tuple[int, int], fps: int
+    motion: Motion,
+    *,
+    duration: float,
+    size: tuple[int, int],
+    fps: int,
+    motion_period: float | None = None,
 ) -> str:
-    """Cadena de filtros FFmpeg que anima el still (sin entrada de audio)."""
+    """Cadena de filtros FFmpeg que anima el still (sin entrada de audio).
+
+    Args:
+        motion: Movimiento de cámara.
+        duration: Duración del clip (segundos).
+        size: Tamaño de entrega ``(ancho, alto)``.
+        fps: Fotogramas por segundo.
+        motion_period: Segundos que dura un ciclo de movimiento (compases
+            medidos); ``None`` para un único barrido a lo largo del clip.
+    """
     width, height = size
     frames = max(2, int(round(duration * fps)))
-    zoom, x, y = motion_expressions(motion, frames)
+    cycle_frames = max(2, int(round(motion_period * fps))) if motion_period else None
+    zoom, x, y = motion_expressions(motion, frames, cycle_frames=cycle_frames)
     over_w, over_h = _even(width * OVERSCAN), _even(height * OVERSCAN)
     return (
         f"scale={over_w}:{over_h}:force_original_aspect_ratio=increase:flags=lanczos,"
@@ -94,6 +136,7 @@ async def animate_shot(
     motion: Motion = Motion.ZOOM_IN,
     size: tuple[int, int] = (1920, 1080),
     fps: int = 30,
+    motion_period: float | None = None,
     crf: int = DEFAULT_CRF,
     preset: str = DEFAULT_PRESET,
 ) -> Path:
@@ -106,6 +149,8 @@ async def animate_shot(
         motion: Movimiento de cámara a aplicar.
         size: Tamaño de entrega ``(ancho, alto)``.
         fps: Fotogramas por segundo.
+        motion_period: Segundos que dura un ciclo del movimiento (un número
+            entero de compases, si se midió el pulso de la canción).
         crf: Calidad de ``libx264`` (más alto = menos peso).
         preset: Preset de ``libx264``.
 
@@ -122,7 +167,9 @@ async def animate_shot(
         raise FileNotFoundError(f"No existe la imagen del plano: {source}")
     target = Path(output)
     target.parent.mkdir(parents=True, exist_ok=True)
-    filters = animate_filter(motion, duration=duration, size=size, fps=fps)
+    filters = animate_filter(
+        motion, duration=duration, size=size, fps=fps, motion_period=motion_period
+    )
     frames = max(2, int(round(duration * fps)))
     cmd = [
         "ffmpeg",
