@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from youber.music.models import Mood, Track
+from youber.music.models import Mood, Track, TrackSource
 from youber.music.selector import (
     score_track_for_profile,
     select_best_track,
@@ -33,6 +33,7 @@ def _track(
     usage: int = 0,
     artist: str | None = None,
     genre: str | None = None,
+    source: TrackSource = TrackSource.LOCAL,
 ) -> Track:
     return Track(
         id=track_id,
@@ -47,6 +48,7 @@ def _track(
         file_hash=f"hash-{track_id}",
         lyrical_themes=themes or {},
         lyrical_sentiment=sentiment,
+        source=source,
     )
 
 
@@ -133,6 +135,30 @@ def test_select_tracks_require_lyrics_filtra():
         [with_lyrics, without], theme_profile(SAD_TEXT), require_lyrics=True
     )
     assert [match.track_id for match in matches] == ["a"]
+
+
+def test_select_tracks_require_local_ignora_pistas_de_plataforma():
+    """La banda sonora se mezcla con FFmpeg: `cloud:*` no se puede montar."""
+    cloud = _track(
+        "a",
+        "Adiós",
+        themes={"tristeza": 1.0},
+        sentiment="negative",
+        source=TrackSource.YOUTUBE,
+    )
+    local = _track("b", "Otro adiós", themes={"tristeza": 0.4})
+    # Sin el filtro, la de plataforma gana por puntuación...
+    assert select_best_track([cloud, local], theme_profile(SAD_TEXT)).track_id == "a"
+    # ...y con él se elige la única que se puede renderizar.
+    chosen = select_best_track(
+        [cloud, local], theme_profile(SAD_TEXT), require_local=True
+    )
+    assert chosen is not None and chosen.track_id == "b"
+
+
+def test_select_tracks_require_local_sin_candidatas():
+    cloud = _track("a", "Adiós", source=TrackSource.SPOTIFY)
+    assert select_tracks([cloud], theme_profile(SAD_TEXT), require_local=True) == []
 
 
 def test_select_tracks_limit():

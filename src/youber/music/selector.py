@@ -18,7 +18,7 @@ from collections.abc import Iterable, Sequence
 from pydantic import BaseModel, Field
 
 from youber.music.lyrics_analyzer import LyricsAnalysis, LyricsAnalyzer
-from youber.music.models import Mood, Track
+from youber.music.models import Mood, Track, TrackSource
 
 # Pesos del scoring (ajustables; documentados para que la elección sea auditable).
 THEME_WEIGHT = 3.0  # por tema compartido (× peso del vídeo × peso de la letra)
@@ -202,6 +202,7 @@ def select_tracks(
     keywords: Sequence[str] = (),
     limit: int = 5,
     require_lyrics: bool = False,
+    require_local: bool = False,
 ) -> list[TrackMatch]:
     """Ordena las pistas del catálogo por afinidad con el perfil del vídeo.
 
@@ -212,6 +213,8 @@ def select_tracks(
         keywords: Palabras clave del vídeo (opcional).
         limit: Número máximo de candidatas a devolver.
         require_lyrics: Si ``True``, ignora las pistas sin letra analizada.
+        require_local: Si ``True``, ignora las pistas sin fichero de audio
+            (importadas de plataformas): solo se puede montar audio propio.
 
     Returns:
         Lista de :class:`TrackMatch` ordenada por puntuación (mayor primero).
@@ -219,7 +222,10 @@ def select_tracks(
     themes = profile.themes if profile else {}
     sentiment = profile.sentiment if profile else "neutral"
     candidates = [
-        track for track in tracks if not require_lyrics or track.lyrical_themes
+        track
+        for track in tracks
+        if (not require_lyrics or track.lyrical_themes)
+        and (not require_local or track.source == TrackSource.LOCAL)
     ]
     matches: list[TrackMatch] = []
     for track in candidates:
@@ -251,6 +257,7 @@ def select_best_track(
     mood: Mood | None = None,
     keywords: Sequence[str] = (),
     require_lyrics: bool = False,
+    require_local: bool = False,
 ) -> TrackMatch | None:
     """Devuelve la mejor candidata del catálogo (o ``None`` si no hay pistas)."""
     matches = select_tracks(
@@ -260,5 +267,6 @@ def select_best_track(
         keywords=keywords,
         limit=1,
         require_lyrics=require_lyrics,
+        require_local=require_local,
     )
     return matches[0] if matches else None
