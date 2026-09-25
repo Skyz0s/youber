@@ -14,6 +14,7 @@ Todo es offline y determinista (léxicos locales, sin servicios externos).
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -93,10 +94,18 @@ def _target_duration(insights: dict[str, Any], duration: float | None) -> float:
 
 
 def brief_keywords(
-    insights: dict[str, Any], profile: LyricsAnalysis | None
+    insights: dict[str, Any],
+    profile: LyricsAnalysis | None,
+    *,
+    topic: str | None = None,
 ) -> list[str]:
-    """Palabras clave para B-roll: hashtags del canal + palabras del contenido."""
-    keywords: list[str] = []
+    """Palabras clave para B-roll: hashtags del canal + palabras del contenido.
+
+    Con ``topic``, los términos del tema del vídeo van **primero**: el B-roll
+    debe ilustrar lo que cuenta el vídeo, no los hashtags del canal que se
+    usó como referencia de metadatos.
+    """
+    keywords: list[str] = list(_topic_terms(topic))
     for entry in insights.get("top_hashtags") or []:
         hashtag = entry.get("hashtag")
         if hashtag:
@@ -104,6 +113,24 @@ def brief_keywords(
     if profile is not None:
         keywords.extend(profile.top_words)
     return list(dict.fromkeys(keywords))[:MAX_KEYWORDS]
+
+
+def _topic_terms(topic: str | None) -> list[str]:
+    """Términos buscables del tema (minúsculas, sin palabras vacías).
+
+    Se conservan los términos multi-palabra como frase y también sus palabras
+    sueltas: los bancos de vídeo funcionan mejor con frases cortas
+    ("rain window") que con una sola palabra genérica.
+    """
+    if not topic:
+        return []
+    cleaned = re.sub(r"[^\w\s]+", " ", topic, flags=re.UNICODE).strip().lower()
+    words = [word for word in cleaned.split() if len(word) > 2]
+    terms: list[str] = []
+    if len(words) > 1:
+        terms.append(" ".join(words))
+    terms.extend(words)
+    return list(dict.fromkeys(terms))
 
 
 def _tone(profile: LyricsAnalysis | None) -> str:
@@ -179,7 +206,7 @@ def build_video_brief(
         keywords=(
             list(dict.fromkeys(keywords))[:MAX_KEYWORDS]
             if keywords
-            else brief_keywords(insights, profile)
+            else brief_keywords(insights, profile, topic=topic)
         ),
         music_mood=moods[0] if moods else None,
         target_duration=_target_duration(insights, duration),
