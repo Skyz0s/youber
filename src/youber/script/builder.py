@@ -33,6 +33,11 @@ _FONT_CANDIDATES = (
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
 )
 
+#: Volumen del audio original de los clips cuando suena música debajo.
+#: ~-9 dB: el ambiente acompaña (lluvia, tráfico, gente) pero no se come la
+#: canción. Sin música el clip va a nivel original: es lo único que se oye.
+DEFAULT_CLIP_VOLUME = 0.35
+
 
 def default_font_file() -> str | None:
     """Devuelve una fuente TTF disponible (para drawtext sin fontconfig)."""
@@ -69,6 +74,7 @@ def build_project(
     music_track_id: str | None = None,
     music_volume: float = 0.25,
     clip_audio: bool = True,
+    clip_volume: float = DEFAULT_CLIP_VOLUME,
 ) -> Project:
     """Construye el :class:`Project` de edición a partir del guion.
 
@@ -91,6 +97,10 @@ def build_project(
         clip_audio: Si ``False``, silencia el audio de los clips (útil cuando
             la canción *es* la banda sonora: si no, el audio original de los
             clips se mezcla con la música y ensucia la mezcla).
+        clip_volume: Volumen del audio original de los clips (0..1) cuando
+            ``clip_audio`` está activo y hay música debajo. Por defecto
+            :data:`DEFAULT_CLIP_VOLUME` (~-9 dB); sin música se ignora y el
+            clip va a nivel original.
 
     Returns:
         Proyecto listo para ``editor.render(project, out, ...)``.
@@ -114,6 +124,11 @@ def build_project(
     clips_per_scene = max(1, len(clip_paths) // max(1, len(script.scenes)))
     cursor = 0
     start = 0.0
+    # El nivel del ambiente depende de si hay canción: con música debajo el
+    # audio original va muy por debajo para no comérsela (amix sin normalize
+    # suma los niveles tal cual). Sin música, el clip es lo único que se oye.
+    music_track = _resolve_music_track(script, library, music_track_id)
+    ambient_volume = 0.0 if not clip_audio else (clip_volume if music_track else 1.0)
     for scene in script.scenes:
         n = min(clips_per_scene, len(clip_paths))
         segment = scene.duration / n
@@ -124,7 +139,7 @@ def build_project(
                 project,
                 clip,
                 duration=segment,
-                volume=1.0 if clip_audio else 0.0,
+                volume=ambient_volume,
             )
             clip_index = len(project.clips) - 1
             if clip_index > 0:
@@ -146,11 +161,21 @@ def build_project(
             )
         start += scene.duration
 
+    if music_track:
+        editor.set_music(project, music_track, volume=music_volume)
+    return project
+
+
+def _resolve_music_track(
+    script: Script,
+    library: MusicLibrary | None,
+    music_track_id: str | None,
+) -> str | None:
+    """ID de la pista de fondo: la forzada de fuera, o una local del mood."""
     if music_track_id:
-        # La canción viene elegida de fuera (p. ej. por su letra): úsala tal cual.
-        editor.set_music(project, music_track_id, volume=music_volume)
-    elif library is not None:
+        return music_track_id
+    if library is not None:
         track = _pick_local_track(library, script)
         if track is not None:
-            editor.set_music(project, track.id, volume=music_volume)
-    return project
+            return track.id
+    return None

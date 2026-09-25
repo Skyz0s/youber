@@ -66,7 +66,7 @@ from youber.research.exporters import (
     generate_channel_markdown,
 )
 from youber.research.patterns import channel_overview
-from youber.script.builder import build_project
+from youber.script.builder import DEFAULT_CLIP_VOLUME, build_project
 from youber.script.prompt import brief_to_script, build_video_brief
 from youber.sync.pipeline import sync_video_with_track
 from youber.sync.renderer import subtitle_style_preset
@@ -216,6 +216,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Con --lyrics-video: conservar el audio original de los clips "
             "(por defecto se silencia: la canción es la banda sonora)"
+        ),
+    )
+    parser.add_argument(
+        "--clip-volume",
+        type=float,
+        default=DEFAULT_CLIP_VOLUME,
+        metavar="0..1",
+        help=(
+            "Con --clip-audio: volumen del audio original de los clips "
+            f"(default: {DEFAULT_CLIP_VOLUME} ≈ -9 dB, el ambiente acompaña "
+            "sin comerse la música; sin música se ignora)"
         ),
     )
     parser.add_argument(
@@ -862,6 +873,7 @@ async def run_lyrics_video(
     music_volume: float = 1.0,
     duration_from_audio: bool = True,
     clip_audio: bool = False,
+    clip_volume: float = DEFAULT_CLIP_VOLUME,
     preview: bool = False,
     channel_data: ChannelData | None = None,
     journal: bool = True,
@@ -1241,6 +1253,7 @@ async def run_lyrics_video(
                 music_track_id=match.track_id if match else None,
                 music_volume=music_volume,
                 clip_audio=clip_audio,
+                clip_volume=clip_volume,
             )
             # Las transiciones solapadas acortan el montaje: se compensan para
             # que el vídeo dure exactamente lo mismo que la canción.
@@ -1267,6 +1280,7 @@ async def run_lyrics_video(
                         music_track_id=match.track_id if match else None,
                         music_volume=music_volume,
                         clip_audio=clip_audio,
+                        clip_volume=clip_volume,
                     )
                     console.print(
                         f"⏱️  Transiciones compensadas ({gap:+.1f} s) para cuadrar con "
@@ -1426,6 +1440,7 @@ def main() -> None:
                     render=not args.no_render,
                     music_volume=args.music_volume,
                     clip_audio=args.clip_audio,
+                    clip_volume=args.clip_volume,
                     preview=args.preview,
                     journal=not args.no_journal,
                     journal_db=args.journal_db,

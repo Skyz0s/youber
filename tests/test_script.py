@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from youber.music.models import Mood, Track, TrackSource
-from youber.script.builder import _pick_local_track, build_project, default_font_file
+from youber.script.builder import (
+    DEFAULT_CLIP_VOLUME,
+    _pick_local_track,
+    build_project,
+    default_font_file,
+)
 from youber.script.generator import _infer_mood, generate_script
 from youber.script.models import SceneType
 from youber.video.editor import VideoEditor
@@ -191,6 +196,81 @@ def test_build_project_con_musica_local(tmp_path: Path, monkeypatch):
     script = generate_script(_insights(), topic="X", music_mood=Mood.EPIC)
     project = build_project(script, clips=[clip], library=_FakeLibrary())  # type: ignore[arg-type]
     assert project.music_track_id == "t1"
+
+
+def test_build_project_baja_el_ambiente_con_musica(tmp_path: Path):
+    """Con canción debajo, el audio del clip va MUY por debajo (no se la come)."""
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"fake")
+    music_file = tmp_path / "musica.mp3"
+    music_file.write_bytes(b"fake")
+
+    class _FakeLibrary:
+        def suggest(self, mood=None, text=None, limit=5):
+            return [self._track()]
+
+        def all(self):
+            return [self._track()]
+
+        def _track(self):
+            return Track(
+                id="t1",
+                file_path=music_file,
+                title="Mi tema",
+                duration=180.0,
+                file_hash="h1",
+                source=TrackSource.LOCAL,
+            )
+
+    script = generate_script(_insights(), topic="X", music_mood=Mood.EPIC)
+    with_music = build_project(
+        script, clips=[clip], library=_FakeLibrary(), clip_audio=True  # type: ignore[arg-type]
+    )
+    assert with_music.music_track_id == "t1"
+    assert {seg.volume for seg in with_music.clips} == {DEFAULT_CLIP_VOLUME}
+    assert DEFAULT_CLIP_VOLUME < 1.0
+
+    # Sin música, el clip es lo único que se oye: nivel original.
+    sin_musica = build_project(script, clips=[clip], clip_audio=True)
+    assert {seg.volume for seg in sin_musica.clips} == {1.0}
+
+    # Silenciado explícito: sigue mandando el flag.
+    mudo = build_project(script, clips=[clip], library=_FakeLibrary(), clip_audio=False)  # type: ignore[arg-type]
+    assert {seg.volume for seg in mudo.clips} == {0.0}
+
+
+def test_build_project_clip_volume_configurable(tmp_path: Path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"fake")
+    music_file = tmp_path / "musica.mp3"
+    music_file.write_bytes(b"fake")
+
+    class _FakeLibrary:
+        def suggest(self, mood=None, text=None, limit=5):
+            return [self._track()]
+
+        def all(self):
+            return [self._track()]
+
+        def _track(self):
+            return Track(
+                id="t1",
+                file_path=music_file,
+                title="Mi tema",
+                duration=180.0,
+                file_hash="h1",
+                source=TrackSource.LOCAL,
+            )
+
+    script = generate_script(_insights(), topic="X", music_mood=Mood.EPIC)
+    project = build_project(
+        script,
+        clips=[clip],
+        library=_FakeLibrary(),  # type: ignore[arg-type]
+        clip_audio=True,
+        clip_volume=0.1,
+    )
+    assert {seg.volume for seg in project.clips} == {0.1}
 
 
 def test_pick_local_track_ignora_cloud(tmp_path: Path):
