@@ -273,6 +273,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Con --visuals ai: superponer los textos del guion sobre los planos",
     )
     parser.add_argument(
+        "--no-texts",
+        action="store_true",
+        help=(
+            "Con --lyrics-video: no superponer los textos del guion sobre el "
+            "vídeo (clips limpios + música: los textos de escena son "
+            "instrucciones de montaje, no copy para el espectador)"
+        ),
+    )
+    parser.add_argument(
         "--short",
         nargs="?",
         type=float,
@@ -866,6 +875,7 @@ async def run_lyrics_video(
     aspect: str = "16:9",
     ai_style: str = "auto",
     ai_texts: bool = False,
+    no_texts: bool = False,
     short: float | None = None,
 ) -> dict[str, Any]:
     """Metadatos del canal → letras → prompt → vídeo local (Pexels) + canción.
@@ -993,8 +1003,15 @@ async def run_lyrics_video(
             chosen_track = forced
             candidates = [forced_match]
         else:
+            # `require_local`: la banda sonora se mezcla con FFmpeg, así que
+            # solo sirven pistas con fichero de audio real. Las importadas de
+            # plataformas (source != local) tienen ruta sintética `cloud:*`.
             candidates = select_tracks(
-                library.all(), profile, keywords=profile.top_words, limit=5
+                library.all(),
+                profile,
+                keywords=profile.top_words,
+                limit=5,
+                require_local=True,
             )
             match = candidates[0] if candidates else None
             chosen_track = library.get(match.track_id) if match is not None else None
@@ -1220,6 +1237,7 @@ async def run_lyrics_video(
                 library=library,
                 editor=editor,
                 title=brief.topic,
+                with_texts=not no_texts,
                 music_track_id=match.track_id if match else None,
                 music_volume=music_volume,
                 clip_audio=clip_audio,
@@ -1245,6 +1263,7 @@ async def run_lyrics_video(
                         library=library,
                         editor=editor,
                         title=brief.topic,
+                        with_texts=not no_texts,
                         music_track_id=match.track_id if match else None,
                         music_volume=music_volume,
                         clip_audio=clip_audio,
@@ -1418,6 +1437,7 @@ def main() -> None:
                     aspect=args.ai_aspect,
                     ai_style=args.ai_style,
                     ai_texts=args.ai_texts,
+                    no_texts=args.no_texts,
                     short=args.short,
                 )
             )
