@@ -82,11 +82,20 @@ def _default_font_name() -> str | None:
     return "Arial" if sys.platform == "win32" else None
 
 
+#: Tamaño de subtítulo automático: 3,5 % de la altura (38 px a 1080p).
+#: El 5 % (54 px) clásico de los subtítulos de vídeo se come el plano en
+#: letras de canción: aquí el texto acompaña, no tapa.
+AUTO_FONT_SIZE_RATIO = 0.035
+
+#: Margen inferior automático (4 % de la altura).
+AUTO_MARGIN_RATIO = 0.04
+
+
 def resolve_style(style: SubtitleStyle, video_height: int) -> SubtitleStyle:
     """Rellena los valores auto (font_size/margin_v/font_name por plataforma)."""
-    size = style.font_size or max(12, round(video_height * 0.05))
+    size = style.font_size or max(12, round(video_height * AUTO_FONT_SIZE_RATIO))
     margin = style.margin_v if style.margin_v is not None else max(
-        16, round(video_height * 0.05)
+        16, round(video_height * AUTO_MARGIN_RATIO)
     )
     font = style.font_name or _default_font_name()
     return style.model_copy(

@@ -79,6 +79,17 @@ DEFAULT_CHANNEL = "@python"
 DEFAULT_DURATION = 30
 
 
+def _subtitle_style(name: str, size: int | None = None) -> Any:
+    """Preset de subtítulos con tamaño explícito opcional (px).
+
+    Sin ``size`` se deja el automático del preset (≈3,5 % de la altura).
+    """
+    style = subtitle_style_preset(name)
+    if size is not None:
+        style = style.model_copy(update={"font_size": size})
+    return style
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Construye el parser de argumentos de ``youber-workflow``."""
     parser = argparse.ArgumentParser(
@@ -283,6 +294,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--ai-texts",
         action="store_true",
         help="Con --visuals ai: superponer los textos del guion sobre los planos",
+    )
+    parser.add_argument(
+        "--subtitle-size",
+        type=int,
+        default=None,
+        metavar="PX",
+        help=(
+            "Con --sync: tamaño de la letra en píxeles (default: auto, "
+            "≈3,5 %% de la altura ≈38 px a 1080p)"
+        ),
     )
     parser.add_argument(
         "--no-texts",
@@ -880,6 +901,7 @@ async def run_lyrics_video(
     whisper: bool = False,
     whisper_model: str = "small",
     subtitle_style: str = "clean",
+    subtitle_size: int | None = None,
     preview: bool = False,
     channel_data: ChannelData | None = None,
     journal: bool = True,
@@ -1330,7 +1352,7 @@ async def run_lyrics_video(
                 lyrics_file=lyrics_path,
                 whisper=whisper,
                 model=whisper_model,
-                style=subtitle_style_preset(subtitle_style),
+                style=_subtitle_style(subtitle_style, subtitle_size),
                 add_audio=False,
             )
             final_video = Path(sync_result.output_path)
@@ -1490,6 +1512,7 @@ def main() -> None:
                     whisper=args.whisper,
                     whisper_model=args.model,
                     subtitle_style=args.style,
+                    subtitle_size=args.subtitle_size,
                     preview=args.preview,
                     journal=not args.no_journal,
                     journal_db=args.journal_db,

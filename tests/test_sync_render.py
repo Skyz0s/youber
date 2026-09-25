@@ -35,8 +35,8 @@ def test_build_filter_estilo_explicito():
     )
     assert vf.startswith("subtitles=filename='subtitles.srt'")
     assert "FontName=Arial" in vf
-    assert "FontSize=54" in vf  # auto: 1080 * 0.05
-    assert "MarginV=54" in vf
+    assert "FontSize=38" in vf  # auto: 1080 * 0.035
+    assert "MarginV=43" in vf  # auto: 1080 * 0.04
     assert "fontsdir" not in vf
 
 
