@@ -301,15 +301,18 @@ class SubtitleRenderer:
             vf = build_subtitles_filter(
                 srt_file.name, active_style, height, default_fonts_dir()
             )
+            # ``_run_ffmpeg`` corre con cwd dentro del directorio temporal (para
+            # el .srt relativo del filtro): las rutas del vídeo y la salida van
+            # ABSOLUTAS o ffmpeg las busca dentro del tmp y no las encuentra.
             cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-i", str(video_path),
+                "-i", str(video_path.resolve()),
                 "-vf", vf,
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                 "-pix_fmt", "yuv420p",
                 "-c:a", "aac",
                 "-movflags", "+faststart",
-                str(output_path),
+                str(output_path.resolve()),
             ]
             await _run_ffmpeg(cmd, cwd=workdir)
 

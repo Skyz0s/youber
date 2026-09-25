@@ -148,3 +148,21 @@ def test_cli_burn_real(tmp_path: Path, capsys):
     assert code == 0
     assert output.is_file()
     assert "Subtítulos quemados" in capsys.readouterr().out
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="Requiere FFmpeg en el sistema")
+async def test_render_acepta_rutas_relativas(tmp_path: Path, monkeypatch):
+    """Regresión: el render corre con cwd en el temporal del .srt.
+
+    Con rutas relativas, ffmpeg las buscaba dentro del tmp y fallaba con
+    «Error opening input»: el módulo solo funcionaba con rutas absolutas.
+    """
+    workdir = tmp_path / "trabajo"
+    workdir.mkdir()
+    await _make_test_video(workdir / "video.mp4")
+
+    monkeypatch.chdir(workdir)
+    result = await SubtitleRenderer().render(
+        "video.mp4", _timed_doc(), output="video_sub.mp4"
+    )
+    assert Path(result.output_path).is_file()
