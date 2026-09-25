@@ -523,3 +523,49 @@ def test_cli_align_sin_entrada_sale_con_error():
 
     with pytest.raises(SystemExit):
         main(["align", "--lyrics", "x.txt"])
+
+
+# ---------------------------------------------------------------------------
+# Anotaciones de producción en los ficheros de letra
+# ---------------------------------------------------------------------------
+
+
+def test_clean_lyric_line_descarta_anotaciones():
+    from youber.sync.timestamps import clean_lyric_line
+
+    # Anotaciones de estudio: no se cantan.
+    for annotation in (
+        "---",
+        "***",
+        "**Title: Mi canción**",
+        "**[Intro — spoken, dry]**",
+        "[Verse 1]",
+        "[Chorus]",
+        "Title: Mi canción",
+        "Artist: Alguien",
+    ):
+        assert clean_lyric_line(annotation) is None, annotation
+
+    # Letra de verdad: se conserva (sin marcas de énfasis).
+    assert clean_lyric_line("You said you needed space") == "You said you needed space"
+    # Línea ENTERA en negrita = anotación de estudio, no letra cantada.
+    assert clean_lyric_line("**verso cantado**") is None
+    # Énfasis embebido en una línea con letra: se quita la marca, no el texto.
+    assert clean_lyric_line("dijo **adiós** y se fue") == "dijo adiós y se fue"
+    assert clean_lyric_line("   ") is None
+
+
+def test_parse_txt_descarta_anotaciones():
+    from youber.sync.timestamps import parse_txt
+
+    doc = parse_txt(
+        "**Title: Demo**\n\n---\n\n**[Intro]**\nprimera línea\nsegunda línea\n"
+    )
+    assert [line.text for line in doc.lines] == ["primera línea", "segunda línea"]
+
+
+def test_parse_lrc_descarta_anotaciones():
+    from youber.sync.timestamps import parse_lrc
+
+    doc = parse_lrc("[00:01.00][Verse 1]\n[00:02.50]primera línea\n[00:04.00]---\n")
+    assert [line.text for line in doc.lines] == ["primera línea"]

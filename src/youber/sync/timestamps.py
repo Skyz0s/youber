@@ -93,6 +93,54 @@ _SRT_TIME = re.compile(
 )
 
 
+#: Separadores decorativos (``---``, ``===``, ``***``) sin texto.
+_SEPARATOR_ONLY = re.compile(r"^[-=_*~#\s]{3,}$")
+
+#: Etiquetas de sección entre corchetes (``[Intro]``, ``[Verse 1]``).
+_BRACKETED_ONLY = re.compile(r"^\[[^\]]*\]$")
+
+#: Líneas enteras en negrita/cursiva: en las letras de estudio son
+#: anotaciones de producción («**Title: ...**»), no letra cantada.
+_EMPHASIS_ONLY = re.compile(r"^(?:\*\*.+\*\*|__.+__|\*.+\*|_.+_)$")
+
+#: Metadatos tipo ``Title:``/``Artist:`` al principio de línea.
+_META_LABEL = re.compile(
+    r"^(?:title|artist|author|autor|t[ií]tulo|album|[aá]lbum)\s*:",
+    re.IGNORECASE,
+)
+
+#: Marcas de énfasis que envuelven letra de verdad (``**verso**``).
+_EMPHASIS_WRAP = re.compile(r"\*\*(.+?)\*\*|__(.+?)__", re.DOTALL)
+
+
+def clean_lyric_line(raw: str) -> str | None:
+    """Línea de letra lista para quemar, o ``None`` si es una anotación.
+
+    Los ficheros de letra llevan marcas de producción (``---``,
+    ``**[Intro — spoken, dry]**``, ``[Verse 1]``, ``Title: …``) que no se
+    cantan. Si se queman en el vídeo, el espectador lee instrucciones de
+    estudio en vez de la canción.
+
+    Args:
+        raw: Línea tal cual viene del fichero.
+
+    Returns:
+        La línea limpia (sin marcas de énfasis), o ``None`` si no es letra.
+    """
+    line = raw.strip()
+    if not line:
+        return None
+    if (
+        _SEPARATOR_ONLY.fullmatch(line)
+        or _BRACKETED_ONLY.fullmatch(line)
+        or _EMPHASIS_ONLY.fullmatch(line)
+        or _META_LABEL.match(line)
+    ):
+        return None
+    cleaned = _EMPHASIS_WRAP.sub(lambda match: match.group(1) or match.group(2), line)
+    return cleaned.strip() or None
+
+
 def _lrc_tag_to_seconds(match: re.Match) -> float:
     minutes = int(match.group(1))
     secs = int(match.group(2))
@@ -128,14 +176,15 @@ def parse_lrc(text: str) -> LyricsDocument:
         times = list(_LRC_TIME.finditer(stripped))
         if times:
             content = _LRC_TIME.sub("", stripped).strip()
-            if not content:
+            cleaned = clean_lyric_line(content)
+            if cleaned is None:
                 continue
             for tag in times:
                 lines.append(
                     SyncLine(
                         start=max(0.0, _lrc_tag_to_seconds(tag) + offset_seconds),
                         end=None,
-                        text=content,
+                        text=cleaned,
                     )
                 )
             continue
@@ -205,11 +254,15 @@ def parse_srt(text: str) -> LyricsDocument:
 
 
 def parse_txt(text: str) -> LyricsDocument:
-    """Parsea letra de texto plano (sin marcas temporales)."""
+    """Parsea letra de texto plano (sin marcas temporales).
+
+    Descarta las anotaciones de producción (``---``, ``[Verse 1]``,
+    ``**Title: …**``): no se cantan y no deben acabar en pantalla.
+    """
     lines = [
-        SyncLine(text=raw.strip())
+        SyncLine(text=cleaned)
         for raw in text.splitlines()
-        if raw.strip()
+        if (cleaned := clean_lyric_line(raw)) is not None
     ]
     return LyricsDocument(lines=lines, timed=False, source="txt")
 
