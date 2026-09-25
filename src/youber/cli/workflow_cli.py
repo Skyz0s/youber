@@ -56,6 +56,7 @@ from youber.journal import (
     record_from_workflow_run,
 )
 from youber.music.library import MusicLibrary, find_track
+from youber.music.lyrics_analyzer import LyricsAnalyzer
 from youber.music.models import Track
 from youber.music.selector import TrackMatch, select_tracks, theme_profile
 from youber.research.channel_analyzer import ChannelAnalyzer
@@ -874,6 +875,11 @@ async def run_lyrics_video(
     duration_from_audio: bool = True,
     clip_audio: bool = False,
     clip_volume: float = DEFAULT_CLIP_VOLUME,
+    sync_lyrics: bool = False,
+    lyrics_file: str | None = None,
+    whisper: bool = False,
+    whisper_model: str = "small",
+    subtitle_style: str = "clean",
     preview: bool = False,
     channel_data: ChannelData | None = None,
     journal: bool = True,
@@ -1299,6 +1305,44 @@ async def run_lyrics_video(
         elif visuals != "ai":
             console.print("⏭️  Render omitido (--no-render)")
 
+        # Letras sincronizadas quemadas sobre el vídeo final: la canción ya
+        # está mezclada, así que solo se dibujan los subtítulos (add_audio=False).
+        if sync_lyrics and final_video is not None and chosen_track is not None:
+            console.print(
+                Panel.fit(
+                    f"[bold cyan]Letras sincronizadas (estilo '{subtitle_style}')[/]",
+                    border_style="cyan",
+                )
+            )
+            lyrics_path: Path | None = Path(lyrics_file) if lyrics_file else None
+            if lyrics_path is None and lyrics_dir:
+                lyrics_path = LyricsAnalyzer.find_lyrics_file(chosen_track, lyrics_dir)
+            if lyrics_path is not None:
+                console.print(f"🎤 Letra: [bold]{lyrics_path.name}[/]")
+            else:
+                console.print(
+                    "🎤 Sin fichero de letra: se busca junto al audio de la canción"
+                )
+            sync_result = await sync_video_with_track(
+                final_video,
+                chosen_track.file_path,
+                output=final_video,
+                lyrics_file=lyrics_path,
+                whisper=whisper,
+                model=whisper_model,
+                style=subtitle_style_preset(subtitle_style),
+                add_audio=False,
+            )
+            final_video = Path(sync_result.output_path)
+            console.print(
+                f"🎤 Letra quemada (estilo {subtitle_style}) → "
+                f"[bold green]{final_video}[/]"
+            )
+        elif sync_lyrics:
+            console.print(
+                "⚠️  --sync sin canción elegida del catálogo: nada que sincronizar"
+            )
+
         # Exportación
         brief_json = export_channel(channel, out / f"{_slug(channel.name)}.json", fmt="json")
         script_path = out / f"{_slug(brief.topic)}_guion.json"
@@ -1441,6 +1485,11 @@ def main() -> None:
                     music_volume=args.music_volume,
                     clip_audio=args.clip_audio,
                     clip_volume=args.clip_volume,
+                    sync_lyrics=args.sync,
+                    lyrics_file=args.lyrics,
+                    whisper=args.whisper,
+                    whisper_model=args.model,
+                    subtitle_style=args.style,
                     preview=args.preview,
                     journal=not args.no_journal,
                     journal_db=args.journal_db,
