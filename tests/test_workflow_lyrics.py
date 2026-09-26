@@ -240,6 +240,85 @@ async def test_lyrics_video_no_render_exporta_brief_y_guion(offline) -> None:
     assert "PROMPT DE PRODUCCIÓN" in result["prompt"]
 
 
+async def test_lyrics_video_alinea_con_whisper_sin_pasarlo(offline, monkeypatch, tmp_path: Path) -> None:
+    """Letra .txt sin tiempos: se alinea con Whisper aunque no se pase --whisper.
+
+    El reparto proporcional no va clavado a la voz; si hay Whisper instalado el
+    flujo lo usa solo (antes colaba sin avisar y la letra salía desincronizada).
+    """
+    from types import SimpleNamespace
+
+    import youber.cli.workflow_cli as workflow_cli
+
+    capturado: dict = {}
+
+    async def fake_sync(video, audio, output=None, **kwargs):
+        capturado.update(kwargs)
+        return SimpleNamespace(
+            output_path=Path(output), duration=6.0, resolution=(1920, 1080)
+        )
+
+    monkeypatch.setattr(workflow_cli, "sync_video_with_track", fake_sync)
+    monkeypatch.setattr(workflow_cli, "whisper_available", lambda: True)
+
+    letra = tmp_path / "letra.txt"
+    letra.write_text(
+        "You said you needed space\nand me, like a fool\n", encoding="utf-8"
+    )
+
+    await run_lyrics_video(
+        demo=True,
+        topic="Sync",
+        output_dir=str(tmp_path / "out-sync"),
+        library_dir=str(tmp_path / "music-sync"),
+        stock="none",
+        track="sad",
+        lyrics_file=str(letra),
+        sync_lyrics=True,
+        whisper=False,
+    )
+
+    assert capturado["whisper"] is True
+
+
+async def test_lyrics_video_sin_whisper_usa_proporcional(
+    offline, monkeypatch, tmp_path: Path, capsys
+) -> None:
+    """Sin Whisper instalado no se realinea, pero se avisa en consola."""
+    from types import SimpleNamespace
+
+    import youber.cli.workflow_cli as workflow_cli
+
+    capturado: dict = {}
+
+    async def fake_sync(video, audio, output=None, **kwargs):
+        capturado.update(kwargs)
+        return SimpleNamespace(
+            output_path=Path(output), duration=6.0, resolution=(1920, 1080)
+        )
+
+    monkeypatch.setattr(workflow_cli, "sync_video_with_track", fake_sync)
+    monkeypatch.setattr(workflow_cli, "whisper_available", lambda: False)
+
+    letra = tmp_path / "letra.txt"
+    letra.write_text("una letra sin tiempos\n", encoding="utf-8")
+
+    await run_lyrics_video(
+        demo=True,
+        topic="Sin Whisper",
+        output_dir=str(tmp_path / "out-now"),
+        library_dir=str(tmp_path / "music-now"),
+        stock="none",
+        track="sad",
+        lyrics_file=str(letra),
+        sync_lyrics=True,
+    )
+
+    assert capturado["whisper"] is False
+    salida = capsys.readouterr().out
+    assert "Whisper no instalado" in salida
+
+
 async def test_lyrics_video_track_forzado(offline) -> None:
     result = await run_lyrics_video(
         demo=True,

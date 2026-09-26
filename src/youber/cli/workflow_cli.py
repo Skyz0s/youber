@@ -69,8 +69,10 @@ from youber.research.exporters import (
 from youber.research.patterns import channel_overview
 from youber.script.builder import DEFAULT_CLIP_VOLUME, build_project
 from youber.script.prompt import brief_to_script, build_video_brief
+from youber.sync.aligner import whisper_available
 from youber.sync.pipeline import sync_video_with_track
 from youber.sync.renderer import subtitle_style_preset
+from youber.sync.timestamps import parse_lyrics_file
 from youber.video.editor import VideoEditor
 
 console = Console()
@@ -1345,12 +1347,29 @@ async def run_lyrics_video(
                 console.print(
                     "🎤 Sin fichero de letra: se busca junto al audio de la canción"
                 )
+            # La letra .txt no trae tiempos: sin alinear con Whisper se reparte
+            # proporcional y NO va clavada a la voz. Si hay Whisper instalado se
+            # usa aunque no se pase --whisper (el fallo silencioso colaba).
+            align_whisper = whisper
+            if not align_whisper and lyrics_path is not None:
+                if whisper_available() and not parse_lyrics_file(lyrics_path).timed:
+                    align_whisper = True
+                    console.print(
+                        "🎙️  Letra sin tiempos: se alinea con Whisper "
+                        "(sincronía real, no reparto proporcional)"
+                    )
+                elif not whisper_available():
+                    console.print(
+                        "[yellow]⚠️  Whisper no instalado: la letra se reparte "
+                        "proporcional y no irá clavada a la voz "
+                        "(pip install 'youber[sync]')[/]"
+                    )
             sync_result = await sync_video_with_track(
                 final_video,
                 chosen_track.file_path,
                 output=final_video,
                 lyrics_file=lyrics_path,
-                whisper=whisper,
+                whisper=align_whisper,
                 model=whisper_model,
                 style=_subtitle_style(subtitle_style, subtitle_size),
                 add_audio=False,

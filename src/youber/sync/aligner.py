@@ -198,6 +198,16 @@ def _transcribe_blocking(
         ) from None
 
 
+def whisper_available() -> bool:
+    """¿Hay algún backend de Whisper instalado (faster-whisper u openai-whisper)?"""
+    import importlib.util
+
+    return bool(
+        importlib.util.find_spec("faster_whisper")
+        or importlib.util.find_spec("whisper")
+    )
+
+
 async def transcribe_segments(
     audio_path: str | Path,
     model_size: str = "small",
