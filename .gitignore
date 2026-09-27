@@ -10,6 +10,9 @@ __pycache__/
 *.log
 .pytest_cache/
 
+# Pruebas de humo y diagnósticos locales (scripts y salidas sueltas)
+/.smoke-data/
+
 # Reportes generados por los ejemplos y la CLI
 reports/
 
@@ -23,7 +26,7 @@ dist/
 # Metadata de instalación editable
 src/*.egg-info/
 
-# Clon de OpenMontage para validaci�n e2e del driver de montaje (no es parte del repo)
+# Clon de OpenMontage para validaci�n e2e del driver de montaje (no es parte del repo)
 /OpenMontage/
 
 # Salidas generadas por producciones locales (youber-produce, workflow)

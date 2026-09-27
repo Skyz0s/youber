@@ -334,11 +334,18 @@ async def test_workflow_sync_y_upload(tmp_path: Path, monkeypatch):
 
     upload_calls: dict = {}
 
-    async def fake_upload(video_path, *, title, description, tags, privacy):
+    async def fake_upload(video_path, *, title, description, tags, privacy, **kwargs):
         upload_calls.update(
-            video=Path(video_path), title=title, tags=tags, privacy=privacy
+            video=Path(video_path), title=title, tags=tags, privacy=privacy, extra=kwargs
         )
-        return "https://youtu.be/abc123"
+        return SimpleNamespace(
+            video_id="abc123",
+            url="https://youtu.be/abc123",
+            thumbnail=None,
+            captions=None,
+            chapters=False,
+            published=True,
+        )
 
     monkeypatch.setattr(wf, "MusicLibrary", FakeLibrary)
     monkeypatch.setattr(wf, "generate_test_video", fake_gen)

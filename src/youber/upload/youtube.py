@@ -3,6 +3,9 @@
 Usa la **subida resumable** oficial: primero se inicializa con los metadatos
 (POST) y se recibe una URL de subida, y después se envían los bytes del
 vídeo (PUT). Solo se publica **contenido propio** o con licencia.
+
+Además del vídeo, el cliente sube la **miniatura** (``thumbnails.set``) y las
+**pistas de subtítulos** (``captions.insert``) del flujo de letras.
 """
 
 from __future__ import annotations
@@ -13,11 +16,33 @@ import httpx
 from loguru import logger
 
 from youber.upload.auth import YouTubeAuth
+from youber.upload.captions import (
+    CAPTIONS_API_URL,
+    CAPTIONS_UPLOAD_URL,
+    DEFAULT_CAPTION_MIME,
+    DEFAULT_LANGUAGE,
+    build_multipart_body,
+    caption_snippet,
+)
 from youber.upload.metadata import VideoMetadata
 
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 API_URL = "https://www.googleapis.com/youtube/v3/videos"
+THUMBNAILS_URL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
 CONTENT_TYPE = "application/octet-stream"
+
+#: Extensiones → MIME de imagen de miniatura.
+THUMBNAIL_MIME = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+}
+
+_SCOPE_HINT = (
+    "La API ha rechazado el token por permisos: la miniatura y las pistas de "
+    "subtítulos necesitan el scope 'youtube.force-ssl'. Rehaz la autorización: "
+    "youber-upload auth"
+)
 
 
 class YouTubeUploader:
@@ -92,6 +117,131 @@ class YouTubeUploader:
         video_id = resource.get("id")
         logger.info(f"Vídeo subido: {video_id} → {self.get_video_url(video_id)}")
         return resource
+
+    async def set_thumbnail(
+        self,
+        video_id: str,
+        image_path: str | Path,
+    ) -> dict:
+        """Sube y fija la miniatura de un vídeo (``thumbnails.set``).
+
+        Args:
+            video_id: Id del vídeo al que se asocia la miniatura.
+            image_path: JPEG/PNG de la miniatura (máx. 2 MB para el vídeo ya
+                publicado; la API acepta hasta 50 MB).
+
+        Returns:
+            El recurso devuelto por la API (``items`` con las miniaturas).
+
+        Raises:
+            FileNotFoundError: si la imagen no existe.
+            RuntimeError: si la API rechaza la subida.
+        """
+        path = Path(image_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Miniatura no encontrada: {path}")
+
+        mime = THUMBNAIL_MIME.get(path.suffix.lower(), "application/octet-stream")
+        headers = {**await self._headers(), "Content-Type": mime}
+        params = {"videoId": video_id, "uploadType": "media"}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                THUMBNAILS_URL,
+                params=params,
+                headers=headers,
+                content=path.read_bytes(),
+            )
+            self._raise(response)
+            resource = response.json()
+        logger.info(f"Miniatura fijada para el vídeo {video_id}")
+        return resource
+
+    async def upload_caption(
+        self,
+        video_id: str,
+        caption_path: str | Path,
+        *,
+        language: str = DEFAULT_LANGUAGE,
+        name: str | None = None,
+        is_draft: bool = False,
+        mime: str = DEFAULT_CAPTION_MIME,
+    ) -> dict:
+        """Sube una pista de subtítulos (``captions.insert``).
+
+        La pista se sube en ``multipart/related``: el ``snippet`` en JSON y el
+        fichero (.srt) como parte binaria. Requiere el scope
+        ``youtube.force-ssl``.
+
+        Args:
+            video_id: Id del vídeo al que pertenece la pista.
+            caption_path: Fichero de subtítulos (.srt).
+            language: Código ISO 639-1 del idioma (por defecto ``es``).
+            name: Nombre visible de la pista.
+            is_draft: Subir como borrador (no visible para el público).
+            mime: MIME de la parte binaria.
+
+        Returns:
+            La pista creada (``id`` y ``snippet``).
+
+        Raises:
+            FileNotFoundError: si el fichero de subtítulos no existe.
+            RuntimeError: si la API rechaza la subida.
+        """
+        path = Path(caption_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Subtítulos no encontrados: {path}")
+
+        snippet = caption_snippet(
+            video_id, language=language, name=name, is_draft=is_draft
+        )
+        body, content_type = build_multipart_body(
+            snippet, path.read_bytes(), mime=mime
+        )
+        headers = {**await self._headers(), "Content-Type": content_type}
+        params = {"uploadType": "multipart", "part": "snippet"}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                CAPTIONS_UPLOAD_URL, params=params, headers=headers, content=body
+            )
+            self._raise(response)
+            resource = response.json()
+        logger.info(
+            f"Pista de subtítulos subida ({language}) para el vídeo {video_id}"
+        )
+        return resource
+
+    async def list_captions(self, video_id: str) -> list[dict]:
+        """Lista las pistas de subtítulos de un vídeo (``captions.list``).
+
+        Args:
+            video_id: Id del vídeo.
+
+        Returns:
+            Las pistas (``items`` de la respuesta).
+        """
+        headers = await self._headers()
+        params = {"part": "snippet", "videoId": video_id}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(CAPTIONS_API_URL, params=params, headers=headers)
+            self._raise(response)
+            return list(response.json().get("items", []))
+
+    async def delete_caption(self, caption_id: str) -> None:
+        """Borra una pista de subtítulos (``captions.delete``)."""
+        headers = await self._headers()
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.delete(
+                CAPTIONS_API_URL, params={"id": caption_id}, headers=headers
+            )
+            self._raise(response)
+        logger.info(f"Pista de subtítulos borrada: {caption_id}")
+
+    @staticmethod
+    def _raise(response: httpx.Response) -> None:
+        """``raise_for_status`` con pista clara si falta el scope de la API."""
+        if response.status_code in (401, 403):
+            raise RuntimeError(f"{_SCOPE_HINT} (HTTP {response.status_code})")
+        response.raise_for_status()
 
     async def check_status(self, video_id: str) -> dict:
         """Consulta el estado de un vídeo subido.

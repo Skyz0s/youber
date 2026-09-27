@@ -1,7 +1,9 @@
 # Subida a YouTube (`youber.upload`)
 
 Módulo educativo para publicar **contenido propio** (o con licencia) en
-YouTube usando la YouTube Data API v3 con OAuth 2.0.
+YouTube usando la YouTube Data API v3 con OAuth 2.0: vídeo, **miniatura**
+(`thumbnails.set`), **pistas de subtítulos** (`captions.insert`) y
+**capítulos** en la descripción.
 
 ## Requisitos
 
@@ -28,6 +30,11 @@ YouTube usando la YouTube Data API v3 con OAuth 2.0.
    Se abre una URL, autorizas con tu cuenta y pegas el código. Los tokens se
    guardan en `~/.youber/credentials/youtube_token.json` (se refrescan solos).
 
+   Scopes pedidos: `youtube` (subida de vídeo y miniatura) y
+   `youtube.force-ssl` (pistas de subtítulos: `captions.insert` **no** acepta
+   el scope de solo subida). Si subes una pista con un token viejo recibirás
+   un aviso claro pidiendo rehacer `youber-upload auth`.
+
 ## CLI
 
 ```bash
@@ -42,6 +49,16 @@ youber-upload schedule video.mp4 --title "..." --publish-at "2026-09-15 10:00:00
 
 # Consultar estado
 youber-upload status <video_id>
+
+# Miniatura: del fotograma con más energía del vídeo + título rotulado
+# (en Windows resuelve la fuente del sistema; el JPEG sale a 1280×720)
+youber-upload thumbnail <video_id> --video final.mp4 --text "Mi título"
+youber-upload thumbnail <video_id> --image mi_miniatura.jpg   # imagen propia
+
+# Pistas de subtítulos (accesibilidad + búsqueda)
+youber-upload captions <video_id> letra.es.srt --language es --name "Español"
+youber-upload captions <video_id> --list
+youber-upload captions <video_id> --delete <caption_id>
 ```
 
 Opciones de `upload`/`schedule`:
@@ -50,6 +67,18 @@ Opciones de `upload`/`schedule`:
 - `--category` (id de categoría; por defecto 22 = People & Blogs).
 - `--privacy public|unlisted|private` (por defecto `private`).
 - `--publish-at "YYYY-MM-DD HH:MM:SS"` (solo en `schedule`; fuerza `private`).
+
+Opciones de `thumbnail`:
+
+- `--video` genera la miniatura del vídeo (elige el instante con **más
+  energía** del audio, descartando los fundidos) o `--image` sube una ya hecha
+  (mutuamente excluyentes).
+- `--text` rotula el título (blanco con contorno negro, varias líneas
+  envueltas) y `--time` fuerza el segundo exacto del fotograma.
+- `-o/--output` ruta del JPEG generado.
+
+Opciones de `captions`: `--language` (ISO 639-1, por defecto `es`), `--name`,
+`--draft` (borrador no visible), `--list` y `--delete <id>`.
 
 ## Uso desde código
 
@@ -83,6 +112,32 @@ asyncio.run(main())
 - **Subida** (`youtube.py`): **subida resumable** oficial — primero un POST
   con los metadatos (recibe la URL de subida) y después un PUT con los bytes
   del vídeo. `check_status()` consulta el estado y `get_video_url()` la URL.
+  `set_thumbnail()`, `upload_caption()`, `list_captions()` y
+  `delete_caption()` completan la publicación.
+- **Miniatura** (`thumbnail.py`): mide la energía RMS del audio del vídeo
+  (mismo análisis que `youber.visuals.short`) y extrae el fotograma del pico;
+  opcionalmente lo rotula con `drawtext` y lo recorta a 16:9 (1280×720).
+- **Subtítulos** (`captions.py`): construye el cuerpo `multipart/related` de
+  `captions.insert` (snippet JSON + fichero) sin dependencias extra.
+- **Capítulos** (`chapters.py`): `build_chapters()` valida los requisitos de
+  YouTube (mínimo 3 capítulos, 10 s cada uno, primero en `00:00`) y devuelve
+  cadena vacía si no se cumplen, para omitir el bloque en vez de ensuciar la
+  descripción.
+
+## Publicación de una vez: `youber-workflow --upload`
+
+El flujo de letras (`--lyrics-video`) puede publicar el resultado completo:
+
+```bash
+youber-workflow --lyrics-video --demo --upload --privacy private \
+    --sync --captions --chapters --no-thumbnail
+```
+
+- `--thumbnail/--no-thumbnail` (por defecto **sí**): genera la miniatura del
+  vídeo final y la sube.
+- `--captions`: sube la letra alineada como pista (el `.srt` se guarda como
+  artefacto junto al vídeo aunque no se suba).
+- `--chapters`: añade a la descripción los capítulos del guion (`00:00 …`).
 
 ## Ética
 

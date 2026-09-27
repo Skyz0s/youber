@@ -22,7 +22,15 @@ from loguru import logger
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
-SCOPES = "https://www.googleapis.com/auth/youtube"
+
+#: Scopes de la app: ``youtube`` (subida de vídeo y miniatura) y
+#: ``youtube.force-ssl`` (pistas de subtítulos: ``captions.insert`` **no**
+#: acepta el scope de solo subida). Ver:
+#: https://developers.google.com/youtube/v3/docs/captions/insert
+SCOPES = (
+    "https://www.googleapis.com/auth/youtube "
+    "https://www.googleapis.com/auth/youtube.force-ssl"
+)
 
 DEFAULT_CREDENTIALS_DIR = Path.home() / ".youber" / "credentials"
 TOKEN_FILENAME = "youtube_token.json"

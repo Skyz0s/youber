@@ -88,6 +88,7 @@ async def sync_video_with_track(
     language: str | None = None,
     style: SubtitleStyle | None = None,
     add_audio: bool = True,
+    srt_out: str | Path | None = None,
 ) -> RenderResult:
     """Sincroniza la letra de ``audio`` y la quema sobre ``video``.
 
@@ -100,6 +101,10 @@ async def sync_video_with_track(
             sonora del vídeo (para montajes sin pista de audio). Si
             ``False``, se asume que el vídeo ya contiene la canción y solo
             se queman los subtítulos.
+        srt_out: si se indica, la alineación se guarda como ``.srt`` en esa
+            ruta. El ``.srt`` es un artefacto reutilizable: se puede subir
+            como pista de subtítulos (``captions.insert``) sin volver a
+            quemar el vídeo.
 
     Returns:
         RenderResult con la ruta final, duración y resolución.
@@ -111,6 +116,12 @@ async def sync_video_with_track(
         model=model,
         language=language,
     )
+    if srt_out is not None:
+        from youber.sync.timestamps import to_srt
+
+        subtitle_file = Path(srt_out)
+        subtitle_file.parent.mkdir(parents=True, exist_ok=True)
+        subtitle_file.write_text(to_srt(document), encoding="utf-8")
 
     video_path = Path(video)
     target = (

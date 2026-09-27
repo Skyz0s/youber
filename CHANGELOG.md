@@ -8,6 +8,34 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Added
 
+- **Publicación completa** (`youber.upload`): el flujo ya no termina en
+  «subir el vídeo» — sube también la **miniatura** (`thumbnails.set`) y las
+  **pistas de subtítulos** (`captions.insert`), y añade **capítulos** a la
+  descripción.
+  - `youber.upload.thumbnail`: elige el fotograma del instante con más energía
+    del audio (el estribillo; descarta los fundidos), lo recorta a 16:9
+    (1280×720) y puede rotular el título con el mismo lenguaje visual de los
+    subtítulos (blanco con contorno). Resuelve la fuente del sistema en
+    Windows (FFmpeg no usa fontconfig ahí).
+  - `youber.upload.captions`: cuerpo `multipart/related` de `captions.insert`
+    (snippet JSON + `.srt`) sin dependencias extra.
+  - `youber.upload.chapters`: `build_chapters()` valida los requisitos de
+    YouTube (3+ capítulos, 10 s mínimo, el primero en `00:00`) y omite el
+    bloque si no se cumplen; `chapters_from_script()` los saca del guion.
+  - `youber-upload thumbnail <video_id> --video|--image [--text] [--time]` y
+    `youber-upload captions <video_id> <srt> [--language] [--name] [--draft]
+    [--list] [--delete <id>]`.
+  - `youber-workflow --lyrics-video --upload` con `--thumbnail/--no-thumbnail`
+    (sí por defecto), `--captions` y `--chapters`; el `.srt` alineado se
+    guarda como artefacto (`sync_video_with_track(..., srt_out=...)`) aunque no
+    se suba.
+  - **Scopes**: la app pide ahora `youtube` **y** `youtube.force-ssl`;
+    `captions.insert` no acepta el scope de solo subida. Si el token guardado
+    es anterior, la subida de la pista avisa de que hay que rehacer
+    `youber-upload auth`.
+  - 28 tests nuevos en `tests/test_upload_publish.py`; docs en
+    `docs/UPLOAD.md`.
+
 - **Estilo visual automático** (`youber.visuals.selector`): el estilo de los
   planos ya no es fijo — se deduce del **audio** (energía, valencia, tempo,
   baile, acústica, modo del `AudioProfile`; o la sonoridad medida con FFmpeg si

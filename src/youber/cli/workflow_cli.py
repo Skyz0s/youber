@@ -42,6 +42,7 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -73,6 +74,8 @@ from youber.sync.aligner import whisper_available
 from youber.sync.pipeline import sync_video_with_track
 from youber.sync.renderer import subtitle_style_preset
 from youber.sync.timestamps import parse_lyrics_file
+from youber.upload.chapters import chapters_from_script
+from youber.upload.thumbnail import make_thumbnail
 from youber.video.editor import VideoEditor
 
 console = Console()
@@ -183,6 +186,33 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("private", "unlisted", "public"),
         default="private",
         help="Privacidad de la subida (default: private)",
+    )
+    parser.add_argument(
+        "--thumbnail",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Con --upload: genera la miniatura del vídeo (fotograma con más "
+            "energía + título) y la sube (default: sí; --no-thumbnail para no)"
+        ),
+    )
+    parser.add_argument(
+        "--captions",
+        action="store_true",
+        help=(
+            "Con --upload y --sync: sube la letra alineada como pista de "
+            "subtítulos (requiere el scope youtube.force-ssl: rehaz youber-upload auth)"
+        ),
+    )
+    parser.add_argument(
+        "--caption-language",
+        default="es",
+        help="Idioma ISO 639-1 de la pista de subtítulos (default: es)",
+    )
+    parser.add_argument(
+        "--chapters",
+        action="store_true",
+        help="Con --upload: añade los capítulos del guion a la descripción",
     )
     # -- Flujo «metadatos → letras → vídeo» (--lyrics-video)
     parser.add_argument(
@@ -581,6 +611,10 @@ async def run_workflow(
     upload: bool = False,
     upload_title: str | None = None,
     privacy: str = "private",
+    thumbnail: bool = False,
+    captions: bool = False,
+    chapters: bool = False,
+    caption_language: str = "es",
     journal: bool = True,
     journal_db: str | None = None,
 ) -> dict[str, Any]:
@@ -701,6 +735,7 @@ async def run_workflow(
             )
         )
         console.print(f"🎤 Sincronizando letra contra: [bold]{audio_source}[/]")
+        srt_path = out / f"{_slug(channel.name)}.es.srt"
         sync_result = await sync_video_with_track(
             final_video,
             audio_source,
@@ -710,11 +745,13 @@ async def run_workflow(
             model=model,
             style=subtitle_style_preset(style),
             add_audio=False,  # la canción ya está mezclada en el vídeo
+            srt_out=srt_path,
         )
         final_video = Path(sync_result.output_path)
         console.print(
             f"🎤 Subtítulos quemados (estilo {style}) → [bold green]{final_video}[/]"
         )
+        console.print(f"📝 Subtítulos como pista: [bold]{srt_path.name}[/]")
 
     # Paso 8 (opcional): subida a YouTube
     if upload:
@@ -730,14 +767,24 @@ async def run_workflow(
             f"{channel.url or ''}\n"
             + (("# " + " #".join(hashtags)) if hashtags else "")
         )
-        upload_url = await _upload_video(
+        if chapters:
+            console.print(
+                "[yellow]⚠️  --chapters no aplica al flujo clásico (sin guion "
+                "por escenas): se omite[/]"
+            )
+        outcome = await _upload_video(
             final_video,
             title=title,
             description=description,
             tags=hashtags,
             privacy=privacy,
+            thumbnail=thumbnail,
+            thumbnail_text=title,
+            captions=(srt_path if (captions and sync_lyrics) else None),
+            caption_language=caption_language,
         )
-        console.print(f"🚀 Subido: [bold]{upload_url}[/] (privacidad: {privacy})")
+        upload_url = outcome.url
+        _print_upload(outcome)
 
     decision_id: str | None = None
     if journal:
@@ -919,6 +966,13 @@ async def run_lyrics_video(
     ai_texts: bool = False,
     no_texts: bool = False,
     short: float | None = None,
+    upload: bool = False,
+    upload_title: str | None = None,
+    privacy: str = "private",
+    thumbnail: bool = False,
+    captions: bool = False,
+    chapters: bool = False,
+    caption_language: str = "es",
 ) -> dict[str, Any]:
     """Metadatos del canal → letras → prompt → vídeo local (Pexels) + canción.
 
@@ -971,6 +1025,16 @@ async def run_lyrics_video(
         short: Si es un número, además del máster se genera el **corte
             vertical** (9:16) de esos segundos, elegido en el trozo con más
             energía de la canción (el estribillo).
+        upload: Publicar el vídeo final en YouTube (requiere
+            ``youber-upload auth``).
+        upload_title: Título de la publicación (por defecto: tema + canal).
+        privacy: Privacidad de la publicación (``private``/``unlisted``/
+            ``public``).
+        thumbnail: Generar y subir la miniatura del vídeo (requiere FFmpeg).
+        captions: Subir la letra alineada como pista de subtítulos
+            (``captions.insert``; requiere el scope ``youtube.force-ssl``).
+        chapters: Añadir los capítulos del guion a la descripción.
+        caption_language: Idioma ISO 639-1 de la pista de subtítulos.
 
     Returns:
         Diccionario con el prompt, el guion, la canción elegida y las rutas
@@ -1111,6 +1175,7 @@ async def run_lyrics_video(
         short_start: float | None = None
         visual_plan: Any = None
         plan_path: Path | None = None
+        srt_path: Path | None = None
         if visuals == "ai":
             from youber.audio._ffmpeg import probe_duration
             from youber.visuals.generator import create_generator
@@ -1373,16 +1438,50 @@ async def run_lyrics_video(
                 model=whisper_model,
                 style=_subtitle_style(subtitle_style, subtitle_size),
                 add_audio=False,
+                srt_out=out / f"{_slug(brief.topic)}.es.srt",
             )
+            srt_path = out / f"{_slug(brief.topic)}.es.srt"
             final_video = Path(sync_result.output_path)
             console.print(
                 f"🎤 Letra quemada (estilo {subtitle_style}) → "
                 f"[bold green]{final_video}[/]"
             )
+            console.print(f"📝 Subtítulos como pista: [bold]{srt_path.name}[/]")
         elif sync_lyrics:
             console.print(
                 "⚠️  --sync sin canción elegida del catálogo: nada que sincronizar"
             )
+
+        # Publicación (opcional): vídeo + miniatura + pista de subtítulos
+        outcome: UploadOutcome | None = None
+        if upload and final_video is not None:
+            console.print(
+                Panel.fit("[bold cyan]Publicación en YouTube[/]", border_style="cyan")
+            )
+            hashtags = [
+                entry["hashtag"] for entry in (insights.get("top_hashtags") or [])
+            ][:5]
+            title = upload_title or f"{brief.topic} · {channel.name}"
+            chapters_text = chapters_from_script(script) if chapters else ""
+            description = _publish_description(brief, channel, hashtags, chapters_text)
+            if chapters and not chapters_text:
+                console.print(
+                    "[yellow]⚠️  Sin capítulos válidos (YouTube exige 3+ de 10 s): "
+                    "se omite el bloque[/]"
+                )
+            outcome = await _upload_video(
+                final_video,
+                title=title,
+                description=description,
+                tags=hashtags,
+                privacy=privacy,
+                thumbnail=thumbnail,
+                thumbnail_text=title,
+                captions=srt_path if (captions and sync_lyrics) else None,
+                caption_language=caption_language,
+            )
+            outcome.chapters = bool(chapters_text)
+            _print_upload(outcome, privacy=privacy)
 
         # Exportación
         brief_json = export_channel(channel, out / f"{_slug(channel.name)}.json", fmt="json")
@@ -1465,8 +1564,64 @@ async def run_lyrics_video(
         "plan": str(plan_path) if plan_path else None,
         "short_video": str(short_video) if short_video else None,
         "short_start": short_start,
+        "srt": str(srt_path) if srt_path else None,
+        "upload_url": outcome.url if outcome and outcome.published else None,
+        "thumbnail": outcome.thumbnail if outcome else None,
+        "caption_id": outcome.captions if outcome else None,
         "decision_id": decision_id,
     }
+
+
+def _publish_description(
+    brief: Any,
+    channel: ChannelData,
+    hashtags: list[str],
+    chapters: str = "",
+) -> str:
+    """Descripción de la publicación (canal, origen, capítulos y hashtags)."""
+    parts = [
+        f"{brief.topic} · {channel.name}",
+        "Producido con youber-workflow a partir de los metadatos del canal "
+        f"{channel.name}.",
+    ]
+    if channel.url:
+        parts.append(channel.url)
+    if chapters:
+        parts.append(f"\nCapítulos:\n{chapters}")
+    if hashtags:
+        parts.append("# " + " #".join(hashtags))
+    return "\n".join(parts)
+
+
+class UploadOutcome(BaseModel):
+    """Resultado de publicar: vídeo, miniatura y pista de subtítulos."""
+
+    video_id: str | None = None
+    url: str = ""
+    thumbnail: str | None = None
+    captions: str | None = None
+    chapters: bool = False
+
+    @property
+    def published(self) -> bool:
+        """Indica si el vídeo llegó a publicarse (tiene id)."""
+        return bool(self.video_id)
+
+
+def _print_upload(outcome: UploadOutcome, *, privacy: str = "private") -> None:
+    """Muestra el resumen de la publicación (vídeo + extras)."""
+    lines = [
+        f"[bold green]Vídeo subido[/]\n"
+        f"URL: {outcome.url}\n"
+        f"privacidad: {privacy}"
+    ]
+    if outcome.thumbnail:
+        lines.append(f"miniaturas: {outcome.thumbnail}")
+    if outcome.captions:
+        lines.append(f"pista de subtítulos: {outcome.captions}")
+    if outcome.chapters:
+        lines.append("capítulos: sí (en la descripción)")
+    console.print(Panel.fit("\n".join(lines), border_style="green"))
 
 
 async def _upload_video(
@@ -1476,8 +1631,16 @@ async def _upload_video(
     description: str = "",
     tags: list[str] | None = None,
     privacy: str = "private",
-) -> str:
+    thumbnail: bool = False,
+    thumbnail_text: str | None = None,
+    captions: str | Path | None = None,
+    caption_language: str = "es",
+) -> UploadOutcome:
     """Sube un vídeo a YouTube con la API oficial (requiere auth previa).
+
+    Además del vídeo, si se pide, genera y sube la **miniatura**
+    (``thumbnails.set``) y la **pista de subtítulos** (``captions.insert``,
+    requiere el scope ``youtube.force-ssl``).
 
     Raises:
         RuntimeError: si no hay credenciales (ejecuta ``youber-upload auth``).
@@ -1497,9 +1660,28 @@ async def _upload_video(
         tags=tags or [],
         privacy_status=PrivacyStatus(privacy),
     )
-    resource = await YouTubeUploader(auth).upload_video(video_path, metadata)
+    uploader = YouTubeUploader(auth)
+    resource = await uploader.upload_video(video_path, metadata)
     video_id = (resource or {}).get("id")
-    return YouTubeUploader.get_video_url(video_id) if video_id else "(sin id)"
+    outcome = UploadOutcome(
+        video_id=video_id,
+        url=YouTubeUploader.get_video_url(video_id) if video_id else "(sin id)",
+    )
+    if not video_id:
+        return outcome
+
+    if thumbnail:
+        result = await make_thumbnail(video_path, text=thumbnail_text or None)
+        await uploader.set_thumbnail(video_id, result.path)
+        outcome.thumbnail = str(result.path)
+
+    if captions is not None:
+        track = await uploader.upload_caption(
+            video_id, captions, language=caption_language
+        )
+        outcome.captions = str((track or {}).get("id") or track)
+
+    return outcome
 
 
 def main() -> None:
@@ -1545,6 +1727,13 @@ def main() -> None:
                     ai_texts=args.ai_texts,
                     no_texts=args.no_texts,
                     short=args.short,
+                    upload=args.upload,
+                    upload_title=args.upload_title,
+                    privacy=args.privacy,
+                    thumbnail=args.thumbnail,
+                    captions=args.captions,
+                    chapters=args.chapters,
+                    caption_language=args.caption_language,
                 )
             )
             console.print(
@@ -1571,6 +1760,10 @@ def main() -> None:
                 upload=args.upload,
                 upload_title=args.upload_title,
                 privacy=args.privacy,
+                thumbnail=args.thumbnail,
+                captions=args.captions,
+                chapters=args.chapters,
+                caption_language=args.caption_language,
                 journal=not args.no_journal,
                 journal_db=args.journal_db,
             )
