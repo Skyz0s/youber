@@ -40,6 +40,17 @@ def _isolate_journal_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("YOUBER_JOURNAL_DB", str(tmp_path / "journal.db"))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_weights_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redirige ``YOUBER_WEIGHTS`` a un directorio temporal por test.
+
+    Los pesos del selector aprendidos viven en ``~/.youber``; sin esto, un
+    test que los lea o escriba tocaría el fichero real del usuario (y el
+    resultado dependería de su historial).
+    """
+    monkeypatch.setenv("YOUBER_WEIGHTS", str(tmp_path / "selection_weights.json"))
+
+
 @lru_cache(maxsize=1)
 def network_available() -> bool:
     """``True`` si hay salida real a internet (se comprueba una vez por sesión).

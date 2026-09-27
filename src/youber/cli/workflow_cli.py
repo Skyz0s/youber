@@ -60,6 +60,7 @@ from youber.music.library import MusicLibrary, find_track
 from youber.music.lyrics_analyzer import LyricsAnalyzer
 from youber.music.models import Track
 from youber.music.selector import TrackMatch, select_tracks, theme_profile
+from youber.music.weights import SelectionWeights
 from youber.research.channel_analyzer import ChannelAnalyzer
 from youber.research.data_models import ChannelData, VideoData
 from youber.research.exporters import (
@@ -213,6 +214,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--chapters",
         action="store_true",
         help="Con --upload: añade los capítulos del guion a la descripción",
+    )
+    parser.add_argument(
+        "--no-weights",
+        action="store_true",
+        help=(
+            "Con --lyrics-video: ignorar los pesos del selector aprendidos del "
+            "journal (youber-journal learn) y usar los de por defecto"
+        ),
     )
     # -- Flujo «metadatos → letras → vídeo» (--lyrics-video)
     parser.add_argument(
@@ -973,6 +982,7 @@ async def run_lyrics_video(
     captions: bool = False,
     chapters: bool = False,
     caption_language: str = "es",
+    use_weights: bool = True,
 ) -> dict[str, Any]:
     """Metadatos del canal → letras → prompt → vídeo local (Pexels) + canción.
 
@@ -1035,6 +1045,9 @@ async def run_lyrics_video(
             (``captions.insert``; requiere el scope ``youtube.force-ssl``).
         chapters: Añadir los capítulos del guion a la descripción.
         caption_language: Idioma ISO 639-1 de la pista de subtítulos.
+        use_weights: Usar los pesos del selector aprendidos del journal
+            (``youber-journal learn``) si existen. Con ``False`` se usan
+            siempre los pesos por defecto.
 
     Returns:
         Diccionario con el prompt, el guion, la canción elegida y las rutas
@@ -1080,6 +1093,11 @@ async def run_lyrics_video(
         console.print("🧠 Perfil del contenido: sin temas claros en los metadatos")
 
     library = MusicLibrary(library_dir)
+    selection_weights = SelectionWeights.load() if use_weights else None
+    if selection_weights is not None:
+        console.print(
+            f"⚖️  Pesos del selector: [bold]{selection_weights.source_label()}[/]"
+        )
     candidates: list[TrackMatch] = []
     try:
         if lyrics_dir:
@@ -1118,6 +1136,7 @@ async def run_lyrics_video(
                 keywords=profile.top_words,
                 limit=5,
                 require_local=True,
+                weights=selection_weights,
             )
             match = candidates[0] if candidates else None
             chosen_track = library.get(match.track_id) if match is not None else None
@@ -1568,6 +1587,9 @@ async def run_lyrics_video(
         "upload_url": outcome.url if outcome and outcome.published else None,
         "thumbnail": outcome.thumbnail if outcome else None,
         "caption_id": outcome.captions if outcome else None,
+        "weights": selection_weights.source_label()
+        if selection_weights is not None
+        else "por defecto (desactivados)",
         "decision_id": decision_id,
     }
 
@@ -1734,6 +1756,7 @@ def main() -> None:
                     captions=args.captions,
                     chapters=args.chapters,
                     caption_language=args.caption_language,
+                    use_weights=not args.no_weights,
                 )
             )
             console.print(

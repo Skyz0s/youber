@@ -19,14 +19,17 @@ from pydantic import BaseModel, Field
 
 from youber.music.lyrics_analyzer import LyricsAnalysis, LyricsAnalyzer
 from youber.music.models import Mood, Track, TrackSource
+from youber.music.weights import DEFAULT_WEIGHTS, SelectionWeights
 
 # Pesos del scoring (ajustables; documentados para que la elección sea auditable).
-THEME_WEIGHT = 3.0  # por tema compartido (× peso del vídeo × peso de la letra)
-SENTIMENT_WEIGHT = 1.5  # sentimiento de la letra == sentimiento del vídeo
-MOOD_WEIGHT = 2.0  # mood etiquetado en la pista == mood del vídeo
-KEYWORD_WEIGHT = 0.5  # por palabra del vídeo presente en título/artista/género
-FAVORITE_BONUS = 0.5  # las favoritas del usuario pesan un poco más
-USAGE_PENALTY = 0.1  # por uso previo (rota las canciones entre vídeos)
+# Valen como *prior*: :class:`~youber.music.weights.SelectionWeights` puede
+# reescalarlos con lo aprendido del decision journal (``youber-journal learn``).
+THEME_WEIGHT = DEFAULT_WEIGHTS["theme"]  # por tema compartido (× peso del vídeo × peso de la letra)
+SENTIMENT_WEIGHT = DEFAULT_WEIGHTS["sentiment"]  # sentimiento de la letra == sentimiento del vídeo
+MOOD_WEIGHT = DEFAULT_WEIGHTS["mood"]  # mood etiquetado en la pista == mood del vídeo
+KEYWORD_WEIGHT = DEFAULT_WEIGHTS["keyword"]  # por palabra del vídeo presente en título/artista/género
+FAVORITE_BONUS = DEFAULT_WEIGHTS["favorite"]  # las favoritas del usuario pesan un poco más
+USAGE_PENALTY = DEFAULT_WEIGHTS["usage"]  # por uso previo (rota las canciones entre vídeos)
 
 
 class TrackMatch(BaseModel):
@@ -98,6 +101,7 @@ def score_breakdown(
     sentiment: str = "neutral",
     mood: Mood | None = None,
     keywords: Sequence[str] = (),
+    weights: SelectionWeights | None = None,
 ) -> TrackBreakdown:
     """Desglosa la puntuación de una pista señal a señal.
 
@@ -111,11 +115,14 @@ def score_breakdown(
         sentiment: Sentimiento del vídeo (``positive``/``negative``/``neutral``).
         mood: Mood objetivo (opcional).
         keywords: Palabras clave del vídeo (opcional).
+        weights: Pesos a usar (p. ej. los aprendidos del journal). Si es
+            ``None``, se usan los de por defecto.
 
     Returns:
         El :class:`TrackBreakdown` con el total y cada aportación.
     """
     profile = themes or {}
+    active = weights.as_dict() if weights is not None else DEFAULT_WEIGHTS
     breakdown = TrackBreakdown()
 
     for theme, video_weight in sorted(
@@ -123,18 +130,20 @@ def score_breakdown(
     ):
         track_weight = track.lyrical_themes.get(theme)
         if track_weight:
-            breakdown.theme_score += THEME_WEIGHT * float(video_weight) * float(track_weight)
+            breakdown.theme_score += (
+                active["theme"] * float(video_weight) * float(track_weight)
+            )
             breakdown.matched_themes.append(theme)
 
     if sentiment != "neutral" and track.lyrical_sentiment == sentiment:
-        breakdown.sentiment_score = SENTIMENT_WEIGHT
+        breakdown.sentiment_score = active["sentiment"]
     if mood is not None and mood in track.moods:
-        breakdown.mood_score = MOOD_WEIGHT
+        breakdown.mood_score = active["mood"]
     breakdown.keyword_hits = int(_text_score(track, keywords))
-    breakdown.keyword_score = KEYWORD_WEIGHT * breakdown.keyword_hits
+    breakdown.keyword_score = active["keyword"] * breakdown.keyword_hits
     if track.favorite:
-        breakdown.favorite_bonus = FAVORITE_BONUS
-    breakdown.usage_penalty = USAGE_PENALTY * track.usage_count
+        breakdown.favorite_bonus = active["favorite"]
+    breakdown.usage_penalty = active["usage"] * track.usage_count
     breakdown.total = (
         breakdown.theme_score
         + breakdown.sentiment_score
@@ -153,6 +162,7 @@ def score_track_for_profile(
     sentiment: str = "neutral",
     mood: Mood | None = None,
     keywords: Sequence[str] = (),
+    weights: SelectionWeights | None = None,
 ) -> tuple[float, list[str]]:
     """Puntúa una pista contra el perfil temático de un vídeo.
 
@@ -162,12 +172,18 @@ def score_track_for_profile(
         sentiment: Sentimiento del vídeo (``positive``/``negative``/``neutral``).
         mood: Mood objetivo (opcional).
         keywords: Palabras clave del vídeo (opcional).
+        weights: Pesos a usar (por defecto, los del prior).
 
     Returns:
         ``(puntuación, temas_compartidos)`` con los temas ordenados por peso.
     """
     breakdown = score_breakdown(
-        track, themes=themes, sentiment=sentiment, mood=mood, keywords=keywords
+        track,
+        themes=themes,
+        sentiment=sentiment,
+        mood=mood,
+        keywords=keywords,
+        weights=weights,
     )
     return breakdown.total, list(breakdown.matched_themes)
 
@@ -203,6 +219,7 @@ def select_tracks(
     limit: int = 5,
     require_lyrics: bool = False,
     require_local: bool = False,
+    weights: SelectionWeights | None = None,
 ) -> list[TrackMatch]:
     """Ordena las pistas del catálogo por afinidad con el perfil del vídeo.
 
@@ -215,6 +232,7 @@ def select_tracks(
         require_lyrics: Si ``True``, ignora las pistas sin letra analizada.
         require_local: Si ``True``, ignora las pistas sin fichero de audio
             (importadas de plataformas): solo se puede montar audio propio.
+        weights: Pesos a usar (los aprendidos del journal, si se quiere).
 
     Returns:
         Lista de :class:`TrackMatch` ordenada por puntuación (mayor primero).
@@ -235,6 +253,7 @@ def select_tracks(
             sentiment=sentiment,
             mood=mood,
             keywords=keywords,
+            weights=weights,
         )
         matches.append(
             TrackMatch(
@@ -258,6 +277,7 @@ def select_best_track(
     keywords: Sequence[str] = (),
     require_lyrics: bool = False,
     require_local: bool = False,
+    weights: SelectionWeights | None = None,
 ) -> TrackMatch | None:
     """Devuelve la mejor candidata del catálogo (o ``None`` si no hay pistas)."""
     matches = select_tracks(
@@ -268,5 +288,6 @@ def select_best_track(
         limit=1,
         require_lyrics=require_lyrics,
         require_local=require_local,
+        weights=weights,
     )
     return matches[0] if matches else None

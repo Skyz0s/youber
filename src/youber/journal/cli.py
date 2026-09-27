@@ -47,12 +47,19 @@ from youber.journal.analytics import (
 )
 from youber.journal.importers import import_analytics_csv
 from youber.journal.journal import DecisionJournal, default_journal_path
+from youber.journal.learn import (
+    LEARNING_STRENGTH,
+    MIN_SAMPLES,
+    learn_weights,
+    weights_report,
+)
 from youber.journal.models import DecisionRecord, PerformanceSnapshot
 from youber.journal.reminders import (
     DEFAULT_MIN_AGE_DAYS,
     DEFAULT_WINDOWS,
     pending_metrics,
 )
+from youber.music.weights import SelectionWeights, default_weights_path
 
 console = Console()
 
@@ -192,6 +199,46 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub.add_parser("stats", help="Resumen del journal")
+
+    learn = sub.add_parser(
+        "learn", help="Aprende los pesos del selector desde las métricas del canal"
+    )
+    learn.add_argument(
+        "--metric",
+        default="ctr",
+        choices=tuple(OUTCOME_LABELS),
+        help="Métrica a optimizar (default: ctr)",
+    )
+    learn.add_argument("--window", default=None, help="Ventana de métricas a usar")
+    learn.add_argument(
+        "--min-samples",
+        type=int,
+        default=MIN_SAMPLES,
+        help=f"Vídeos medidos mínimos para aprender (default: {MIN_SAMPLES})",
+    )
+    learn.add_argument(
+        "--strength",
+        type=float,
+        default=LEARNING_STRENGTH,
+        help=f"Cuánto puede mover la evidencia cada peso (default: {LEARNING_STRENGTH:g})",
+    )
+    learn.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        help="Fichero de pesos (default: %(default)s)",
+    )
+    learn.add_argument(
+        "--report", default=None, help="Guardar además el informe en Markdown"
+    )
+
+    weights = sub.add_parser(
+        "weights", help="Muestra (o borra) los pesos aprendidos del selector"
+    )
+    weights.add_argument("--file", default=None, help="Fichero de pesos alternativo")
+    weights.add_argument(
+        "--clear", action="store_true", help="Borra los pesos guardados (vuelve al prior)"
+    )
 
     remove = sub.add_parser("remove", help="Elimina una decisión y sus métricas")
     remove.add_argument("decision_id", help="Id de la decisión")
@@ -551,6 +598,94 @@ def _run_analyze(journal: DecisionJournal, args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_learn(journal: DecisionJournal, args: argparse.Namespace) -> int:
+    """Aprende los pesos del selector desde las métricas y los guarda."""
+    rows = journal.dataset(window=args.window)
+    weights = learn_weights(
+        rows,
+        metric=args.metric,
+        min_samples=args.min_samples,
+        strength=args.strength,
+    )
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Pesos del selector[/] · {weights.source_label()}",
+            border_style="cyan",
+        )
+    )
+    if not weights.learned:
+        console.print(f"[yellow]Sin datos suficientes:[/] {weights.reason}")
+        console.print(
+            "Sigue registrando vídeos y pega el CSV de Studio con "
+            "`youber-journal import`; hasta entonces el selector usa el prior."
+        )
+        return 0
+
+    table = Table(title="Pesos aprendidos")
+    table.add_column("Señal")
+    table.add_column("Base", justify="right")
+    table.add_column("Final", justify="right")
+    table.add_column("Factor", justify="right")
+    table.add_column("Evidencia")
+    for label, base, weight, factor, correlation in weights.describe():
+        table.add_row(label, f"{base:g}", f"{weight:g}", factor, correlation)
+    console.print(table)
+
+    path = weights.save(args.output)
+    console.print(f"✓ Pesos guardados: [bold]{path}[/]")
+    console.print(f"   {weights.reason}")
+
+    report = weights_report(weights)
+    if args.report:
+        target = Path(args.report)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(report, encoding="utf-8")
+        console.print(f"✓ Informe guardado: [bold]{target}[/]")
+    elif args.json:
+        console.print(report, markup=False, soft_wrap=True)
+    return 0
+
+
+def _run_weights(journal: DecisionJournal, args: argparse.Namespace) -> int:
+    """Muestra (o borra) los pesos guardados del selector."""
+    target = Path(args.file) if args.file else default_weights_path()
+    if args.clear:
+        removed = SelectionWeights.clear(target)
+        console.print(
+            f"✓ Pesos borrados: [bold]{target}[/]"
+            if removed
+            else f"[yellow]No había pesos en {target}[/]"
+        )
+        return 0
+
+    weights = SelectionWeights.load(target)
+    console.print(
+        Panel.fit(
+            f"[bold cyan]Pesos del selector[/] · {weights.source_label()}\n{weights.reason}",
+            border_style="cyan",
+        )
+    )
+    if args.json:
+        console.print(
+            json.dumps(
+                json.loads(weights.model_dump_json()), ensure_ascii=False, indent=2
+            ),
+            markup=False,
+            soft_wrap=True,
+        )
+        return 0
+    table = Table(title=str(target))
+    table.add_column("Señal")
+    table.add_column("Base", justify="right")
+    table.add_column("Final", justify="right")
+    table.add_column("Factor", justify="right")
+    table.add_column("Evidencia")
+    for label, base, weight, factor, correlation in weights.describe():
+        table.add_row(label, f"{base:g}", f"{weight:g}", factor, correlation)
+    console.print(table)
+    return 0
+
+
 def _parse_now(raw: str | None) -> datetime | None:
     """Fecha de referencia (ISO-8601) para calcular antigüedades.
 
@@ -633,6 +768,8 @@ _COMMANDS = {
     "import": _run_import,
     "dataset": _run_dataset,
     "analyze": _run_analyze,
+    "learn": _run_learn,
+    "weights": _run_weights,
     "pending": _run_pending,
     "stats": _run_stats,
     "remove": _run_remove,

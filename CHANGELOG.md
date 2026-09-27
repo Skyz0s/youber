@@ -8,6 +8,32 @@ proyecto usa [Versionado Semántico](https://semver.org/lang/es/).
 
 ### Added
 
+- **Bucle de aprendizaje del journal** (`youber-journal learn` / `weights`): las
+  métricas reales del canal ya no se quedan en un informe — **ajustan los pesos
+  del selector de canciones**.
+  - `youber.music.weights`: `SelectionWeights` encapsula los pesos del scoring
+    (con sus valores por defecto como *prior*), los guarda en JSON
+    (`YOUBER_WEIGHTS` o `~/.youber/selection_weights.json`) y explica su
+    procedencia (`source_label()`).
+  - `youber.journal.learn`: `learn_weights()` correlaciona cada señal
+    (`theme_score`, `sentiment_match`, `mood_match`, `keyword_hits`,
+    `favorite`, `usage_count`) con la métrica elegida y reescala el peso base
+    por `1 + dirección · fuerza · r · n/(n+min_samples)` (encogimiento hacia el
+    prior con pocos datos), acotado a `[0.25, 4.0]`. En las señales de castigo
+    la dirección se invierte: reusar canciones que rinden peor **sube** el
+    castigo.
+  - `youber.music.selector` acepta `weights=` en `score_breakdown`,
+    `score_track_for_profile`, `select_tracks` y `select_best_track`; el flujo
+    `youber-workflow --lyrics-video` los carga solos (``--no-weights`` fuerza el
+    prior) y muestra su procedencia.
+  - **Sin datos suficientes** (5 vídeos medidos por defecto) devuelve los pesos
+    por defecto: el comportamiento no cambia hasta que haya evidencia real.
+  - `youber-journal learn [--metric ctr] [--min-samples N] [--report FILE]` y
+    `youber-journal weights [--clear]`.
+  - 21 tests nuevos en `tests/test_weights.py`; `tests/conftest.py` aísla
+    `YOUBER_WEIGHTS` por test; docs en `docs/DECISION_JOURNAL.md` y
+    `docs/MUSIC.md`.
+
 - **Publicación completa** (`youber.upload`): el flujo ya no termina en
   «subir el vídeo» — sube también la **miniatura** (`thumbnails.set`) y las
   **pistas de subtítulos** (`captions.insert`), y añade **capítulos** a la

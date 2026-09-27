@@ -102,6 +102,37 @@ La separación features/resultados es deliberada: ninguna feature usa
 información del futuro, así que el dataset sirve como base para un modelo
 predictivo (con suficientes datos) en vez de ser una profecía autocumplida.
 
+## Cerrar el bucle: aprender los pesos del selector
+
+`youber-journal learn` da el paso siguiente: convierte las correlaciones en
+**pesos** para el selector de canciones (`youber.music.selector`), que los
+usa en el flujo de letras (`youber-workflow --lyrics-video`).
+
+```bash
+youber-journal learn --metric ctr            # guarda en ~/.youber/selection_weights.json
+youber-journal learn --metric retention --min-samples 10 --report pesos.md
+youber-journal weights                       # ver los pesos en uso
+youber-journal weights --clear               # volver al prior
+```
+
+Cómo aprende (sencillo y auditable):
+
+1. Toma las decisiones con la métrica medida (p. ej. `ctr`).
+2. Correlaciona cada señal (`theme_score`, `sentiment_match`, `mood_match`,
+   `keyword_hits`, `favorite`, `usage_count`) con esa métrica.
+3. Multiplica el peso base por `1 + dirección · fuerza · r · n/(n+min_samples)`
+   — el **encogimiento** deja el peso cerca del prior cuando hay pocos datos —
+   y lo acota a `[0.25, 4.0]`.
+4. Guarda el resultado con su justificación (r, n, factor por señal).
+
+En las señales de castigo (`usage_count`) la dirección se invierte: si reusar
+una canción correlaciona con peor resultado, el castigo **sube**.
+
+**Sin datos suficientes devuelve los pesos por defecto** (mínimo 5 vídeos
+medidos, configurable con `--min-samples`), así que el flujo se comporta
+exactamente igual que antes hasta que haya evidencia real. `--no-weights` en
+`youber-workflow` ignora los pesos guardados y usa el prior.
+
 ## Recordatorio semanal de métricas
 
 `youber-journal pending` dice a qué vídeos **ya publicados** les faltan

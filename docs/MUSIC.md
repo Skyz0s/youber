@@ -216,6 +216,12 @@ género) y calcula el SHA-256 del fichero:
 
 ## Sugerencias (`matcher.py`)
 
+Los pesos del **selector de canciones** (`selector.py`, el que usa el flujo
+`--lyrics-video`) pueden venir aprendidos de las métricas reales del canal
+con `youber-journal learn`; se guardan en `~/.youber/selection_weights.json`
+y se cargan solos (ver `docs/DECISION_JOURNAL.md`). Sin datos, valen los
+pesos por defecto.
+
 `score_track()` puntúa cada pista: +5 si coincide el mood, +2 si es
 favorita, +1 por palabra del texto encontrada en título/artista/género,
 +1.5×peso si coincide el tema de la letra pedido (`lyrical_theme`) y
