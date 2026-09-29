@@ -212,6 +212,52 @@ Los tamaños de generación son *buckets* de entrenamiento de SDXL: se genera
 en la proporción final (nada de recortes raros) y FFmpeg escala a la
 resolución de entrega.
 
+## Guion visual: de la escena al prompt
+
+El prompt que recibe el modelo no sale de una plantilla de encuadre con el
+tema incrustado: sale de un **guion visual**. Cada plano es un
+:class:`~youber.visuals.beats.VisualBeat` con cinco campos explícitos, en
+inglés (el idioma con el que Wan 2.2 y SDXL entienden las descripciones
+visuales):
+
+| Campo | Qué describe | Ejemplo |
+| --- | --- | --- |
+| `camera` | Tipo de plano y movimiento | `slow push in` |
+| `subject` | Qué se ve | `a lone figure` |
+| `action` | Qué hace (el modelo de vídeo necesita movimiento) | `standing still while the world rushes past` |
+| `setting` | Dónde ocurre | `an empty city bridge at first light` |
+| `light` | Luz de la escena | `cold dawn light mixed with warm street lamps` |
+
+El prompt final se compone así (en este orden): descripción visual → atmósfera
+del mood medido → términos del contenido → **tema** → tono → sufijo de estilo.
+El tema se traduce con un **léxico local determinista**
+(`youber.visuals.beats.describe_topic`): conoce frases frecuentes y cientos de
+palabras, se come artículos y preposiciones y deja sin traducir lo que no
+sabe (mejor una palabra cruda que una invención). El original se mantiene entre
+paréntesis para poder revisar de dónde sale todo:
+
+```
+slow push in: a lone figure standing still while the world rushes past, an empty bridge at first light, cold dawn light; theme: the passing of time ("el paso del tiempo"); cinematic film still, 35mm, shallow depth of field, no text, no watermark
+```
+
+Decisiones de criterio que esto fija:
+
+- **Encuadres variados**: hay cuatro encuadres por papel de escena y se
+  recorren **desfasados por escena**, de forma que los tres bloques de
+  contenido no repiten el mismo plano (antes salían idénticos).
+- **Keywords**: las del contenido real del vídeo (`content_keywords`) sí entran
+  en el prompt, porque dan coherencia; las de la plantilla genérica de stock
+  (`working, desk, laptop`) **no**, que son para buscar B-roll, no para pedirle
+  planos al modelo. El guion las marca con `Scene.keywords_from_content`.
+- **La luz no la impone el estilo**: la dictan el plano y el mood, así que un
+  brief luminoso no acaba con «moody atmosphere» por venir de un estilo
+  cinematográfico.
+- **Trazabilidad**: cada :class:`~youber.visuals.models.Shot` guarda el
+  encuadre usado en `shot.beat`.
+
+Límite conocido: el léxico es best-effort. Un tema con palabras raras se queda
+a medias en inglés; se amplía añadiendo entradas a `TOPIC_GLOSSARY`.
+
 ## Plan de planos
 
 Cada plano sale de la escena del guion a la que pertenece (gancho, intro,

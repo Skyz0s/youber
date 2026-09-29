@@ -102,6 +102,7 @@ def _scene_titles(topic: str, patterns: dict[str, Any]) -> dict[SceneType, str]:
     """Títulos de escena derivados del tema y los patrones del canal."""
     numbered = patterns.get("with_numbers", 0) >= 2
     titles: dict[SceneType, str] = {
+        SceneType.HOOK: "Gancho",
         SceneType.INTRO: f"Introducción: {topic}",
         SceneType.CLIMAX: "El momento clave",
         SceneType.CTA: "¿Te ha servido? Comenta 👇",
@@ -201,6 +202,7 @@ def generate_script(
                     position=TextPosition.CENTER,
                     transition=TransitionType.FADE,
                     keywords=keywords,
+                    keywords_from_content=bool(content_keywords),
                 )
             )
             continue
@@ -227,6 +229,7 @@ def generate_script(
                     else TransitionType.CROSSFADE
                 ),
                 keywords=keywords,
+                keywords_from_content=bool(content_keywords),
             )
         )
 

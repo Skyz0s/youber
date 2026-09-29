@@ -120,11 +120,13 @@ class VisualStyle(StrEnum):
 
 
 #: Sufijo de prompt por estilo. Sin texto ni marcas de agua: el modelo no debe
-#: escribir nada (los textos del guion los dibuja FFmpeg encima).
+#: escribir nada (los textos del guion los dibuja FFmpeg encima). La **luz no
+#: va aquí**: la dicta el plano (``VisualBeat.light``) y el mood medido, para
+#: que un brief luminoso no acabe con «moody atmosphere» por el estilo.
 STYLE_SUFFIXES: dict[VisualStyle, str] = {
     VisualStyle.CINEMATIC: (
-        "cinematic film still, dramatic lighting, shallow depth of field, 35mm, "
-        "detailed, moody atmosphere, no text, no watermark"
+        "cinematic film still, 35mm, shallow depth of field, fine grain, "
+        "detailed, no text, no watermark"
     ),
     VisualStyle.DREAMY: (
         "dreamlike ethereal scene, soft diffused light, pastel haze, glowing bokeh, "

@@ -165,16 +165,25 @@ def requests_from_script(
         )
         role = scene.type.value if scene is not None else "plano"
         title = scene.title if scene is not None else shot.beat
+        # El clip dura lo que su plano en el montaje (acotado a 2-10 s): así no
+        # hay que estirar ni repetir el clip para cuadrar con la edición.
+        clip_config = settings.with_duration(shot.duration)
         requests.append(
             ClipRequest(
-                id=clip_id(shot.prompt, seed_base + shot.index, width=settings.width, steps=settings.steps),
+                id=clip_id(
+                    shot.prompt,
+                    seed_base + shot.index,
+                    width=clip_config.width,
+                    steps=clip_config.steps,
+                    frames=clip_config.frames,
+                ),
                 label=f"{shot.index + 1:02d} {role} {slugify(title, limit=24)}",
                 scene_index=shot.scene_index,
                 scene_type=role,
                 prompt=shot.prompt,
                 seed=seed_base + shot.index,
                 duration_hint=shot.duration,
-                config=settings.model_copy(deep=True),
+                config=clip_config,
             )
         )
     return requests
@@ -195,7 +204,13 @@ def requests_from_prompts(
         label = labels[index] if index < len(labels) else f"clip {index + 1:02d}"
         requests.append(
             ClipRequest(
-                id=clip_id(prompt, seed_base + index, width=settings.width, steps=settings.steps),
+                id=clip_id(
+                    prompt,
+                    seed_base + index,
+                    width=settings.width,
+                    steps=settings.steps,
+                    frames=settings.frames,
+                ),
                 label=label,
                 prompt=prompt,
                 seed=seed_base + index,

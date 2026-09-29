@@ -50,6 +50,13 @@ DEFAULT_FPS = 24.0
 #: 121 frames a 24 fps ≈ 5 s de vídeo (el trozo con el que se midió todo).
 DEFAULT_FRAMES = 121
 
+#: Wan 2.2 comprime el tiempo 4×: la longitud del latente tiene que ser ``4k+1``.
+FRAME_STEP = 4
+
+#: Rango sensato de duración por clip: 49 frames ≈ 2 s y 241 ≈ 10 s.
+MIN_FRAMES = 49
+MAX_FRAMES = 241
+
 #: Prompt negativo por defecto. Con cfg 1,0 (Turbo) su peso es pequeño; se
 #: queda corto y en inglés a propósito, que es lo que entienden los modelos.
 DEFAULT_NEGATIVE_PROMPT = (
@@ -72,11 +79,11 @@ PRESET_SETTINGS: dict[Resolution, dict[str, Any]] = {
     Resolution.SD: {"width": 832, "height": 480, "steps": 4},
 }
 
-#: Anclas medidas (píxeles, steps) → segundos por clip de 121 frames. Se usan
-#: solo para decidir si un clip más cabe antes del cierre de la ventana.
-MEASURED_SECONDS: tuple[tuple[int, int, float], ...] = (
-    (1280 * 704, 8, 600.0),
-    (832 * 480, 4, 180.0),
+#: Anclas medidas (píxeles, steps, frames) → segundos por clip. Se usan solo
+#: para decidir si un clip más cabe antes del cierre de la ventana nocturna.
+MEASURED_SECONDS: tuple[tuple[int, int, int, float], ...] = (
+    (1280 * 704, 8, 121, 600.0),
+    (832 * 480, 4, 121, 180.0),
 )
 
 
@@ -144,6 +151,17 @@ class GenConfig(BaseModel):
         """Duración del clip generado (segundos)."""
         return self.frames / self.fps
 
+    def with_duration(self, seconds: float) -> GenConfig:
+        """Copia con la duración pedida (frames ajustados a ``4k+1``).
+
+        Es lo que usa la generación desde un guion: cada clip dura lo que su
+        plano en el montaje (acotado al rango sensato de Wan 2.2), en vez de
+        5 s fijos.
+        """
+        return self.model_copy(
+            update={"frames": frames_for_seconds(seconds, self.fps)}
+        )
+
     @property
     def estimated_seconds(self) -> float:
         """Estimación de lo que tarda el clip (según las mediciones del spike)."""
@@ -165,15 +183,15 @@ class GenConfig(BaseModel):
 def estimate_clip_seconds(config: GenConfig) -> float:
     """Estima cuánto tarda un clip a partir de las anclas medidas.
 
-    El coste escala aproximadamente con ``píxeles × steps`` (el VAE troceado
-    incluido), así que se extrapola desde la ancla más cercana de
+    El coste escala aproximadamente con ``píxeles × steps × frames`` (el VAE
+    troceado incluido), así que se extrapola desde la ancla más cercana de
     :data:`MEASURED_SECONDS`. Es una estimación **gruesa**: solo sirve para
     decidir si otro clip cabe antes del cierre de la ventana nocturna.
     """
-    cost = float(config.width * config.height) * float(config.steps)
+    cost = float(config.width * config.height * config.steps * config.frames)
     best: tuple[float, float] | None = None
-    for pixels, steps, seconds in MEASURED_SECONDS:
-        anchor = float(pixels * steps)
+    for pixels, steps, frames, seconds in MEASURED_SECONDS:
+        anchor = float(pixels * steps * frames)
         estimate = seconds * cost / anchor
         distance = abs(cost - anchor) / anchor
         if best is None or distance < best[0]:
@@ -183,15 +201,47 @@ def estimate_clip_seconds(config: GenConfig) -> float:
     return max(30.0, best[1])
 
 
-def clip_id(prompt: str, seed: int, *, width: int, steps: int) -> str:
+def clip_id(prompt: str, seed: int, *, width: int, steps: int, frames: int) -> str:
     """Identificador **determinista** de un clip.
 
-    Se deriva del prompt, la semilla y lo que cambia la imagen (ancho y steps),
-    de forma que volver a encolar el mismo trabajo **no lo duplica**: es lo que
-    permite reanudar un lote sin repetir clips ya hechos.
+    Se deriva del prompt, la semilla y lo que cambia la imagen (ancho, steps y
+    frames), de forma que volver a encolar el mismo trabajo **no lo duplica**:
+    es lo que permite reanudar un lote sin repetir clips ya hechos.
     """
-    payload = f"{prompt}|{seed}|{width}|{steps}"
+    payload = f"{prompt}|{seed}|{width}|{steps}|{frames}"
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def frames_for_seconds(
+    seconds: float,
+    fps: float = DEFAULT_FPS,
+    *,
+    minimum: int = MIN_FRAMES,
+    maximum: int = MAX_FRAMES,
+) -> int:
+    """Frames que caben en ``seconds`` respetando el paso temporal de Wan 2.2.
+
+    Wan 2.2 comprime el tiempo 4× (la longitud del latente es ``4k+1``), así que
+    no vale cualquier cifra: se toma el ``4k+1`` **más cercano** a ``seconds``
+    (a lo sumo se falla un par de fotogramas, ~0,08 s) y se acota al rango
+    sensato (:data:`MIN_FRAMES` ≈ 2 s, :data:`MAX_FRAMES` ≈ 10 s). Así el clip
+    dura lo que dura su plano en el montaje, en vez de 5 s fijos que luego
+    había que estirar o repetir.
+
+    Args:
+        seconds: Duración objetivo del clip.
+        fps: Fotogramas por segundo.
+        minimum: Longitud mínima del clip, en frames.
+        maximum: Longitud máxima del clip, en frames.
+
+    Returns:
+        La longitud en frames (siempre ``4k+1``).
+    """
+    wanted = int(round(max(seconds, 0.0) * fps))
+    lower = wanted - ((wanted - 1) % FRAME_STEP)
+    frames = lower + FRAME_STEP if (wanted - lower) > FRAME_STEP / 2 else lower
+    frames = max(minimum, min(maximum, frames))
+    return frames - ((frames - 1) % FRAME_STEP)
 
 
 class ClipQuality(BaseModel):

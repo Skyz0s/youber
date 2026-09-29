@@ -308,6 +308,7 @@ class StubClient:
         self.delay = delay
         #: Grafos encolados (para poder inspeccionarlos en los tests).
         self.queued: list[dict[str, Any]] = []
+        self._graphs: dict[str, dict[str, Any]] = {}
         self._counter = 0
 
     async def is_up(self) -> bool:
@@ -318,7 +319,26 @@ class StubClient:
         """«Encola» un grafo (guarda el prompt) y devuelve un id ficticio."""
         self.queued.append(graph)
         self._counter += 1
-        return f"stub-{self._counter:04d}"
+        prompt_id = f"stub-{self._counter:04d}"
+        self._graphs[prompt_id] = graph
+        return prompt_id
+
+    def clip_length(self, output: ComfyOutput) -> tuple[int, float]:
+        """Frames y fps del clip de esa salida, leídos de su grafo.
+
+        Así el stub genera clips con la duración que se pidió de verdad (la de
+        cada plano del guion, por ejemplo) y la verificación mide lo correcto.
+        """
+        frames = max(1, int(round(self.seconds * self.fps)))
+        fps = self.fps
+        graph = self._graphs.get(Path(output.filename).stem)
+        for node in (graph or {}).values():
+            inputs = node.get("inputs") or {}
+            if "length" in inputs:
+                frames = int(inputs["length"])
+            if node.get("class_type") == "CreateVideo":
+                fps = float(inputs.get("fps", fps))
+        return frames, fps
 
     async def wait(
         self, prompt_id: str, *, timeout: float, poll_interval: float | None = None
@@ -345,11 +365,12 @@ class StubClient:
         """Escribe el MP4 sintético con FFmpeg (plano y oscuro si ``flat``)."""
         target = Path(dest)
         target.parent.mkdir(parents=True, exist_ok=True)
+        frames, fps = self.clip_length(output)
         size = f"{self.width}x{self.height}"
         source = (
-            f"color=c=black:s={size}:r={self.fps:g}"
+            f"color=c=black:s={size}:r={fps:g}"
             if self.flat
-            else f"testsrc2=s={size}:r={self.fps:g}"
+            else f"testsrc2=s={size}:r={fps:g}"
         )
         command = [
             "ffmpeg",
@@ -361,7 +382,7 @@ class StubClient:
             "-i",
             source,
             "-t",
-            f"{self.seconds:g}",
+            f"{frames / fps:.4f}",
             "-c:v",
             "libx264",
             "-preset",

@@ -15,7 +15,25 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from youber.script.models import Scene, SceneType
+from youber.script.models import Scene
+
+#: Encuadres por papel de escena y de reserva. Viven en
+#: :mod:`youber.visuals.beats`, donde cada plano es un
+#: :class:`~youber.visuals.beats.VisualBeat` con **cámara, sujeto, acción,
+#: escena y luz** (los campos que el modelo de vídeo necesita). Se reexportan
+#: aquí para no romper a quien los importaba de este módulo.
+from youber.visuals.beats import (
+    BEATS_BY_SCENE as BEATS_BY_SCENE,
+)
+from youber.visuals.beats import (
+    GENERIC_BEATS as GENERIC_BEATS,
+)
+from youber.visuals.beats import (
+    VisualBeat,
+    beat_for,
+    beat_from_template,
+    compose_prompt,
+)
 from youber.visuals.models import (
     DEFAULT_MOTION_BARS,
     DEFAULT_MOTION_CYCLE,
@@ -28,45 +46,6 @@ from youber.visuals.models import (
     VisualStyle,
 )
 from youber.visuals.tempo import BeatGrid
-
-#: Encuadres por papel de escena (se recorren en ciclo dentro de cada escena).
-BEATS_BY_SCENE: dict[SceneType, tuple[str, ...]] = {
-    SceneType.HOOK: (
-        "wide establishing shot of {topic}, vast landscape at first light",
-        "aerial drone view over {topic}, sweeping scale, dramatic clouds",
-        "extreme wide shot, lone figure facing {topic}",
-    ),
-    SceneType.INTRO: (
-        "medium shot introducing {topic}, natural light, soft depth of field",
-        "observational documentary shot of {topic}, everyday detail",
-        "wide shot of {topic} with layered foreground, quiet composition",
-    ),
-    SceneType.CONTENT: (
-        "close up detail of {topic}, intricate texture, shallow focus",
-        "macro texture related to {topic}, abstract surfaces, raking light",
-        "over the shoulder view of {topic}, context around the frame",
-    ),
-    SceneType.CLIMAX: (
-        "low angle shot, dramatic sky over {topic}, epic scale",
-        "silhouette against a blazing horizon, {topic}, backlit haze",
-        "high contrast scene of {topic}, storm light, motion in the air",
-    ),
-    SceneType.CTA: (
-        "empty road at sunrise leading towards {topic}, hopeful horizon",
-        "light beam through a window, {topic} implied, calm interior",
-        "wide serene horizon of {topic}, negative space for a title",
-    ),
-}
-
-#: Encuadres de reserva (cuando un plano no se puede atar a una escena).
-GENERIC_BEATS: tuple[str, ...] = (
-    "wide establishing shot of {topic}",
-    "close up detail of {topic}",
-    "silhouette of a person facing {topic}",
-    "low angle shot, dramatic sky over {topic}",
-    "abstract macro texture related to {topic}",
-    "empty room, light beam, {topic} implied",
-)
 
 #: Pistas de iluminación/atmósfera por mood de la música.
 MOOD_HINTS: dict[str, str] = {
@@ -232,7 +211,7 @@ def scene_shot_counts(
 
 
 def shot_prompt(
-    beat: str,
+    beat: VisualBeat | str,
     *,
     topic: str,
     style: VisualStyle,
@@ -240,16 +219,34 @@ def shot_prompt(
     tone: str | None = None,
     keywords: Sequence[str] = (),
 ) -> str:
-    """Compone el prompt de un plano: encuadre + tema + pistas + estilo."""
-    parts = [beat.format(topic=topic)]
-    if keywords:
-        parts.append("featuring " + ", ".join(list(keywords)[:4]))
-    if mood and mood in MOOD_HINTS:
-        parts.append(MOOD_HINTS[mood])
-    if tone:
-        parts.append(f"overall tone: {tone}")
-    parts.append(STYLE_SUFFIXES[style])
-    return ", ".join(part for part in parts if part)
+    """Compone el prompt de un plano: encuadre + atmósfera + tema + estilo.
+
+    El encuadre es un :class:`~youber.visuals.beats.VisualBeat` (cámara,
+    sujeto, acción, escena y luz); se acepta también una plantilla de texto con
+    ``{topic}`` por compatibilidad. La atmósfera sale del mood medido, el tema
+    va **traducido al inglés** (con el original entre paréntesis detrás) y el
+    estilo cierra el prompt con su acabado de película.
+
+    Args:
+        beat: Encuadre del plano.
+        topic: Tema del vídeo.
+        style: Estilo visual (decide el sufijo final).
+        mood: Mood de la música (clave de :data:`MOOD_HINTS`).
+        tone: Tono narrativo del brief.
+        keywords: Términos del contenido real del vídeo.
+
+    Returns:
+        El prompt del plano, en inglés.
+    """
+    visual = beat if isinstance(beat, VisualBeat) else beat_from_template(beat, topic)
+    return compose_prompt(
+        visual,
+        topic=topic,
+        keywords=list(keywords)[:4],
+        atmosphere=MOOD_HINTS.get(mood) if mood else None,
+        tone=tone,
+        style_suffix=STYLE_SUFFIXES[style],
+    )
 
 
 def build_shot_plan(
@@ -339,7 +336,7 @@ def build_shot_plan(
             beat_aligned=beat_aligned,
         )
         for index, shot_duration in enumerate(durations):
-            beat = GENERIC_BEATS[index % len(GENERIC_BEATS)]
+            beat = beat_for(None, index)
             plan.shots.append(
                 Shot(
                     index=index,
@@ -353,7 +350,7 @@ def build_shot_plan(
                     ),
                     motion=motion_for(index),
                     duration=shot_duration,
-                    beat=beat,
+                    beat=beat.describe(),
                 )
             )
         return plan
@@ -384,10 +381,18 @@ def build_shot_plan(
     )
     index = 0
     for scene_index, (scene, scene_shots) in enumerate(zip(scenes, counts, strict=True)):
-        beats = BEATS_BY_SCENE.get(scene.type, GENERIC_BEATS)
         scene_style = per_scene[scene_index] if scene_index < len(per_scene) else style
+        # Keywords del prompt: las del brief si las hay; si no, las de la escena
+        # **solo cuando vienen del contenido real** (la plantilla genérica de
+        # stock desviaba los planos: «working, desk, laptop» en un vídeo sobre
+        # el paso del tiempo).
+        scene_keywords = list(keywords) if keywords else (
+            list(scene.keywords) if scene.keywords_from_content else []
+        )
         for beat_index in range(scene_shots):
-            beat = beats[beat_index % len(beats)]
+            # El encuadre va desfasado por escena: los tres bloques de
+            # contenido no repiten el mismo plano (antes salían idénticos).
+            beat = beat_for(scene.type, beat_index + scene_index)
             plan.shots.append(
                 Shot(
                     index=index,
@@ -397,13 +402,13 @@ def build_shot_plan(
                         style=scene_style,
                         mood=mood,
                         tone=tone,
-                        keywords=keywords or scene.keywords,
+                        keywords=scene_keywords,
                     ),
                     motion=motion_for(index),
                     duration=durations[index],
                     style=scene_style if scene_style is not style else None,
                     scene_index=scene_index,
-                    beat=beat,
+                    beat=beat.describe(),
                 )
             )
             index += 1

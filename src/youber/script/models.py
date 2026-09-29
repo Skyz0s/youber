@@ -41,6 +41,14 @@ class Scene(BaseModel):
         default_factory=list,
         description="Términos de búsqueda para clips de stock (B-roll)",
     )
+    keywords_from_content: bool = Field(
+        default=False,
+        description=(
+            "``True`` si las keywords vienen del contenido real del vídeo (y no "
+            "de la plantilla genérica de stock): solo entonces se usan para el "
+            "prompt del generador de vídeo."
+        ),
+    )
 
 
 class Script(BaseModel):

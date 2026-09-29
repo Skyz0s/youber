@@ -14,12 +14,13 @@ opción explícita, apagados por defecto.
 | Decodificación | `VAEDecodeTiled` (tile 256, solape 64) | a 720p el cuello era el VAE: 5× más rápido y −4,7 GB de pico |
 | Steps | **8** a 720p · **4** a 480p | con 4 steps a 720p la imagen sale plana y oscura (detalle 9-21 frente a ~40) |
 | cfg / sampler | 1.0 · `euler`/`simple`, shift 8 | lo que mejor salió con la LoRA Turbo |
-| Frames | 121 @ 24 fps ≈ 5 s por clip | el trozo con el que se midió todo |
+| Frames | 121 @ 24 fps ≈ 5 s (el trozo del spike); desde un guion, los de cada plano, ajustados a `4k+1` y acotados a 2-10 s | Wan 2.2 comprime el tiempo 4×: la longitud del latente tiene que ser `4k+1` |
 | Multiplicador del latente | 1.0 | el truco del ×0,8 no mejora el detalle medido |
 
-Coste por clip de 5 s en la RTX 3050 (8 GB): **~9,5 min a 720p**, **~2,8 min a
-480p**. En una noche de 8 h: **~50 clips a 720p** (≈4 min de metraje) o
-**~170 a 480p**.
+Coste por clip en la RTX 3050 (8 GB): **~9,5 min a 720p**, **~2,8 min a 480p** para
+121 frames (5 s). El coste crece con los frames, así que un clip de 9 s cuesta
+~1,8× uno de 5 s. En una noche de 8 h: **~50 clips de 5 s a 720p** (≈4 min de
+metraje) o **~170 a 480p**.
 
 ## Qué hace el módulo
 
@@ -35,8 +36,10 @@ Coste por clip de 5 s en la RTX 3050 (8 GB): **~9,5 min a 720p**, **~2,8 min a
 - **`verify.py`** — verificación de cada clip con `ffprobe` (duración,
   resolución, fps, frames) y `ffmpeg` (brillo, **detalle** y **movimiento**),
   con los umbrales medidos.
-- **`runner.py`** — `NightlyRunner`: guion → prompts por escena → cola →
-  generación → verificación → reintento con más steps → manifiesto.
+- **`runner.py`** — `NightlyRunner`: guion → prompts por escena (guion visual de
+  `youber.visuals.beats`) → cola → generación → verificación → reintento con más
+  steps → manifiesto. Cada clip se pide con la duración de su plano en el
+  montaje (frames `4k+1`, 2-10 s), no con 5 s fijos.
 - **`cli.py`** — `youber-genvideo`.
 
 ## Uso

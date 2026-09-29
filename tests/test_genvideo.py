@@ -29,6 +29,8 @@ from youber.genvideo.client import (
 )
 from youber.genvideo.graph import SAVE_NODE, build_graph, save_node_id
 from youber.genvideo.models import (
+    MAX_FRAMES,
+    MIN_FRAMES,
     BatchReport,
     ClipQuality,
     ClipRequest,
@@ -37,6 +39,7 @@ from youber.genvideo.models import (
     Resolution,
     clip_id,
     estimate_clip_seconds,
+    frames_for_seconds,
 )
 from youber.genvideo.queue import JobQueue
 from youber.genvideo.runner import (
@@ -64,6 +67,42 @@ def _prompt_clip(prompt: str = "un tren cruzando un valle nevado") -> ClipReques
 
 
 # -- modelos --------------------------------------------------------------
+
+
+def test_frames_for_seconds_paso_temporal():
+    """Wan 2.2 necesita longitudes ``4k+1``: la duración se ajusta, no se redondea a lo bruto."""
+    assert frames_for_seconds(5.0, 24.0) == 121
+    assert frames_for_seconds(2.0, 24.0) == MIN_FRAMES  # 48 → mínimo 49
+    assert frames_for_seconds(0.1, 24.0) == MIN_FRAMES
+    assert frames_for_seconds(60.0, 24.0) == MAX_FRAMES  # no más de ~10 s
+    assert frames_for_seconds(11.0, 24.0) == MAX_FRAMES
+    for seconds in (2.0, 3.7, 5.0, 9.26, 10.0):
+        frames = frames_for_seconds(seconds, 24.0)
+        assert frames % 4 == 1
+        assert MIN_FRAMES <= frames <= MAX_FRAMES
+        # Dentro del rango, la duración se parece a la pedida (a lo sumo 2 frames).
+        assert abs(frames / 24.0 - seconds) <= 2 / 24 + 1e-9
+
+
+def test_config_with_duration():
+    """Cada clip puede durar lo que su plano (frames ajustados)."""
+    config = GenConfig.for_resolution("480p")
+    largo = config.with_duration(9.26)
+    assert largo.frames == 221
+    assert largo.clip_seconds == pytest.approx(9.208, abs=1e-3)
+    # La configuración original no se toca (copia, no mutación).
+    assert config.frames == 121
+
+
+def test_estimate_incluye_frames():
+    """Un clip más largo cuesta más: la estimación tiene en cuenta los frames."""
+    corto = GenConfig.for_resolution("480p")
+    largo = corto.with_duration(9.26)
+    assert largo.frames > corto.frames
+    assert estimate_clip_seconds(largo) > estimate_clip_seconds(corto)
+    # Las dos anclas medidas (121 frames) se reproducen exactamente.
+    assert estimate_clip_seconds(corto) == pytest.approx(180, rel=0.01)
+    assert estimate_clip_seconds(GenConfig.for_resolution("720p")) == pytest.approx(600, rel=0.01)
 
 
 def test_presets_medidos():
@@ -95,10 +134,11 @@ def test_estimate_clip_seconds_anclas():
 
 def test_clip_id_determinista():
     """El identificador depende del contenido: reencolar no duplica."""
-    first = clip_id("un prompt", 3, width=832, steps=4)
-    assert first == clip_id("un prompt", 3, width=832, steps=4)
-    assert first != clip_id("un prompt", 4, width=832, steps=4)
-    assert first != clip_id("un prompt", 3, width=1280, steps=4)
+    first = clip_id("un prompt", 3, width=832, steps=4, frames=121)
+    assert first == clip_id("un prompt", 3, width=832, steps=4, frames=121)
+    assert first != clip_id("un prompt", 4, width=832, steps=4, frames=121)
+    assert first != clip_id("un prompt", 3, width=1280, steps=4, frames=121)
+    assert first != clip_id("un prompt", 3, width=832, steps=4, frames=221)
 
 
 # -- grafo ----------------------------------------------------------------
@@ -485,7 +525,19 @@ def test_requests_from_script_deterministas():
     assert all(clip.config.width == 832 for clip in first)
     assert {clip.scene_type for clip in first} == {scene.type.value for scene in script.scenes}
     assert all(clip.duration_hint and clip.duration_hint > 0 for clip in first)
-    assert all(clip.id == clip_id(clip.prompt, clip.seed, width=832, steps=4) for clip in first)
+    assert all(
+        clip.id
+        == clip_id(
+            clip.prompt,
+            clip.seed,
+            width=clip.config.width,
+            steps=clip.config.steps,
+            frames=clip.config.frames,
+        )
+        for clip in first
+    )
+    # Encuadres (y por tanto prompts) distintos por plano: nada de repetir.
+    assert len({clip.prompt for clip in first}) == len(first)
 
 
 def test_requests_from_prompts():
