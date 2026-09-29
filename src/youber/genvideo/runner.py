@@ -37,6 +37,7 @@ from youber.genvideo.models import (
     clip_id,
 )
 from youber.genvideo.queue import JobQueue, default_dir
+from youber.genvideo.service import ComfyUIService
 from youber.genvideo.verify import MIN_DETAIL, verify_clip
 from youber.script.generator import DEFAULT_DURATION
 from youber.script.models import Script
@@ -448,6 +449,10 @@ async def run_nightly(
     state_path: str | Path | None = None,
     verify: bool = True,
     keep_awake: bool = True,
+    manage_comfyui: bool = True,
+    keep_comfyui: bool = False,
+    comfyui_dir: str | Path | None = None,
+    client: GenerationClient | None = None,
     stub: bool = False,
     stub_flat: bool = False,
     now: datetime | None = None,
@@ -474,6 +479,11 @@ async def run_nightly(
         state_path: Fichero de cola (por defecto, el del usuario).
         verify: Si se verifica cada clip.
         keep_awake: Desactivar la suspensión del equipo mientras dure el lote.
+        manage_comfyui: Levantar ComfyUI si no está y pararlo al terminar.
+        keep_comfyui: Dejar ComfyUI levantado al acabar (no pararlo).
+        comfyui_dir: Carpeta de ComfyUI (por defecto ``YOUBER_COMFYUI_DIR``
+            o ``~/ai/ComfyUI``).
+        client: Backend ya construido (tests); si falta se crea según ``stub``.
         stub: Usar el backend de pruebas (MP4 sintético, sin GPU).
         stub_flat: Con ``stub``, generar clips planos (para probar la verificación).
         now: Momento de referencia (para tests).
@@ -500,7 +510,7 @@ async def run_nightly(
                 f"{wait_seconds / 60:.0f} min"
             )
             await asyncio.sleep(wait_seconds)
-    client: GenerationClient = (
+    backend: GenerationClient = client or (
         StubClient(
             flat=stub_flat,
             seconds=settings.clip_seconds,
@@ -512,8 +522,19 @@ async def run_nightly(
         else ComfyUIClient(settings.server_url)
     )
     queue = JobQueue(state_path) if state_path else JobQueue()
+    if requests:
+        queue.extend(list(requests))
+    queue.recover()
+    # Si no hay nada pendiente no se levanta el motor para nada: el lote
+    # termina solo con «cola vacía» (volver a lanzar el mismo guion no
+    # regenera clips ni despierta la GPU).
+    service: ComfyUIService | None = None
+    started_comfyui = False
+    if manage_comfyui and not stub and queue.pending():
+        service = _comfyui_service(settings, comfyui_dir)
+        started_comfyui = await service.ensure_running()
     runner = NightlyRunner(
-        client=client,
+        client=backend,
         config=settings,
         queue=queue,
         output_dir=output_dir,
@@ -526,7 +547,16 @@ async def run_nightly(
     try:
         report = await runner.run(requests)
     finally:
-        await client.aclose()
+        await backend.aclose()
+        if service is not None and started_comfyui and not keep_comfyui:
+            await service.stop()
     if report_dir is not None:
         write_report(report, report_dir)
     return report
+
+
+def _comfyui_service(
+    settings: GenConfig, comfyui_dir: str | Path | None
+) -> ComfyUIService:
+    """Servicio de ComfyUI para este lote (separado para poder doblarlo en tests)."""
+    return ComfyUIService(settings.server_url, directory=comfyui_dir)

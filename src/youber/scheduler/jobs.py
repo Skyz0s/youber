@@ -136,6 +136,8 @@ async def _run_genvideo(params: dict[str, Any]) -> dict[str, Any]:
         max_clips: tope de clips del lote.
         output_dir/report_dir: carpetas de los clips y del informe.
         state: fichero de cola persistida.
+        manage_comfyui/keep_comfyui/comfyui_dir: arranque y parada del motor
+            (``false`` en ``keep_comfyui`` = pararlo al acabar el lote).
         demo: backend de pruebas (sin GPU), para validar el flujo.
     """
     from datetime import time as dt_time
@@ -172,6 +174,9 @@ async def _run_genvideo(params: dict[str, Any]) -> dict[str, Any]:
         report_dir=params.get("report_dir"),
         state_path=params.get("state"),
         verify=bool(params.get("verify", True)),
+        manage_comfyui=bool(params.get("manage_comfyui", True)),
+        keep_comfyui=bool(params.get("keep_comfyui", False)),
+        comfyui_dir=params.get("comfyui_dir"),
         stub=bool(params.get("demo", False)),
     )
     return {

@@ -255,6 +255,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
             state_path=args.state,
             verify=not args.no_verify,
             keep_awake=not args.no_keep_awake,
+            manage_comfyui=not args.no_manage_comfyui,
+            keep_comfyui=args.keep_comfyui,
+            comfyui_dir=args.comfyui_dir,
             stub=args.demo,
             stub_flat=args.demo_flat,
         )
@@ -344,6 +347,17 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--report", help="Carpeta del manifiesto y el resumen")
     run.add_argument("--state", help="Fichero de cola (por defecto, el del usuario)")
     run.add_argument("--no-verify", action="store_true", help="No verificar los clips")
+    run.add_argument(
+        "--no-manage-comfyui",
+        action="store_true",
+        help="No levantar/parar ComfyUI automáticamente",
+    )
+    run.add_argument(
+        "--keep-comfyui",
+        action="store_true",
+        help="Dejar ComfyUI levantado al terminar el lote",
+    )
+    run.add_argument("--comfyui-dir", help="Carpeta de ComfyUI (por defecto ~/ai/ComfyUI)")
     run.add_argument(
         "--no-keep-awake",
         action="store_true",

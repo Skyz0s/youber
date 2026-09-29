@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import subprocess
 from datetime import datetime, timedelta
@@ -51,6 +52,7 @@ from youber.genvideo.runner import (
     script_from_topic,
     write_report,
 )
+from youber.genvideo.service import ComfyUIService
 from youber.genvideo.verify import judge_quality, parse_fraction, verify_clip
 from youber.scheduler.jobs import JOB_RUNNERS, run_job
 from youber.scheduler.models import JobType, ScheduledJob, ScheduleType
@@ -917,6 +919,180 @@ def test_keep_awake_fuera_de_windows(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(power, "is_windows", lambda: False)
     with power.keep_awake() as despierto:
         assert despierto is False
+
+
+# -- ComfyUI: arranque y parada automáticos --------------------------------
+
+
+class _FakeProcess:
+    """Proceso de ComfyUI simulado (sin levantar nada de verdad)."""
+
+    def __init__(self, pid: int = 4242, alive: bool = True) -> None:
+        self.pid = pid
+        self.alive = alive
+        self.killed = False
+
+    def poll(self) -> int | None:
+        return None if self.alive else 0
+
+    def kill(self) -> None:
+        self.killed = True
+        self.alive = False
+
+
+def _service(tmp_path: Path, *, timeout: float = 1.0) -> ComfyUIService:
+    """Servicio apuntando a una instalación de mentira (con su «python»)."""
+    directory = tmp_path / "ComfyUI"
+    scripts = "Scripts" if os.name == "nt" else "bin"
+    executable = "python.exe" if os.name == "nt" else "python"
+    python = directory / ".venv" / scripts / executable
+    python.parent.mkdir(parents=True, exist_ok=True)
+    python.write_text("", encoding="utf-8")
+    return ComfyUIService(
+        "http://127.0.0.1:8188",
+        directory=directory,
+        python=python,
+        startup_timeout=timeout,
+        poll_interval=0.01,
+        log_path=tmp_path / "comfyui.log",
+    )
+
+
+def _up_sequence(values: list[bool]):
+    """``is_up`` que va devolviendo los valores indicados."""
+    state = {"index": 0}
+
+    async def fake() -> bool:
+        index = min(state["index"], len(values) - 1)
+        state["index"] += 1
+        return values[index]
+
+    return fake
+
+
+def test_service_puerto_y_comandos(tmp_path: Path):
+    """El puerto sale de la URL y los argumentos escuchan solo en local."""
+    service = _service(tmp_path)
+    assert service.port == 8188
+    assert service.args == ["main.py", "--listen", "127.0.0.1", "--port", "8188"]
+    assert ComfyUIService("http://127.0.0.1:9000").port == 9000
+    assert service.directory.name == "ComfyUI"
+
+
+def test_ensure_running_no_levanta_si_ya_esta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Si ya está levantado no se arranca nada (y no se parará al acabar)."""
+    service = _service(tmp_path)
+    monkeypatch.setattr(service, "is_up", _up_sequence([True]))
+
+    def _no_spawn() -> object:
+        raise AssertionError("no debería arrancar ComfyUI si ya responde")
+
+    monkeypatch.setattr(service, "spawn", _no_spawn)
+    assert asyncio.run(service.ensure_running()) is False
+    assert service.process is None
+
+
+def test_ensure_running_arranca_y_espera(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Si no responde, lo arranca y espera a que el API conteste."""
+    service = _service(tmp_path)
+    process = _FakeProcess()
+    monkeypatch.setattr(service, "is_up", _up_sequence([False, False, True]))
+    monkeypatch.setattr(service, "spawn", lambda: process)
+    assert asyncio.run(service.ensure_running()) is True
+    assert service.process is process
+    assert process.killed is False
+
+
+def test_ensure_running_sin_interprete(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Sin venv de ComfyUI el error dice dónde mirar, sin tocar nada."""
+    service = ComfyUIService("http://127.0.0.1:8188", directory=tmp_path / "no-existe")
+    monkeypatch.setattr(service, "is_up", _up_sequence([False]))
+    with pytest.raises(ComfyUIError, match="No encuentro el intérprete"):
+        asyncio.run(service.ensure_running())
+
+
+def test_ensure_running_proceso_muere(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Si el proceso muere al arrancar, se dice (y no se queda esperando)."""
+    service = _service(tmp_path, timeout=0.5)
+    process = _FakeProcess(alive=False)
+    monkeypatch.setattr(service, "is_up", _up_sequence([False]))
+    monkeypatch.setattr(service, "spawn", lambda: process)
+    with pytest.raises(ComfyUIError, match="terminó al arrancar"):
+        asyncio.run(service.ensure_running())
+
+
+def test_ensure_running_timeout_mata_el_proceso(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Si no responde a tiempo, se para lo arrancado (no se deja huérfano)."""
+    service = _service(tmp_path, timeout=0.05)
+    process = _FakeProcess()
+    monkeypatch.setattr(service, "is_up", _up_sequence([False]))
+    monkeypatch.setattr(service, "spawn", lambda: process)
+    with pytest.raises(ComfyUIError, match="no respondió"):
+        asyncio.run(service.ensure_running())
+    assert process.killed is True
+
+
+def test_stop_solo_para_lo_que_arrancamos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """``stop`` no hace nada si no hay proceso nuestro, y mata si lo hay."""
+    service = _service(tmp_path)
+    asesinados: list[object] = []
+    monkeypatch.setattr(service, "kill", lambda process=None: asesinados.append(process))
+    assert asyncio.run(service.stop()) is False
+    process = _FakeProcess()
+    service.process = process
+    assert asyncio.run(service.stop()) is True
+    assert asesinados == [process]
+    assert service.process is None
+
+
+@needs_ffmpeg
+def test_run_nightly_con_stub_no_toca_comfyui(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """En modo demo no se arranca ni se para el motor (no hace falta)."""
+
+    def _no_service(*args: object, **kwargs: object) -> object:
+        raise AssertionError("el modo demo no debe gestionar ComfyUI")
+
+    monkeypatch.setattr("youber.genvideo.runner._comfyui_service", _no_service)
+    report = _run(
+        run_nightly(
+            prompts=["uno"],
+            preset=Resolution.SD,
+            stub=True,
+            output_dir=tmp_path / "clips",
+            state_path=tmp_path / "queue.json",
+        )
+    )
+    assert len(report.done) == 1
+
+
+@needs_ffmpeg
+def test_run_nightly_arranca_y_para_el_motor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Con ``manage_comfyui`` el lote levanta el motor y lo para al terminar."""
+    llamadas: list[str] = []
+
+    class _FakeService:
+        async def ensure_running(self) -> bool:
+            llamadas.append("ensure")
+            return True
+
+        async def stop(self) -> bool:
+            llamadas.append("stop")
+            return True
+
+    monkeypatch.setattr(
+        "youber.genvideo.runner._comfyui_service", lambda *a, **k: _FakeService()
+    )
+    report = _run(
+        run_nightly(
+            prompts=["uno"],
+            preset=Resolution.SD,
+            client=StubClient(seconds=5.0, width=832, height=480, fps=24.0),
+            output_dir=tmp_path / "clips",
+            state_path=tmp_path / "queue.json",
+        )
+    )
+    assert len(report.done) == 1
+    assert llamadas == ["ensure", "stop"]
 
 
 # -- enganche con el scheduler -------------------------------------------

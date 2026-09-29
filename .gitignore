@@ -31,3 +31,6 @@ src/*.egg-info/
 
 # Salidas generadas por producciones locales (youber-produce, workflow)
 /output/
+
+# Estado del motor de generación de vídeo (cola, clips, logs, guiones locales)
+/state/genvideo/

@@ -72,6 +72,38 @@ report = await run_nightly(script=guion, config=config, end=dt_time(7, 0))
 print(report.to_markdown())
 ```
 
+## ComfyUI: arranque y parada automáticos
+
+El motor no tiene por qué estar levantado todo el día: tenerlo abierto mantiene
+los modelos cargados en la GPU (≈2,8 GB de los 8 GB de una RTX 3050) aunque no
+haga nada. Por eso lo gestiona el propio lote (`youber.genvideo.service`):
+
+- si ComfyUI no responde, lo **levanta** (proceso desprendido, salida en
+  `~/.youber/genvideo/comfyui.log`) y espera a que el API conteste (hasta 5 min:
+  cargar 10 GB de pesos tarda);
+- si ya estaba levantado, **no lo toca** (y no lo para al terminar);
+- al acabar, **para lo que arrancó él**, así que la GPU queda libre;
+- si no hay nada pendiente en la cola, ni lo levanta (volver a lanzar el mismo
+  guion no despierta la GPU).
+
+Ajustes: `YOUBER_COMFYUI_DIR` (por defecto `~/ai/ComfyUI`) y las opciones
+`--no-manage-comfyui` / `--keep-comfyui` / `--comfyui-dir`.
+
+## Rutina nocturna (22:00 → 07:00)
+
+El lote se lanza a las 22:00 desde el *cron* del gateway con el guion del día, y
+a las 07:05 otro trabajo manda el resumen (clips buenos, metraje, minutos de GPU
+y por qué paró). El propio lote se encarga de la ventana horaria, de no empezar
+un clip que no quepa antes del cierre y de la suspensión del equipo.
+
+Ejemplo de lanzamiento manual equivalente::
+
+```bash
+youber-genvideo run --script state/genvideo/guion.json --preset 720p \
+    --start - --end 07:00 -o state/genvideo/clips --report reports/genvideo \
+    --state state/genvideo/queue.json
+```
+
 ## Verificación: por qué existe
 
 Generar no garantiza nada. Con Turbo a **4 steps y 720p** ComfyUI responde
