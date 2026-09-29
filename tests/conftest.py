@@ -61,6 +61,24 @@ def _isolate_genvideo_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("YOUBER_GENVIDEO_DIR", str(tmp_path / "genvideo"))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_genvideo_power(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ningún test cambia la configuración de energía del equipo.
+
+    El runner desactiva la suspensión mientras genera (``powercfg``). Aquí se
+    corta por abajo: el módulo se ve como «no es Windows» (así ``keep_awake``
+    es un no-op) y ``powercfg`` queda prohibido. Los tests del módulo
+    ``power`` sobreescriben esto con sus propios dobles.
+    """
+    from youber.genvideo import power
+
+    def _prohibido(args: list[str]) -> object:
+        raise AssertionError(f"ningún test debe ejecutar powercfg: {args}")
+
+    monkeypatch.setattr(power, "is_windows", lambda: False)
+    monkeypatch.setattr(power, "_run_powercfg", _prohibido)
+
+
 @lru_cache(maxsize=1)
 def network_available() -> bool:
     """``True`` si hay salida real a internet (se comprueba una vez por sesión).

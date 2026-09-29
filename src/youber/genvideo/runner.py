@@ -18,12 +18,14 @@ import asyncio
 import json
 import time
 from collections.abc import Sequence
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from datetime import time as dt_time
 from pathlib import Path
 
 from loguru import logger
 
+from youber.genvideo import power
 from youber.genvideo.client import ComfyUIClient, GenerationClient, StubClient, outputs_from
 from youber.genvideo.graph import build_graph
 from youber.genvideo.models import (
@@ -254,6 +256,7 @@ class NightlyRunner:
         window_start: datetime | None = None,
         max_clips: int | None = None,
         max_consecutive_failures: int = MAX_CONSECUTIVE_FAILURES,
+        keep_awake: bool = True,
     ) -> None:
         self.client = client
         self.config = config or GenConfig()
@@ -267,6 +270,7 @@ class NightlyRunner:
         self.window_start = window_start
         self.max_clips = max_clips
         self.max_consecutive_failures = max_consecutive_failures
+        self.keep_awake = keep_awake
         self._ordinal = 0
 
     async def run(self, requests: Sequence[ClipRequest] | None = None) -> BatchReport:
@@ -287,6 +291,20 @@ class NightlyRunner:
         if requests:
             self.queue.extend(list(requests))
         self.queue.recover()
+        context = power.keep_awake() if self.keep_awake else nullcontext(False)
+        with context as despierto:
+            if despierto:
+                logger.info("Suspensión del equipo desactivada mientras dure el lote")
+            await self._drain(report)
+        report.finished_at = datetime.now()
+        logger.info(
+            f"Lote {report.id}: {len(report.done)}/{report.total} buenos · "
+            f"{report.metrage:.1f} s · parada: {report.stopped_reason}"
+        )
+        return report
+
+    async def _drain(self, report: BatchReport) -> None:
+        """Genera clips hasta agotar la cola o cerrar la ventana."""
         consecutive_failures = 0
         while True:
             reason = self._stop_reason(report)
@@ -306,12 +324,6 @@ class NightlyRunner:
                     f"{consecutive_failures} fallos seguidos: se aborta el lote"
                 )
                 break
-        report.finished_at = datetime.now()
-        logger.info(
-            f"Lote {report.id}: {len(report.done)}/{report.total} buenos · "
-            f"{report.metrage:.1f} s · parada: {report.stopped_reason}"
-        )
-        return report
 
     # -- decisiones del bucle ---------------------------------------------
 
@@ -420,6 +432,7 @@ async def run_nightly(
     report_dir: str | Path | None = None,
     state_path: str | Path | None = None,
     verify: bool = True,
+    keep_awake: bool = True,
     stub: bool = False,
     stub_flat: bool = False,
     now: datetime | None = None,
@@ -445,6 +458,7 @@ async def run_nightly(
         report_dir: Carpeta del manifiesto y el resumen.
         state_path: Fichero de cola (por defecto, el del usuario).
         verify: Si se verifica cada clip.
+        keep_awake: Desactivar la suspensión del equipo mientras dure el lote.
         stub: Usar el backend de pruebas (MP4 sintético, sin GPU).
         stub_flat: Con ``stub``, generar clips planos (para probar la verificación).
         now: Momento de referencia (para tests).
@@ -489,6 +503,7 @@ async def run_nightly(
         queue=queue,
         output_dir=output_dir,
         verify=verify,
+        keep_awake=keep_awake,
         deadline=deadline,
         window_start=window_start,
         max_clips=max_clips,

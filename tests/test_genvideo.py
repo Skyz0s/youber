@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import subprocess
 from datetime import datetime, timedelta
 from datetime import time as dt_time
 from pathlib import Path
@@ -18,6 +19,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from youber.genvideo import power
 from youber.genvideo.cli import main as genvideo_main
 from youber.genvideo.client import (
     ComfyUIClient,
@@ -781,6 +783,88 @@ def test_cli_verify(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
     )
     assert genvideo_main(["verify", str(clip)]) == 0
     assert "OK" in capsys.readouterr().out
+
+
+# -- energía -------------------------------------------------------------
+
+#: Salida real de ``powercfg /query ... STANDBYIDLE`` (Windows en español).
+POWERCFG_STANDBYIDLE = (
+    "GUID de configuración de energía: 29f6c1db-86da-48c5-9fdb-f2b67b1f44da  "
+    "(Suspender tras)\n"
+    "  Mínima configuración posible: 0x00000000\n"
+    "  Máxima configuración posible: 0xffffffff\n"
+    "  Incremento de configuración posible: 0x00000001\n"
+    "  Índice de configuración de corriente alterna actual: 0x00000384\n"
+    "  Índice de configuración de corriente continua actual: 0x00000258\n"
+)
+
+
+def _powercfg_result(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess:
+    """Resultado de ``powercfg`` simulado."""
+    return subprocess.CompletedProcess(
+        args=["powercfg"], returncode=returncode, stdout=stdout.encode("utf-8"), stderr=b""
+    )
+
+
+def test_standby_timeouts_lee_alterna_y_bateria(monkeypatch: pytest.MonkeyPatch):
+    """De la salida localizada se sacan los dos valores (los dos últimos hex)."""
+    monkeypatch.setattr(power, "is_windows", lambda: True)
+    monkeypatch.setattr(
+        power, "_run_powercfg", lambda args: _powercfg_result(POWERCFG_STANDBYIDLE)
+    )
+    assert power.standby_timeouts() == (900, 600)
+
+
+def test_standby_timeouts_fuera_de_windows(monkeypatch: pytest.MonkeyPatch):
+    """Fuera de Windows no se toca nada."""
+    monkeypatch.setattr(power, "is_windows", lambda: False)
+    assert power.standby_timeouts() == (None, None)
+    assert power.set_standby_timeout(0) is False
+
+
+def test_set_standby_timeout_comandos(monkeypatch: pytest.MonkeyPatch):
+    """Los comandos son los de ``powercfg`` (alterna y batería)."""
+    llamadas: list[list[str]] = []
+    monkeypatch.setattr(power, "is_windows", lambda: True)
+
+    def fake(args: list[str]) -> subprocess.CompletedProcess:
+        llamadas.append(args)
+        return _powercfg_result()
+
+    monkeypatch.setattr(power, "_run_powercfg", fake)
+    assert power.set_standby_timeout(0) is True
+    assert power.set_standby_timeout(600, battery=True) is True
+    assert llamadas == [
+        ["/change", "standby-timeout-ac", "0"],
+        ["/change", "standby-timeout-dc", "600"],
+    ]
+
+
+def test_keep_awake_desactiva_y_restaura(monkeypatch: pytest.MonkeyPatch):
+    """El lote deja la suspensión en «nunca» y la devuelve como estaba."""
+    llamadas: list[list[str]] = []
+    monkeypatch.setattr(power, "is_windows", lambda: True)
+    monkeypatch.setattr(power, "standby_timeouts", lambda: (900, 600))
+
+    def fake(args: list[str]) -> subprocess.CompletedProcess:
+        llamadas.append(args)
+        return _powercfg_result()
+
+    monkeypatch.setattr(power, "_run_powercfg", fake)
+    with power.keep_awake() as despierto:
+        assert despierto is True
+        assert ["/change", "standby-timeout-ac", "0"] in llamadas
+    assert llamadas[-2:] == [
+        ["/change", "standby-timeout-ac", "900"],
+        ["/change", "standby-timeout-dc", "600"],
+    ]
+
+
+def test_keep_awake_fuera_de_windows(monkeypatch: pytest.MonkeyPatch):
+    """Sin Windows ``keep_awake`` es un no-op (y lo dice)."""
+    monkeypatch.setattr(power, "is_windows", lambda: False)
+    with power.keep_awake() as despierto:
+        assert despierto is False
 
 
 # -- enganche con el scheduler -------------------------------------------

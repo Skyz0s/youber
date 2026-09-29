@@ -254,6 +254,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             report_dir=args.report,
             state_path=args.state,
             verify=not args.no_verify,
+            keep_awake=not args.no_keep_awake,
             stub=args.demo,
             stub_flat=args.demo_flat,
         )
@@ -343,6 +344,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--report", help="Carpeta del manifiesto y el resumen")
     run.add_argument("--state", help="Fichero de cola (por defecto, el del usuario)")
     run.add_argument("--no-verify", action="store_true", help="No verificar los clips")
+    run.add_argument(
+        "--no-keep-awake",
+        action="store_true",
+        help="Permitir que el equipo se suspenda durante el lote",
+    )
     run.add_argument("--demo", action="store_true", help="Backend de pruebas (sin GPU)")
     run.add_argument("--demo-flat", action="store_true", help="Con --demo: clips planos a propósito")
     run.set_defaults(func=_cmd_run)
