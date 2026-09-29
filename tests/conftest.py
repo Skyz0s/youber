@@ -51,6 +51,16 @@ def _isolate_weights_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("YOUBER_WEIGHTS", str(tmp_path / "selection_weights.json"))
 
 
+@pytest.fixture(autouse=True)
+def _isolate_genvideo_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redirige ``YOUBER_GENVIDEO_DIR`` a un directorio temporal por test.
+
+    La cola persistida del motor de generaci��n vivir��a en ``~/.youber``: sin
+    esto, un test podr��a encolar clips en la cola real del usuario.
+    """
+    monkeypatch.setenv("YOUBER_GENVIDEO_DIR", str(tmp_path / "genvideo"))
+
+
 @lru_cache(maxsize=1)
 def network_available() -> bool:
     """``True`` si hay salida real a internet (se comprueba una vez por sesión).

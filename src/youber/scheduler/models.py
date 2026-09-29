@@ -22,6 +22,8 @@ class JobType(StrEnum):
     MUSIC_SCAN = "music_scan"
     #: Recordatorio de pegar las métricas de Studio en el decision journal.
     JOURNAL_REMINDER = "journal_reminder"
+    #: Lote nocturno de generación de vídeo local (``youber.genvideo``).
+    GENVIDEO = "genvideo"
 
 
 class ScheduleType(StrEnum):

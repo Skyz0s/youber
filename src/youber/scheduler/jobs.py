@@ -124,6 +124,66 @@ async def _run_journal_reminder(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def _run_genvideo(params: dict[str, Any]) -> dict[str, Any]:
+    """Ejecuta el lote nocturno de generaci��n de v��deo local.
+
+    Par��metros:
+        script: ruta del guion JSON (``youber-script``) o ``topic`` suelto.
+        topic: tema del v��deo (si no hay guion).
+        preset: ``720p`` (por defecto) o ``480p``.
+        shots: n��mero de planos a generar.
+        start/end: ventana horaria (``"22:00"``/``"07:00"``).
+        max_clips: tope de clips del lote.
+        output_dir/report_dir: carpetas de los clips y del informe.
+        state: fichero de cola persistida.
+        demo: backend de pruebas (sin GPU), para validar el flujo.
+    """
+    from datetime import time as dt_time
+    from pathlib import Path
+
+    from youber.genvideo.models import GenConfig, Resolution
+    from youber.genvideo.runner import run_nightly
+    from youber.script.models import Script
+
+    def _clock(value: Any) -> dt_time | None:
+        if not value:
+            return None
+        hours, _, minutes = str(value).partition(":")
+        return dt_time(hour=int(hours), minute=int(minutes or 0))
+
+    preset = Resolution(str(params.get("preset", Resolution.HD.value)))
+    config = GenConfig.for_resolution(preset)
+    script: Script | None = None
+    if params.get("script"):
+        script = Script.model_validate_json(Path(params["script"]).read_text(encoding="utf-8"))
+    prompts = [
+        line.strip() for line in str(params.get("prompts") or "").splitlines() if line.strip()
+    ]
+    report = await run_nightly(
+        script=script,
+        prompts=prompts,
+        topic=None if (script is not None or prompts) else params.get("topic"),
+        preset=preset,
+        config=config,
+        end=_clock(params.get("end")),
+        max_clips=params.get("max_clips"),
+        shots=params.get("shots"),
+        output_dir=params.get("output_dir"),
+        report_dir=params.get("report_dir"),
+        state_path=params.get("state"),
+        verify=bool(params.get("verify", True)),
+        stub=bool(params.get("demo", False)),
+    )
+    return {
+        "batch": report.id,
+        "clips": len(report.done),
+        "failed": len(report.failed),
+        "metrage": round(report.metrage, 2),
+        "stopped": report.stopped_reason,
+        "minutes": round(report.seconds_total / 60, 1),
+    }
+
+
 # Registro de runners por tipo de trabajo.
 JOB_RUNNERS: dict[JobType, JobRunner] = {
     JobType.RESEARCH: _run_research,
@@ -131,6 +191,7 @@ JOB_RUNNERS: dict[JobType, JobRunner] = {
     JobType.UPLOAD: _run_upload,
     JobType.MUSIC_SCAN: _run_music_scan,
     JobType.JOURNAL_REMINDER: _run_journal_reminder,
+    JobType.GENVIDEO: _run_genvideo,
 }
 
 

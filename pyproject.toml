@@ -66,6 +66,7 @@ youber-sync = "youber.sync.cli:main"
 youber-api = "youber.api.cli:main"
 youber-journal = "youber.journal.cli:main"
 youber-visuals = "youber.visuals.cli:main"
+youber-genvideo = "youber.genvideo.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Skyz0s/youber"

@@ -68,7 +68,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     add = sub.add_parser("add", help="Añade un trabajo programado")
     add.add_argument("--name", required=True, help="Nombre descriptivo")
-    add.add_argument("--type", type=_job_type, required=True, help="Tipo (research/workflow/upload/music_scan)")
+    add.add_argument(
+        "--type",
+        type=_job_type,
+        required=True,
+        help="Tipo (research/workflow/upload/music_scan/genvideo/journal_reminder)",
+    )
     add.add_argument("--schedule", type=_schedule_type, required=True, help="once/daily/weekly/cron")
     add.add_argument("--at", required=True, help="Valor: '09:00', 'monday', '2026-09-15 10:00:00' o cron")
     add.add_argument("--param", type=_param, action="append", default=[], help="Parámetro clave=valor (repetible)")
