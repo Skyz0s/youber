@@ -1,8 +1,8 @@
 """Cliente del backend de generación (ComfyUI por API HTTP) y backend de pruebas.
 
 :class:`ComfyUIClient` es el backend de referencia: habla con un ComfyUI local
-por su API (``/prompt``, ``/history``, ``/view``, ``/system_stats``) usando
-``httpx`` asíncrono. :class:`StubClient` implementa la misma interfaz
+por su API (``/prompt``, ``/history``, ``/view``, ``/system_stats``, ``/queue``,
+``/interrupt``) usando ``httpx`` asíncrono. :class:`StubClient` implementa la misma interfaz
 (:class:`GenerationClient`) escribiendo un MP4 sintético con FFmpeg: sirve para
 probar el runner completo en CI o en una máquina sin GPU.
 """
@@ -29,9 +29,30 @@ VIDEO_SUFFIXES = frozenset({".mp4", ".webm", ".mkv", ".mov", ".gif"})
 #: Intervalo de sondeo del historial (segundos).
 DEFAULT_POLL_INTERVAL = 3.0
 
+#: Timeout de cada petición a la API de ComfyUI (segundos). Generoso a
+#: propósito: mientras genera, el servidor puede tardar minutos en contestar
+#: (presión de memoria, VAE troceado) y un timeout corto daba por muertos
+#: trabajos que seguían vivos en la GPU (lote del 29-09-2026).
+DEFAULT_HTTP_TIMEOUT = 300.0
+
+#: Parones de red **seguidos** sondeando un trabajo antes de comprobar con
+#: ``/system_stats`` si el motor sigue en pie.
+DEFAULT_MAX_STALLS = 5
+
 
 class ComfyUIError(RuntimeError):
     """Error al hablar con el backend ComfyUI."""
+
+
+def describe_error(exc: BaseException) -> str:
+    """Mensaje legible de una excepción, con su tipo si no trae texto.
+
+    Los timeouts de ``httpx``/``httpcore`` se stringifican **vacíos**: sin
+    esto, un fallo de red queda registrado como un error en blanco (así se
+    perdieron tres clips en el lote del 29-09-2026).
+    """
+    detail = str(exc).strip()
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
 
 
 @dataclass(frozen=True)
@@ -88,6 +109,10 @@ class GenerationClient(Protocol):
         """Cierra los recursos del cliente."""
         ...
 
+    async def cancel(self, prompt_id: str) -> bool:
+        """Suelta un trabajo que ya no interesa y devuelve si hizo algo."""
+        ...
+
 
 def outputs_from(entry: dict[str, Any]) -> list[ComfyOutput]:
     """Extrae los ficheros de salida de una entrada del historial de ComfyUI.
@@ -132,6 +157,10 @@ class ComfyUIClient:
         server_url: URL base del servidor (sin barra final).
         client_id: Identificador de cliente que se manda en ``/prompt``.
         poll_interval: Cada cuánto se pregunta por el historial.
+        timeout: Timeout de cada petición HTTP (segundos).
+        max_stalls: Parones de red seguidos antes de comprobar si el motor vive.
+        owns_queue: Si la cola de ComfyUI es nuestra (se puede vaciar al soltar
+            un trabajo); ``False`` cuando es un ComfyUI compartido.
     """
 
     def __init__(
@@ -141,10 +170,16 @@ class ComfyUIClient:
         client: httpx.AsyncClient | None = None,
         client_id: str | None = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
+        timeout: float = DEFAULT_HTTP_TIMEOUT,
+        max_stalls: int = DEFAULT_MAX_STALLS,
+        owns_queue: bool = True,
     ) -> None:
         self.server_url = server_url.rstrip("/")
         self.client_id = client_id or uuid.uuid4().hex
         self.poll_interval = poll_interval
+        self.timeout = timeout
+        self.max_stalls = max_stalls
+        self.owns_queue = owns_queue
         self._client = client
         self._owns_client = client is None
 
@@ -158,7 +193,7 @@ class ComfyUIClient:
     def client(self) -> httpx.AsyncClient:
         """Cliente HTTP (se crea en diferido)."""
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(self.timeout))
         return self._client
 
     async def aclose(self) -> None:
@@ -237,24 +272,50 @@ class ComfyUIClient:
         Returns:
             La entrada del historial, ya completada.
 
+        Un parón de red **no** da el trabajo por perdido: mientras ComfyUI
+        genera puede tardar minutos en contestar a ``/history``, y rendirse ahí
+        mataba clips que seguían vivos. Los parones se cuentan; solo si se
+        encadenan :attr:`max_stalls` y el motor ya no responde a
+        ``/system_stats`` se corta con un mensaje que lo dice.
+
         Raises:
-            ComfyUIError: si el trabajo falla o se agota el tiempo.
+            ComfyUIError: si el trabajo falla, si el motor deja de responder o
+                si se agota el tiempo.
         """
         interval = poll_interval or self.poll_interval
         deadline = time.monotonic() + timeout
+        stalls = 0
         while True:
-            entry = await self.history(prompt_id)
-            if entry:
-                status = entry.get("status") or {}
-                if status.get("completed") or status.get("status_str") == "success":
-                    return entry
-                if status.get("status_str") == "error":
+            try:
+                entry = await self.history(prompt_id)
+            except httpx.TransportError as exc:
+                stalls += 1
+                logger.warning(
+                    f"ComfyUI no contestó al preguntar por {prompt_id} "
+                    f"({stalls}/{self.max_stalls} parones seguidos de "
+                    f"{type(exc).__name__}); el trabajo sigue en la GPU"
+                )
+                if stalls >= self.max_stalls and not await self.is_up():
                     raise ComfyUIError(
-                        f"ComfyUI falló al generar {prompt_id}: {_error_detail(entry)}"
-                    )
+                        f"ComfyUI dejó de responder mientras generaba {prompt_id} "
+                        f"({stalls} parones seguidos de {self.timeout:g} s y "
+                        f"/system_stats tampoco contesta)"
+                    ) from exc
+                entry = {}
+            else:
+                stalls = 0
+                if entry:
+                    status = entry.get("status") or {}
+                    if status.get("completed") or status.get("status_str") == "success":
+                        return entry
+                    if status.get("status_str") == "error":
+                        raise ComfyUIError(
+                            f"ComfyUI falló al generar {prompt_id}: {_error_detail(entry)}"
+                        )
             if time.monotonic() >= deadline:
                 raise ComfyUIError(
                     f"Timeout de {timeout:g} s esperando a ComfyUI ({prompt_id})"
+                    + (f"; {stalls} parones de red" if stalls else "")
                 )
             await asyncio.sleep(interval)
 
@@ -278,6 +339,84 @@ class ComfyUIClient:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(response.content)
         return target
+
+    async def queue_state(self) -> tuple[list[str], list[str]]:
+        """``(en ejecución, en cola)``: ids de los trabajos que ve ComfyUI."""
+        response = await self.client.get(f"{self.server_url}/queue")
+        if response.status_code != 200:
+            raise ComfyUIError(
+                f"ComfyUI respondió {response.status_code} a /queue"
+            )
+        data = response.json() or {}
+        running = _queue_ids(data.get("queue_running"))
+        pending = _queue_ids(data.get("queue_pending"))
+        return running, pending
+
+    async def interrupt(self) -> None:
+        """Interrumpe el trabajo que ComfyUI esté ejecutando ahora mismo."""
+        response = await self.client.post(f"{self.server_url}/interrupt")
+        if response.status_code >= 400:
+            raise ComfyUIError(
+                f"ComfyUI respondió {response.status_code} a /interrupt"
+            )
+        logger.warning("ComfyUI: trabajo en ejecución interrumpido")
+
+    async def clear_queue(self) -> None:
+        """Vacía los trabajos en cola (los que aún no han empezado)."""
+        response = await self.client.post(
+            f"{self.server_url}/queue", json={"clear": True}
+        )
+        if response.status_code >= 400:
+            raise ComfyUIError(
+                f"ComfyUI respondió {response.status_code} al vaciar la cola"
+            )
+        logger.warning("ComfyUI: cola de trabajos vaciada")
+
+    async def cancel(self, prompt_id: str, *, clear_pending: bool | None = None) -> bool:
+        """Suelta un trabajo que ya no nos interesa.
+
+        Si ``prompt_id`` sigue **en ejecución** se interrumpe; si la cola es
+        nuestra (:attr:`owns_queue`) se vacía lo que quede pendiente. Es
+        *best-effort*: si ComfyUI no contesta, se avisa y se sigue, porque la
+        limpieza nunca debe tumbar el lote.
+
+        Returns:
+            ``True`` si se hizo algo.
+        """
+        clear = self.owns_queue if clear_pending is None else clear_pending
+        try:
+            running, _ = await self.queue_state()
+        except (httpx.HTTPError, ComfyUIError) as exc:
+            logger.warning(
+                f"No pude consultar la cola de ComfyUI para soltar {prompt_id}: "
+                f"{describe_error(exc)}"
+            )
+            return False
+        released = False
+        try:
+            if prompt_id in running:
+                await self.interrupt()
+                released = True
+            if clear:
+                await self.clear_queue()
+                released = True
+        except (httpx.HTTPError, ComfyUIError) as exc:
+            logger.warning(
+                f"No pude soltar el trabajo {prompt_id} en ComfyUI: {describe_error(exc)}"
+            )
+            return released
+        return released
+
+
+def _queue_ids(entries: object) -> list[str]:
+    """Ids de los trabajos de ``/queue`` (cada entrada es ``[n, id, grafo...]``)."""
+    ids: list[str] = []
+    if not isinstance(entries, list):
+        return ids
+    for item in entries:
+        if isinstance(item, list) and len(item) > 1 and item[1]:
+            ids.append(str(item[1]))
+    return ids
 
 
 class StubClient:
@@ -397,6 +536,10 @@ class StubClient:
             raise RuntimeError(f"El stub no pudo crear el clip de prueba: {stderr}")
         logger.debug(f"Stub: clip de prueba en {target}")
         return target
+
+    async def cancel(self, prompt_id: str) -> bool:
+        """El stub no tiene trabajos huérfanos: no hay nada que soltar."""
+        return False
 
     async def aclose(self) -> None:
         """Nada que cerrar."""

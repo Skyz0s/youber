@@ -26,7 +26,13 @@ from pathlib import Path
 from loguru import logger
 
 from youber.genvideo import power
-from youber.genvideo.client import ComfyUIClient, GenerationClient, StubClient, outputs_from
+from youber.genvideo.client import (
+    ComfyUIClient,
+    GenerationClient,
+    StubClient,
+    describe_error,
+    outputs_from,
+)
 from youber.genvideo.graph import build_graph
 from youber.genvideo.models import (
     BatchReport,
@@ -288,6 +294,8 @@ class NightlyRunner:
         self.max_consecutive_failures = max_consecutive_failures
         self.keep_awake = keep_awake
         self._ordinal = 0
+        #: Segundos que han tardado los clips de este lote (para estimar mejor).
+        self._observed_seconds: list[float] = []
 
     async def run(self, requests: Sequence[ClipRequest] | None = None) -> BatchReport:
         """Genera los clips pendientes hasta agotar la cola o cerrar la ventana.
@@ -354,7 +362,7 @@ class NightlyRunner:
             return "cola vacía"
         if self.deadline is not None:
             remaining = (self.deadline - datetime.now()).total_seconds()
-            needed = pending[0].config.estimated_seconds * (1.0 + WINDOW_MARGIN)
+            needed = self._estimate_seconds(pending[0].config) * (1.0 + WINDOW_MARGIN)
             if remaining < needed:
                 return (
                     f"no cabe otro clip antes del cierre "
@@ -363,7 +371,44 @@ class NightlyRunner:
                 )
         return None
 
-    # -- generación de un clip --------------------------------------------
+    def _estimate_seconds(self, config: GenConfig) -> float:
+        """Lo que puede tardar un clip: lo que dice el preset o lo ya observado.
+
+        La estimación del preset se queda corta cuando la máquina se degrada
+        (el 29-09-2026 un clip de 720p tardó 50 min con una estimación de 18),
+        así que manda **lo que han tardado de verdad** los clips del lote,
+        aunque sea peor noticia: es lo que evita arrancar un clip que no cabe.
+        """
+        base = config.estimated_seconds
+        if self._observed_seconds:
+            return max(base, max(self._observed_seconds))
+        return base
+
+    async def _release(self, request: ClipRequest, ordinal: int) -> None:
+        """Suelta en ComfyUI el trabajo que acabamos de abandonar.
+
+        ComfyUI hace *un* trabajo a la vez: si el trabajo abandonado sigue
+        vivo, el clip siguiente se queda en cola detrás de él y agota su
+        timeout sin haber empezado siquiera (le pasó al clip 03 del
+        29-09-2026). La limpieza es *best-effort*: nunca tumba el lote.
+        """
+        if not request.prompt_id:
+            return
+        cancel = getattr(self.client, "cancel", None)
+        if cancel is None:  # backends mínimos, sin limpieza de cola
+            return
+        try:
+            released = await cancel(request.prompt_id)
+        except Exception as exc:  # noqa: BLE001 - limpieza best-effort
+            logger.warning(
+                f"No pude soltar el trabajo {request.prompt_id} en ComfyUI: "
+                f"{describe_error(exc)}"
+            )
+            return
+        if released:
+            logger.warning(
+                f"[{ordinal:03d}] trabajo huérfano {request.prompt_id} soltado en ComfyUI"
+            )
 
     async def _generate(self, request: ClipRequest, ordinal: int) -> None:
         """Genera, descarga y verifica un clip (actualizando la cola)."""
@@ -406,9 +451,12 @@ class NightlyRunner:
             )
         except Exception as exc:  # noqa: BLE001 - un clip malo no debe tumbar el lote
             request.status = JobStatus.FAILED
-            request.error = str(exc)[:500]
+            request.error = describe_error(exc)[:500]
             request.seconds = request.seconds or (time.monotonic() - started)
             logger.error(f"[{ordinal:03d}] Falló «{request.label}»: {request.error}")
+            await self._release(request, ordinal)
+        if request.seconds:
+            self._observed_seconds.append(request.seconds)
         self.queue.update(request)
 
     def _handle_bad_quality(self, request: ClipRequest, ordinal: int) -> None:

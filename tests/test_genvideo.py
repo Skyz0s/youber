@@ -26,6 +26,7 @@ from youber.genvideo.client import (
     ComfyUIClient,
     ComfyUIError,
     StubClient,
+    describe_error,
     outputs_from,
 )
 from youber.genvideo.graph import SAVE_NODE, build_graph, save_node_id
@@ -103,8 +104,8 @@ def test_estimate_incluye_frames():
     assert largo.frames > corto.frames
     assert estimate_clip_seconds(largo) > estimate_clip_seconds(corto)
     # Las dos anclas medidas (121 frames) se reproducen exactamente.
-    assert estimate_clip_seconds(corto) == pytest.approx(180, rel=0.01)
-    assert estimate_clip_seconds(GenConfig.for_resolution("720p")) == pytest.approx(600, rel=0.01)
+    assert estimate_clip_seconds(corto) == pytest.approx(215, rel=0.01)
+    assert estimate_clip_seconds(GenConfig.for_resolution("720p")) == pytest.approx(700, rel=0.01)
 
 
 def test_presets_medidos():
@@ -128,8 +129,8 @@ def test_describe_sin_lora():
 
 def test_estimate_clip_seconds_anclas():
     """La estimación coincide con lo medido en las dos anclas."""
-    assert estimate_clip_seconds(GenConfig.for_resolution("720p")) == pytest.approx(600, rel=0.01)
-    assert estimate_clip_seconds(GenConfig.for_resolution("480p")) == pytest.approx(180, rel=0.01)
+    assert estimate_clip_seconds(GenConfig.for_resolution("720p")) == pytest.approx(700, rel=0.01)
+    assert estimate_clip_seconds(GenConfig.for_resolution("480p")) == pytest.approx(215, rel=0.01)
     mas_lento = GenConfig.for_resolution("720p", steps=16)
     assert estimate_clip_seconds(mas_lento) > estimate_clip_seconds(GenConfig.for_resolution("720p"))
 
@@ -325,6 +326,98 @@ def test_comfy_client_timeout():
             await client.wait("p-3", timeout=0.05)
 
     asyncio.run(scenario())
+
+
+def test_comfy_client_wait_tolera_parones_de_red():
+    """Un parón del API no da el trabajo por muerto: se sigue esperando."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise httpx.ReadTimeout("timed out")
+        return httpx.Response(
+            200,
+            json={
+                "p-4": {
+                    "status": {"completed": True, "status_str": "success"},
+                    "outputs": {"12": {"images": [{"filename": "clip.mp4"}]}},
+                }
+            },
+        )
+
+    async def scenario() -> dict:
+        client = ComfyUIClient(client=_transport(handler), poll_interval=0.01)
+        return await client.wait("p-4", timeout=5)
+
+    entry = asyncio.run(scenario())
+    assert entry["status"]["completed"] is True
+    assert calls["n"] == 3
+
+
+def test_comfy_client_wait_corta_si_el_motor_no_responde():
+    """Parones seguidos con /system_stats mudo: error claro, no un timeout vacío."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out")
+
+    async def scenario() -> str:
+        client = ComfyUIClient(client=_transport(handler), poll_interval=0.01, max_stalls=2)
+        with pytest.raises(ComfyUIError) as info:
+            await client.wait("p-5", timeout=30)
+        return str(info.value)
+
+    message = asyncio.run(scenario())
+    assert "dejó de responder" in message
+    assert "/system_stats" in message
+
+
+def test_comfy_client_cancel_suelta_ejecucion_y_cola():
+    """Soltar un trabajo interrumpe el que corre y vacía lo que quede pendiente."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(f"{request.method} {request.url.path}")
+        if request.url.path == "/queue" and request.method == "GET":
+            return httpx.Response(
+                200, json={"queue_running": [[0, "p-9", {}, {}, []]], "queue_pending": []}
+            )
+        return httpx.Response(200, json={})
+
+    async def scenario() -> bool:
+        client = ComfyUIClient(client=_transport(handler))
+        return await client.cancel("p-9")
+
+    assert asyncio.run(scenario()) is True
+    assert "POST /interrupt" in seen
+    assert "POST /queue" in seen
+
+
+def test_comfy_client_cancel_no_vacia_una_cola_ajena():
+    """Con ``owns_queue=False`` solo interrumpe lo nuestro, no la cola de otros."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(f"{request.method} {request.url.path}")
+        if request.url.path == "/queue" and request.method == "GET":
+            return httpx.Response(
+                200, json={"queue_running": [[0, "p-9", {}, {}, []]], "queue_pending": []}
+            )
+        return httpx.Response(200, json={})
+
+    async def scenario() -> bool:
+        client = ComfyUIClient(client=_transport(handler), owns_queue=False)
+        return await client.cancel("p-9")
+
+    assert asyncio.run(scenario()) is True
+    assert "POST /interrupt" in seen
+    assert "POST /queue" not in seen
+
+
+def test_describe_error_dice_el_tipo_si_no_hay_mensaje():
+    """Los timeouts de httpx se stringifican vacíos: nunca un error en blanco."""
+    assert describe_error(httpx.ReadTimeout("")) == "ReadTimeout"
+    assert describe_error(ValueError("grafo inválido")) == "ValueError: grafo inválido"
 
 
 def test_comfy_client_is_up_y_opciones():
@@ -714,6 +807,72 @@ def test_runner_aborta_con_fallos_seguidos(tmp_path: Path):
     assert report.done == []
     assert len(report.failed) == 3
     assert "fallos seguidos" in report.stopped_reason
+
+
+def test_runner_suelta_el_trabajo_abandonado(tmp_path: Path):
+    """Un clip que se abandona se suelta en ComfyUI (sin cola zombie detrás)."""
+
+    class Colgado(StubClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.soltados: list[str] = []
+
+        async def queue_prompt(self, graph: dict) -> str:
+            return "p-zombi"
+
+        async def wait(
+            self, prompt_id: str, *, timeout: float, poll_interval: float | None = None
+        ) -> dict:
+            raise ComfyUIError(f"Timeout de {timeout:g} s esperando a ComfyUI ({prompt_id})")
+
+        async def cancel(self, prompt_id: str) -> bool:
+            self.soltados.append(prompt_id)
+            return True
+
+    backend = Colgado()
+
+    async def scenario() -> BatchReport:
+        runner = NightlyRunner(
+            client=backend,
+            config=GenConfig.for_resolution("480p"),
+            queue=JobQueue(tmp_path / "queue.json"),
+            output_dir=tmp_path / "clips",
+            verify=False,
+        )
+        return await runner.run(requests_from_prompts(["zombi"], preset=Resolution.SD))
+
+    report = _run(scenario())
+    assert backend.soltados == ["p-zombi"]
+    assert report.failed and report.failed[0].prompt_id == "p-zombi"
+    assert report.failed[0].error and "Timeout" in report.failed[0].error
+
+
+def test_runner_estima_con_lo_observado(tmp_path: Path):
+    """La estimación del lote nunca es más optimista que lo que ya ha tardado."""
+    config = GenConfig.for_resolution("720p")
+    runner = NightlyRunner(client=StubClient(), queue=JobQueue(tmp_path / "queue.json"))
+    assert runner._estimate_seconds(config) == pytest.approx(config.estimated_seconds)
+    runner._observed_seconds.append(3600.0)
+    assert runner._estimate_seconds(config) == pytest.approx(3600.0)
+
+
+def test_runner_no_arranca_si_no_cabe_con_lo_observado(tmp_path: Path):
+    """Con un clip de 60 min ya visto, un hueco de 30 min no da para otro."""
+
+    async def scenario() -> BatchReport:
+        runner = NightlyRunner(
+            client=StubClient(),
+            config=GenConfig.for_resolution("720p"),
+            queue=JobQueue(tmp_path / "queue.json"),
+            output_dir=tmp_path / "clips",
+            deadline=datetime.now() + timedelta(minutes=30),
+        )
+        runner._observed_seconds.append(3600.0)
+        return await runner.run(requests_from_prompts(["uno"], preset=Resolution.HD))
+
+    report = _run(scenario())
+    assert report.done == []
+    assert "no cabe otro clip" in report.stopped_reason
 
 
 def test_runner_estima_si_cabe_en_la_ventana(tmp_path: Path):

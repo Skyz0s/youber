@@ -79,11 +79,18 @@ PRESET_SETTINGS: dict[Resolution, dict[str, Any]] = {
     Resolution.SD: {"width": 832, "height": 480, "steps": 4},
 }
 
-#: Anclas medidas (píxeles, steps, frames) → segundos por clip. Se usan solo
-#: para decidir si un clip más cabe antes del cierre de la ventana nocturna.
+#: Anclas medidas (píxeles, steps, frames) → segundos por clip. Sirven para
+#: decidir si un clip más cabe antes del cierre de la ventana nocturna.
+#:
+#: Los números son **mediciones reales** de los dos primeros lotes, no las del
+#: spike: aquel midió 573 s por 121 frames a 720p sin el sobrecoste de staging
+#: ni del VAE troceado, y en producción salieron 700 s (720p) y 215 s (480p)
+#: por 121 frames. La varianza de la máquina es grande (un clip de 720p llegó a
+#: tardar 50 min), así que el runner toma el máximo de esto y de lo que va
+#: observando (:meth:`~youber.genvideo.runner.NightlyRunner._estimate_seconds`).
 MEASURED_SECONDS: tuple[tuple[int, int, int, float], ...] = (
-    (1280 * 704, 8, 121, 600.0),
-    (832 * 480, 4, 121, 180.0),
+    (1280 * 704, 8, 121, 700.0),
+    (832 * 480, 4, 121, 215.0),
 )
 
 
@@ -185,8 +192,9 @@ def estimate_clip_seconds(config: GenConfig) -> float:
 
     El coste escala aproximadamente con ``píxeles × steps × frames`` (el VAE
     troceado incluido), así que se extrapola desde la ancla más cercana de
-    :data:`MEASURED_SECONDS`. Es una estimación **gruesa**: solo sirve para
-    decidir si otro clip cabe antes del cierre de la ventana nocturna.
+    :data:`MEASURED_SECONDS`. Es una estimación **gruesa** y va por lo bajo (la
+    máquina se degrada con la noche): sirve para decidir si otro clip cabe
+    antes del cierre, y quien planifique debe compararla con lo ya observado.
     """
     cost = float(config.width * config.height * config.steps * config.frames)
     best: tuple[float, float] | None = None
