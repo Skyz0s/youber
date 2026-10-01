@@ -70,6 +70,18 @@ def test_keywords_from_line_saca_terminos_en_ingles() -> None:
     assert any("sea" in term for term in terms)
 
 
+def test_lexicon_entiende_lineas_en_ingles() -> None:
+    beat = beat_from_line("I keep walking through the rain at night")
+    assert "walking" in beat.action
+    assert "rain" in beat.light
+
+
+def test_beat_from_line_varia_al_fallar_el_lexico() -> None:
+    first = beat_from_line("la la la", index=0, mood=Mood.SAD)
+    second = beat_from_line("la la la", index=1, mood=Mood.SAD)
+    assert first.subject != second.subject
+
+
 # --- tramos: el estribillo se repite ---------------------------------------
 
 
