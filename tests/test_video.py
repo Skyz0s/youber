@@ -407,6 +407,17 @@ async def test_render_project_no_clips(monkeypatch):
         await render_project(Project(title="vacío"), "salida.mp4")
 
 
+def test_text_overlay_escapa_apostrofo() -> None:
+    """El apóstrofo va al tipográfico: el ``\\'`` de FFmpeg rompe el filter_complex."""
+    from youber.video.models import TextOverlay, TextPosition
+    from youber.video.overlays import text_overlay_filter
+
+    overlay = TextOverlay(text="That's the part", position=TextPosition.CENTER)
+    filtro = text_overlay_filter(overlay, 10.0)
+    assert "\u2019" in filtro
+    assert "\\'" not in filtro
+
+
 async def test_render_project_bad_format(mock_render_deps):
     project = make_project(output_format="avi")
     with pytest.raises(ValueError):

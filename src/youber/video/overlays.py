@@ -35,11 +35,16 @@ _IMAGE_POSITIONS: dict[TextPosition, tuple[str, str]] = {
 
 
 def _escape_text(text: str) -> str:
-    """Escapa caracteres especiales de FFmpeg dentro del texto del overlay."""
+    """Escapa caracteres especiales del texto para el filtro ``drawtext``.
+
+    El apóstrofo se sustituye por el **tipográfico** (``’``): el ``\\'`` de
+    FFmpeg no funciona dentro de un ``filter_complex`` (FFmpeg 8/9 aborta con
+    ``Error parsing a filterchain``), y el tipográfico además se ve mejor.
+    """
     return (
-        text.replace("\\", "\\\\")
+        text.replace("'", "\u2019")
+        .replace("\\", "\\\\")
         .replace(":", "\\:")
-        .replace("'", "\\'")
         .replace(",", "\\,")
         .replace("[", "\\[")
         .replace("]", "\\]")
