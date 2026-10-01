@@ -27,9 +27,8 @@ from youber.musicvideo.models import MusicVideoError
 from youber.musicvideo.pipeline import (
     DEFAULT_PRESET,
     SongMeasurement,
-    build_plan,
-    load_lyrics,
     measure_song,
+    prepare_plan,
     run_musicvideo,
 )
 
@@ -114,15 +113,18 @@ def _print_plan(plan, measurement: SongMeasurement) -> None:
 
 async def _cmd_plan(args: argparse.Namespace) -> int:
     """Dirige el videoclip y enseña la dirección (sin generar)."""
-    document = load_lyrics(args.lyrics, args.audio)
     measurement = await _measure(
         args.audio, with_energy=not args.no_measure, max_seconds=180.0
     )
-    plan = build_plan(
-        document,
-        measurement,
+    plan, measurement = await prepare_plan(
+        args.audio,
+        lyrics=args.lyrics,
         title=args.title,
         artist=args.artist,
+        measurement=measurement,
+        align=not args.no_align,
+        whisper_model=args.whisper_model,
+        language=args.language,
         short_seconds=args.short_seconds,
     )
     if args.json:
@@ -150,6 +152,9 @@ async def _cmd_render(args: argparse.Namespace) -> int:
             short_seconds=args.short_seconds,
             seed_base=args.seed,
             verify=not args.no_verify,
+            align=not args.no_align,
+            whisper_model=args.whisper_model,
+            language=args.language,
         )
     finally:
         await client.aclose()
@@ -174,6 +179,13 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--short-seconds", type=float, default=45.0, help="Duración deseada del corto"
     )
+    parser.add_argument(
+        "--no-align", action="store_true", help="No alinear la letra con Whisper si viene sin tiempos"
+    )
+    parser.add_argument(
+        "--whisper-model", default="small", help="Modelo de Whisper para alinear (tiny|small|medium...)"
+    )
+    parser.add_argument("--language", default=None, help="Idioma de la letra (p. ej. en, es)")
 
 
 def build_parser() -> argparse.ArgumentParser:

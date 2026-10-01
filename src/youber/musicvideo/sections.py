@@ -13,11 +13,13 @@ de ahí sale el corte vertical de promoción. Si no hay repeticiones
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Sequence
 
 from youber.musicvideo.lexicon import normalize
 from youber.musicvideo.models import Highlight, LyricScene, SectionSpan, SongSection
+from youber.sync.timestamps import LyricsDocument, clean_lyric_line
 
 #: Proporción mínima de líneas repetidas para considerar un tramo estribillo.
 CHORUS_REPEAT_RATIO = 0.6
@@ -28,6 +30,13 @@ EDGE_MAX_SECONDS = 20.0
 #: Pesos del score de un tramo (repetición + energía).
 REPETITION_WEIGHT = 0.6
 ENERGY_WEIGHT = 0.4
+
+#: Bonus por papel del tramo: el estribillo es el gancho aunque no se repita
+#: (canciones through-composed con la sección marcada en el fichero de letra).
+KIND_BONUS: dict[SongSection, float] = {
+    SongSection.CHORUS: 0.35,
+    SongSection.PRE_CHORUS: 0.12,
+}
 
 #: Repeticiones que saturan la parte de repetición del score.
 MAX_REPETITION = 4
@@ -45,10 +54,15 @@ def line_repetition(scenes: Sequence[LyricScene]) -> dict[str, int]:
 
 
 def score_section(section: SectionSpan) -> float:
-    """Puntuación de un tramo: cuánto se repite (60 %) y cuánto suena (40 %)."""
+    """Puntuación de un tramo: repetición (60 %), energía (40 %) y papel.
+
+    El estribillo suma un bonus: hay canciones donde no se repite al pie de la
+    letra pero quien la escribió lo marcó como ``[Chorus]`` — ese es el gancho.
+    """
     repetition = min(section.repetition, MAX_REPETITION) / MAX_REPETITION
     energy = section.energy if section.energy is not None else 0.5
-    return round(REPETITION_WEIGHT * repetition + ENERGY_WEIGHT * energy, 4)
+    bonus = KIND_BONUS.get(section.kind, 0.0)
+    return round(REPETITION_WEIGHT * repetition + ENERGY_WEIGHT * energy + bonus, 4)
 
 
 def _runs(scenes: Sequence[LyricScene], repeated: Sequence[bool]) -> list[list[int]]:
@@ -180,8 +194,11 @@ def _build_window(
 def _reason(section: SectionSpan, score: float) -> str:
     """Motivo legible de la elección de un momento."""
     energy = f", energía {section.energy:.2f}" if section.energy is not None else ""
-    if section.kind == SongSection.CHORUS and section.repetition > 1:
-        return f"estribillo repetido ×{section.repetition}{energy} (score {score:.2f})"
+    if section.kind == SongSection.CHORUS:
+        repeat = f" repetido ×{section.repetition}" if section.repetition > 1 else ""
+        return f"estribillo{repeat}{energy} (score {score:.2f})"
+    if section.kind == SongSection.PRE_CHORUS:
+        return f"pre-estribillo{energy} (score {score:.2f})"
     return f"tramo de mayor energía ({section.kind.value}{energy}, score {score:.2f})"
 
 
@@ -256,3 +273,108 @@ def find_highlights(
             )
         )
     return highlights
+
+
+# ---------------------------------------------------------------------------
+# Marcas de sección del fichero de letra
+# ---------------------------------------------------------------------------
+
+#: Marca de sección: una línea que es solo ``[algo]`` (``[Chorus]``, ``[Verse 1]``).
+_MARKER = re.compile(r"^\s*\[(?P<label>[^\]]+)\]\s*$")
+
+#: Palabras de la etiqueta que identifican el papel del tramo.
+_OUTRO_WORDS = frozenset({"outro", "ending", "finale", "coda"})
+_BRIDGE_WORDS = frozenset({"bridge", "breakdown", "interlude"})
+
+
+def _kind_from_label(label: str) -> SongSection:
+    """Papel de un tramo a partir de su etiqueta (``[Chorus | unstable]``)."""
+    words = set(normalize(label).split())
+    if not words:
+        return SongSection.UNKNOWN
+    if "chorus" in words:
+        return SongSection.PRE_CHORUS if "pre" in words else SongSection.CHORUS
+    if words & _BRIDGE_WORDS:
+        return SongSection.BRIDGE
+    if "intro" in words:
+        return SongSection.INTRO
+    if words & _OUTRO_WORDS:
+        return SongSection.OUTRO
+    if "verse" in words:
+        return SongSection.VERSE
+    return SongSection.UNKNOWN
+
+
+def parse_section_markers(text: str) -> list[tuple[str | None, str]]:
+    """Empareja cada línea de letra con la **sección vigente** según las marcas.
+
+    Las marcas (``[Verse 1]``, ``[Chorus | unstable]``) son anotaciones de
+    producción que el parser normal descarta; aquí sí se usan: son la
+    estructura real de la canción escrita por quien la compuso.
+
+    Returns:
+        Lista de ``(etiqueta_de_sección_o_None, línea)`` en orden.
+    """
+    pairs: list[tuple[str | None, str]] = []
+    current: str | None = None
+    for raw in text.splitlines():
+        match = _MARKER.match(raw)
+        if match:
+            current = match.group("label").strip()
+            continue
+        cleaned = clean_lyric_line(raw)
+        if cleaned is not None:
+            pairs.append((current, cleaned))
+    return pairs
+
+
+def sections_from_markers(
+    document: LyricsDocument, text: str, *, duration: float | None = None
+) -> list[SectionSpan]:
+    """Tramos a partir de las **marcas de sección** del fichero de letra.
+
+    Devuelve ``[]`` cuando la letra no trae marcas o no cuadra con las líneas
+    temporizadas (entonces el director usa la heurística por repetición).
+
+    Args:
+        document: Letra (con o sin tiempos).
+        text: Texto crudo del fichero de letra (con las marcas).
+        duration: Duración de la canción (para cerrar el último tramo).
+
+    Returns:
+        Los tramos con papel, tiempos y repetición (la energía se rellena luego).
+    """
+    pairs = parse_section_markers(text)
+    timed = [line for line in document.lines if line.text.strip()]
+    if not pairs or len(pairs) != len(timed):
+        return []
+    total = duration or document.duration
+    counts = Counter(normalize(line.text) for line in timed)
+
+    spans: list[SectionSpan] = []
+    index = 0
+    while index < len(pairs):
+        label = pairs[index][0]
+        start_index = index
+        while index < len(pairs) and pairs[index][0] == label:
+            index += 1
+        end_index = index - 1
+        kind = _kind_from_label(label) if label else SongSection.UNKNOWN
+        if kind == SongSection.UNKNOWN:
+            continue
+        lines = [normalize(timed[i].text) for i in range(start_index, end_index + 1)]
+        start = timed[start_index].start
+        if end_index + 1 < len(timed):
+            end = timed[end_index + 1].start
+        else:
+            end = total if total else timed[end_index].start + 2.0
+        spans.append(
+            SectionSpan(
+                kind=kind,
+                start=round(start, 3),
+                end=round(max(end, start + 0.1), 3),
+                lines=lines,
+                repetition=max((counts[line] for line in lines), default=1),
+            )
+        )
+    return spans

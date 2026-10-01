@@ -17,7 +17,7 @@ from youber.musicvideo.director import (
 )
 from youber.musicvideo.lexicon import beat_from_line, keywords_from_line, normalize
 from youber.musicvideo.models import MusicVideoError, SongSection
-from youber.musicvideo.sections import find_highlights, score_section
+from youber.musicvideo.sections import find_highlights, score_section, sections_from_markers
 from youber.sync.timestamps import LyricsDocument, SyncLine, parse_txt
 from youber.visuals.models import Aspect
 
@@ -113,6 +113,63 @@ def test_find_highlights_elige_el_estribillo() -> None:
 
 def test_find_highlights_sin_tramos_devuelve_vacio() -> None:
     assert find_highlights([]) == []
+
+
+# --- estructura del fichero de letra (marcas de seccion) -------------------
+
+_MARKED_TEXT = (
+    "[Verse 1]\n"
+    "camino solo por la ciudad\n"
+    "y el mar me llama\n"
+    "[Chorus | unstable]\n"
+    "brilla el mar en tus ojos\n"
+    "brilla el mar en tus ojos\n"
+    "[Bridge]\n"
+    "todo se detiene\n"
+)
+
+_MARKED_DOCUMENT = LyricsDocument(
+    lines=[
+        SyncLine(start=0, text="camino solo por la ciudad"),
+        SyncLine(start=5, text="y el mar me llama"),
+        SyncLine(start=10, text="brilla el mar en tus ojos"),
+        SyncLine(start=15, text="brilla el mar en tus ojos"),
+        SyncLine(start=20, text="todo se detiene"),
+    ],
+    timed=True,
+)
+
+
+def test_sections_from_markers_lee_la_estructura() -> None:
+    sections = sections_from_markers(_MARKED_DOCUMENT, _MARKED_TEXT, duration=25.0)
+    kinds = [section.kind for section in sections]
+    assert kinds == [SongSection.VERSE, SongSection.CHORUS, SongSection.BRIDGE]
+    chorus = next(section for section in sections if section.kind == SongSection.CHORUS)
+    assert chorus.start == 10.0 and chorus.end == 20.0
+
+
+def test_sections_from_markers_sin_marcas_devuelve_vacio() -> None:
+    assert sections_from_markers(_MARKED_DOCUMENT, "hola\nmundo\n", duration=25.0) == []
+
+
+def test_direct_song_con_marcas_elige_el_estribillo() -> None:
+    marked = sections_from_markers(_MARKED_DOCUMENT, _MARKED_TEXT, duration=25.0)
+    plan = direct_song(
+        _MARKED_DOCUMENT,
+        duration=25,
+        infer_profile=False,
+        sections=marked,
+        short_seconds=8,
+        min_short_seconds=5,
+        max_short_seconds=20,
+    )
+    assert [section.kind for section in plan.sections] == [
+        SongSection.VERSE,
+        SongSection.CHORUS,
+        SongSection.BRIDGE,
+    ]
+    highlight = best_highlight(plan)
+    assert highlight is not None and highlight.section == SongSection.CHORUS
 
 
 # --- director: escenas y tiempos -------------------------------------------

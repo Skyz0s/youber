@@ -27,6 +27,7 @@ from youber.musicvideo.models import (
     LyricScene,
     MusicVideoError,
     MusicVideoPlan,
+    SectionSpan,
     SongSection,
 )
 from youber.musicvideo.sections import detect_sections, find_highlights, line_repetition
@@ -159,6 +160,27 @@ def _energy_at(
     return section_energy(energies, start, max(0.0, end - start), window=window)
 
 
+def _with_section_energy(
+    sections: Sequence[SectionSpan], scenes: Sequence[LyricScene]
+) -> list[SectionSpan]:
+    """Rellena la energía de cada tramo con la media de las escenas que cubre."""
+    filled: list[SectionSpan] = []
+    for section in sections:
+        values = [
+            scene.energy
+            for scene in scenes
+            if scene.energy is not None
+            and scene.start >= section.start - 1e-6
+            and scene.end <= section.end + 1e-6
+        ]
+        if values:
+            section = section.model_copy(
+                update={"energy": round(sum(values) / len(values), 4)}
+            )
+        filled.append(section)
+    return filled
+
+
 def direct_song(
     document: LyricsDocument,
     *,
@@ -169,6 +191,7 @@ def direct_song(
     energy_window: float = 1.0,
     mood: Mood | None = None,
     sentiment: str | None = None,
+    sections: Sequence[SectionSpan] | None = None,
     infer_profile: bool = True,
     min_line_seconds: float = MIN_LINE_SECONDS,
     seconds_per_line: float = DEFAULT_SECONDS_PER_LINE,
@@ -189,6 +212,9 @@ def direct_song(
         energy_window: Duración de cada ventana del perfil (segundos).
         mood: Ánimo global (si falta y ``infer_profile``, se infiere).
         sentiment: Sentimiento global (si falta y ``infer_profile``, se infiere).
+        sections: Tramos ya conocidos (p. ej. las **marcas de sección** del
+            fichero de letra, :func:`youber.musicvideo.sections.sections_from_markers`).
+            Si se dan, mandan sobre la heurística por repetición.
         infer_profile: Infiere ánimo/sentimiento de la letra si no se aportan.
         min_line_seconds: Duración mínima de una escena antes de fundirla.
         seconds_per_line: Segundos por línea sin tiempos ni duración.
@@ -223,10 +249,14 @@ def direct_song(
         )
         for index, (text, start, end) in enumerate(spans)
     ]
-    sections = detect_sections(draft)
+    detected = (
+        _with_section_energy(list(sections), draft)
+        if sections is not None
+        else detect_sections(draft)
+    )
     counts = line_repetition(draft)
     section_of: dict[int, tuple[SongSection, int]] = {}
-    for section_index, section in enumerate(sections):
+    for section_index, section in enumerate(detected):
         for scene in draft:
             if scene.start >= section.start - 1e-6 and scene.end <= section.end + 1e-6:
                 section_of[scene.index] = (section.kind, section_index)
@@ -249,7 +279,7 @@ def direct_song(
         )
 
     highlights = find_highlights(
-        sections,
+        detected,
         target=short_seconds,
         min_seconds=min_short_seconds,
         max_seconds=max_short_seconds,
@@ -260,7 +290,7 @@ def direct_song(
         duration=round(total, 3),
         timed=timed,
         scenes=scenes,
-        sections=sections,
+        sections=detected,
         highlights=highlights,
         mood=mood,
         sentiment=sentiment,

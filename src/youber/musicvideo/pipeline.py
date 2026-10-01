@@ -36,9 +36,15 @@ from youber.genvideo.models import (
 from youber.genvideo.queue import JobQueue
 from youber.genvideo.runner import NightlyRunner, requests_from_shot_plan, slugify
 from youber.musicvideo.director import direct_song, plan_to_script, plan_to_shot_plan
-from youber.musicvideo.models import MusicVideoError, MusicVideoPlan
+from youber.musicvideo.models import MusicVideoError, MusicVideoPlan, SectionSpan
+from youber.musicvideo.sections import sections_from_markers
 from youber.script.builder import build_project
 from youber.script.models import Script
+from youber.sync.aligner import (
+    align_lines_to_segments,
+    transcribe_segments,
+    whisper_available,
+)
 from youber.sync.timestamps import LyricsDocument, parse_lyrics_file
 from youber.video.editor import VideoEditor
 from youber.video.models import Project
@@ -124,6 +130,20 @@ async def measure_song(
     )
 
 
+def _lyrics_path(lyrics: str | Path | LyricsDocument | None, audio: str | Path) -> Path | None:
+    """Ruta del fichero de letra (explícita o hermano del audio), si la hay."""
+    if isinstance(lyrics, LyricsDocument):
+        return None
+    if lyrics is not None:
+        return Path(lyrics)
+    source = Path(audio)
+    for suffix in (".lrc", ".txt", ".srt", ".json"):
+        candidate = source.with_suffix(suffix)
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def load_lyrics(
     lyrics: str | Path | LyricsDocument | None, audio: str | Path
 ) -> LyricsDocument:
@@ -137,17 +157,28 @@ def load_lyrics(
     """
     if isinstance(lyrics, LyricsDocument):
         return lyrics
-    if lyrics is not None:
-        return parse_lyrics_file(lyrics)
-    source = Path(audio)
-    for suffix in (".lrc", ".txt", ".srt", ".json"):
-        candidate = source.with_suffix(suffix)
-        if candidate.exists():
-            logger.info(f"Letra encontrada junto al audio: {candidate.name}")
-            return parse_lyrics_file(candidate)
-    raise MusicVideoError(
-        "Sin letra: pasa un fichero con --lyrics o deja «<audio>.lrc/.txt» junto al audio"
-    )
+    path = _lyrics_path(lyrics, audio)
+    if path is None:
+        raise MusicVideoError(
+            "Sin letra: pasa un fichero con --lyrics o deja «<audio>.lrc/.txt» junto al audio"
+        )
+    if lyrics is None:
+        logger.info(f"Letra encontrada junto al audio: {path.name}")
+    return parse_lyrics_file(path)
+
+
+def load_lyrics_source(
+    lyrics: str | Path | LyricsDocument | None, audio: str | Path
+) -> tuple[LyricsDocument, str | None]:
+    """Letra parseada y, si venía de un fichero, su **texto crudo**.
+
+    El texto crudo hace falta para leer las **marcas de sección** (``[Chorus]``)
+    que el parser normal descarta.
+    """
+    document = load_lyrics(lyrics, audio)
+    path = _lyrics_path(lyrics, audio)
+    text = path.read_text(encoding="utf-8-sig") if path is not None else None
+    return document, text
 
 
 def build_plan(
@@ -156,6 +187,7 @@ def build_plan(
     *,
     title: str = "",
     artist: str | None = None,
+    sections: Sequence[SectionSpan] | None = None,
     short_seconds: float = 45.0,
     min_short_seconds: float = 20.0,
     max_short_seconds: float = 60.0,
@@ -167,10 +199,86 @@ def build_plan(
         artist=artist,
         duration=measurement.duration,
         energies=measurement.energies or None,
+        sections=sections,
         short_seconds=short_seconds,
         min_short_seconds=min_short_seconds,
         max_short_seconds=max_short_seconds,
     )
+
+
+async def align_document(
+    document: LyricsDocument,
+    audio: str | Path,
+    *,
+    model: str = "small",
+    language: str | None = None,
+) -> LyricsDocument:
+    """Temporiza una letra sin tiempos alineándola con Whisper.
+
+    Transcribe el audio y mapea **las líneas de la letra** a los segmentos
+    (:func:`youber.sync.aligner.align_lines_to_segments`): las marcas de
+    sección del fichero no se pierden porque se leen del texto crudo aparte.
+    """
+    lines = document.as_plain_lines()
+    if not lines:
+        raise MusicVideoError("La letra no tiene líneas que alinear")
+    segments = await transcribe_segments(audio, model, language)
+    timed = align_lines_to_segments(lines, segments)
+    return LyricsDocument(
+        lines=timed,
+        title=document.title,
+        artist=document.artist,
+        duration=await probe_duration(audio),
+        timed=True,
+        source="whisper",
+    )
+
+
+async def prepare_plan(
+    audio: str | Path,
+    *,
+    lyrics: str | Path | LyricsDocument | None = None,
+    title: str = "",
+    artist: str | None = None,
+    measurement: SongMeasurement | None = None,
+    align: bool = True,
+    whisper_model: str = "small",
+    language: str | None = None,
+    short_seconds: float = 45.0,
+    min_short_seconds: float = 20.0,
+    max_short_seconds: float = 60.0,
+) -> tuple[MusicVideoPlan, SongMeasurement]:
+    """Mide la canción, alinea la letra si hace falta y produce la dirección.
+
+    Si la letra trae las **marcas de sección** (``[Chorus]``...), mandan sobre
+    la heurística por repetición. Sin tiempos reales y con Whisper disponible,
+    la letra se alinea al audio (mejor que repartir proporcional).
+    """
+    document, lyrics_text = load_lyrics_source(lyrics, audio)
+    song = measurement or await measure_song(audio)
+    if not document.timed and align and whisper_available():
+        logger.info("Letra sin tiempos: se alinea con Whisper")
+        document = await align_document(
+            document, audio, model=whisper_model, language=language
+        )
+    marked = (
+        sections_from_markers(document, lyrics_text, duration=song.duration)
+        if lyrics_text
+        else []
+    )
+    if marked:
+        logger.info(f"Estructura de la letra: {len(marked)} tramos marcados")
+    plan = build_plan(
+        document,
+        song,
+        title=title,
+        artist=artist,
+        sections=marked or None,
+        short_seconds=short_seconds,
+        min_short_seconds=min_short_seconds,
+        max_short_seconds=max_short_seconds,
+    )
+    return plan, song
 
 
 async def generate_clips(
@@ -271,6 +379,9 @@ async def run_musicvideo(
     fps: int = 30,
     verify: bool = True,
     keep_awake: bool = False,
+    align: bool = True,
+    whisper_model: str = "small",
+    language: str | None = None,
     measurement: SongMeasurement | None = None,
 ) -> MusicVideoResult:
     """Produce las dos líneas: el videoclip y el corto vertical.
@@ -292,6 +403,9 @@ async def run_musicvideo(
         fps: Fotogramas por segundo del montaje.
         verify: Verificar la calidad de los clips generados.
         keep_awake: Desactivar la suspensión del equipo durante la generación.
+        align: Alinear con Whisper la letra si viene sin tiempos.
+        whisper_model: Modelo de Whisper para la alineación.
+        language: Idioma de la letra (mejora la transcripción si se conoce).
         measurement: Medición ya hecha (se mide si falta).
 
     Returns:
@@ -299,13 +413,15 @@ async def run_musicvideo(
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    document = load_lyrics(lyrics, audio)
-    song = measurement or await measure_song(audio)
-    plan = build_plan(
-        document,
-        song,
+    plan, song = await prepare_plan(
+        audio,
+        lyrics=lyrics,
         title=title,
         artist=artist,
+        measurement=measurement,
+        align=align,
+        whisper_model=whisper_model,
+        language=language,
         short_seconds=short_seconds,
         min_short_seconds=min_short_seconds,
         max_short_seconds=max_short_seconds,
