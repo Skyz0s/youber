@@ -47,7 +47,7 @@ from youber.genvideo.service import ComfyUIService
 from youber.genvideo.verify import MIN_DETAIL, verify_clip
 from youber.script.generator import DEFAULT_DURATION
 from youber.script.models import Script
-from youber.visuals.models import VisualStyle
+from youber.visuals.models import ShotPlan, VisualStyle
 from youber.visuals.prompts import build_shot_plan
 
 #: Reintentos por clip antes de descartarlo (el 2.º intento sube los steps).
@@ -187,6 +187,53 @@ def requests_from_script(
                 label=f"{shot.index + 1:02d} {role} {slugify(title, limit=24)}",
                 scene_index=shot.scene_index,
                 scene_type=role,
+                prompt=shot.prompt,
+                seed=seed_base + shot.index,
+                duration_hint=shot.duration,
+                config=clip_config,
+            )
+        )
+    return requests
+
+
+def requests_from_shot_plan(
+    plan: ShotPlan,
+    *,
+    config: GenConfig | None = None,
+    preset: Resolution = Resolution.HD,
+    seed_base: int = 42,
+) -> list[ClipRequest]:
+    """Un :class:`ClipRequest` por plano de un plan visual **ya construido**.
+
+    A diferencia de :func:`requests_from_script`, no vuelve a repartir los
+    planos: respeta las duraciones y los prompts del plan tal cual. Es lo que
+    necesita el videoclip dirigido por la letra, donde cada plano dura lo que
+    dura su línea (no un promedio de la duración total).
+
+    Args:
+        plan: Plan visual (``youber.visuals.models.ShotPlan``).
+        config: Configuración de generación (si falta, la del preset).
+        preset: Preset medido (``720p`` o ``480p``).
+        seed_base: Semilla del primer plano; los demás suman su índice.
+
+    Returns:
+        Los clips a generar, en orden de montaje.
+    """
+    settings = config or GenConfig.for_resolution(preset)
+    requests: list[ClipRequest] = []
+    for shot in plan.shots:
+        clip_config = settings.with_duration(shot.duration)
+        requests.append(
+            ClipRequest(
+                id=clip_id(
+                    shot.prompt,
+                    seed_base + shot.index,
+                    width=clip_config.width,
+                    steps=clip_config.steps,
+                    frames=clip_config.frames,
+                ),
+                label=f"{shot.index + 1:02d} {slugify(shot.beat or 'plano', limit=24)}",
+                scene_index=shot.scene_index,
                 prompt=shot.prompt,
                 seed=seed_base + shot.index,
                 duration_hint=shot.duration,

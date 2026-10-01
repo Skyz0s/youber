@@ -22,13 +22,51 @@ De una misma dirección (un `MusicVideoPlan`) salen **dos líneas de producción
 | `musicvideo.lexicon` | De una línea a un plano: localiza sujeto/acción/lugar/luz con un léxico local (es→en) y compone un `VisualBeat`. Offline y determinista. |
 | `musicvideo.sections` | Detecta los **tramos** por repetición de la letra (el estribillo es lo que más se repite) y elige los **mejores momentos** (repetición + energía). |
 | `musicvideo.director` | Une todo: `direct_song()` → `MusicVideoPlan`; `plan_to_shot_plan()` (planos para el motor visual) y `plan_to_script()` (texto de cada línea para quemar en pantalla). |
+| `musicvideo.pipeline` | Mide la canción (duración, pulso, energía), dirige y produce **los dos vídeos**: pide los clips a `genvideo` y monta con `video`. El corto se **re-renderiza** en 9:16 (no se recorta). |
+| `musicvideo.cli` | `youber-musicvideo plan` (enseña la dirección sin gastar GPU) y `render` (videoclip + corto). |
 
 Reutiliza lo que ya había: `youber.sync` (letra con tiempos), `youber.visuals`
 (planes, estilos, beat), `youber.genvideo` (generación local) y `youber.video`
 (montaje). La **metadata** de un canal deja de dirigir; pasa a ser *empaquetado*
 (título, descripción, tags, miniatura).
 
+## Dos líneas de producción (tubería y CLI)
+
+La tubería (`run_musicvideo`) mide la canción, dirige, genera los clips con el
+backend local y monta. El corto vertical **se re-renderiza** en 9:16 a partir
+del estribillo detectado (mejor encuadre que recortar el horizontal).
+
+```bash
+# Ver la dirección (tramos, mejores momentos, escenas) sin generar nada
+youber-musicvideo plan cancion.m4a --lyrics cancion.lrc --title "Mi cancion"
+
+# Producir el videoclip (16:9) y el corto vertical (9:16)
+youber-musicvideo render cancion.m4a --lyrics cancion.lrc --title "Mi cancion" --preset 480p
+
+# Probar la tubería entera sin GPU (MP4 sintético con FFmpeg)
+youber-musicvideo render cancion.m4a --backend stub --preset 480p
+```
+
+Si no se pasa `--lyrics`, se busca `<audio>.lrc/.txt/.srt/.json` junto al audio.
+El backend de generación es enchufable: `--backend comfy` (ComfyUI local, por
+defecto) o `--backend stub` (sin GPU).
+
 ## Uso (biblioteca)
+
+```python
+import asyncio
+from youber.genvideo.client import StubClient  # o ComfyUIClient en producción
+from youber.musicvideo import run_musicvideo
+
+result = asyncio.run(run_musicvideo(
+    "mi_cancion.m4a", lyrics="mi_cancion.lrc", title="Mi canción",
+    out_dir="salida", client=StubClient(width=832, height=480, fps=24),
+))
+print(result.video)  # videoclip 16:9
+print(result.short)  # corto vertical 9:16 del estribillo
+```
+
+Y solo la dirección (sin generar):
 
 ```python
 from youber.sync.timestamps import parse_lyrics_file

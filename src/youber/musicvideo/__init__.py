@@ -38,24 +38,42 @@ from youber.musicvideo.models import (
     SectionSpan,
     SongSection,
 )
+from youber.musicvideo.pipeline import (
+    FULL_RESOLUTION,
+    SHORT_RESOLUTION,
+    MusicVideoResult,
+    SongMeasurement,
+    build_plan,
+    load_lyrics,
+    measure_song,
+    run_musicvideo,
+)
 from youber.musicvideo.sections import detect_sections, find_highlights, score_section
 
 __all__ = [
+    "FULL_RESOLUTION",
     "Highlight",
     "LyricScene",
     "MusicVideoError",
     "MusicVideoPlan",
+    "MusicVideoResult",
+    "SHORT_RESOLUTION",
     "SectionSpan",
+    "SongMeasurement",
     "SongSection",
     "beat_from_line",
     "best_highlight",
+    "build_plan",
     "DEFAULT_SHORT_SECONDS",
     "detect_sections",
     "direct_song",
     "find_highlights",
     "keywords_from_line",
+    "load_lyrics",
+    "measure_song",
     "normalize",
     "plan_to_script",
     "plan_to_shot_plan",
+    "run_musicvideo",
     "score_section",
 ]
