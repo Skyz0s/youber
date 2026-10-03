@@ -702,7 +702,40 @@ def test_runner_reintenta_clip_plano(tmp_path: Path):
     descartado = report.failed[0]
     assert descartado.attempts == 2
     assert descartado.config.steps == 16  # 8 → 16 al reintentar
+    # El presupuesto de espera sube con los steps: un 16 pasos tarda el doble.
+    assert descartado.config.timeout_seconds == 2 * GenConfig.for_resolution("720p").timeout_seconds
     assert descartado.error and "verificación" in descartado.error
+
+
+@needs_ffmpeg
+def test_runner_escribe_su_propio_informe(tmp_path: Path):
+    """Un lote con la API de bajo nivel también deja manifiesto.
+
+    El videoclip por secciones del 01-10-2026 usó ``NightlyRunner`` a pelo y
+    terminó sin informe; ahora el runner lo escribe él mismo cuando recibe
+    ``report_dir``.
+    """
+
+    async def scenario() -> BatchReport:
+        config = GenConfig.for_resolution(Resolution.SD.value)
+        runner = NightlyRunner(
+            client=StubClient(
+                seconds=config.clip_seconds,
+                width=config.width,
+                height=config.height,
+                fps=config.fps,
+            ),
+            config=config,
+            queue=JobQueue(tmp_path / "queue.json"),
+            output_dir=tmp_path / "clips",
+            report_dir=tmp_path / "reports",
+        )
+        return await runner.run(requests_from_prompts(["uno"], preset=Resolution.SD))
+
+    report = _run(scenario())
+    assert len(report.done) == 1
+    assert (tmp_path / "reports" / f"lote-{report.id}.json").exists()
+    assert (tmp_path / "reports" / f"lote-{report.id}.md").exists()
 
 
 @needs_ffmpeg

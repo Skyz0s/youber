@@ -307,6 +307,9 @@ class NightlyRunner:
         config: Configuración de referencia del lote.
         queue: Cola persistida.
         output_dir: Carpeta donde se dejan los clips.
+        report_dir: Carpeta donde el runner deja el manifiesto y el resumen.
+            Si es ``None`` no se escribe nada (los lotes con CLI usan
+            ``run_nightly``, que la rellena).
         deadline: Instante en el que el lote deja de generar.
     """
 
@@ -317,6 +320,7 @@ class NightlyRunner:
         config: GenConfig | None = None,
         queue: JobQueue | None = None,
         output_dir: str | Path | None = None,
+        report_dir: str | Path | None = None,
         verify: bool = True,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         retry_steps: int = DEFAULT_RETRY_STEPS,
@@ -331,6 +335,7 @@ class NightlyRunner:
         self.config = config or GenConfig()
         self.queue = queue or JobQueue()
         self.output_dir = Path(output_dir) if output_dir else default_dir() / "clips"
+        self.report_dir = Path(report_dir) if report_dir else None
         self.verify = verify
         self.max_attempts = max_attempts
         self.retry_steps = retry_steps
@@ -372,6 +377,13 @@ class NightlyRunner:
             f"Lote {report.id}: {len(report.done)}/{report.total} buenos · "
             f"{report.metrage:.1f} s · parada: {report.stopped_reason}"
         )
+        # El manifiesto lo escribe el propio runner (no solo ``run_nightly``) para
+        # que cualquier lote que use la API de bajo nivel —como el videoclip por
+        # secciones del 01-10-2026— también lo deje. Aquel lote corrió y terminó
+        # bien, pero nunca escribió informe porque llamaba a ``NightlyRunner`` a
+        # pelo y nadie pasaba carpeta de reportes.
+        if self.report_dir is not None:
+            write_report(report, self.report_dir)
         return report
 
     async def _drain(self, report: BatchReport) -> None:
@@ -515,7 +527,18 @@ class NightlyRunner:
             and request.config.steps < self.retry_steps
         )
         if can_retry:
-            request.config.steps = min(self.retry_steps, request.config.steps * 2)
+            previous_steps = request.config.steps
+            request.config.steps = min(self.retry_steps, previous_steps * 2)
+            # Reintentar con más steps tarda (casi) proporcionalmente más: si no
+            # se sube el presupuesto de espera, el clip muere por timeout justo
+            # cuando iba a terminar. Le pasó al lote del 01-10-2026: los
+            # reintentos a 16 steps de 720p murieron a los 3600 s con la GPU
+            # todavía trabajando.
+            if previous_steps:
+                ratio = request.config.steps / previous_steps
+                request.config.timeout_seconds = int(
+                    request.config.timeout_seconds * ratio
+                )
             request.status = JobStatus.PENDING
             request.prompt_id = None
             logger.warning(
@@ -633,6 +656,7 @@ async def run_nightly(
         config=settings,
         queue=queue,
         output_dir=output_dir,
+        report_dir=report_dir,
         verify=verify,
         keep_awake=keep_awake,
         deadline=deadline,
@@ -645,8 +669,6 @@ async def run_nightly(
         await backend.aclose()
         if service is not None and started_comfyui and not keep_comfyui:
             await service.stop()
-    if report_dir is not None:
-        write_report(report, report_dir)
     return report
 
 
