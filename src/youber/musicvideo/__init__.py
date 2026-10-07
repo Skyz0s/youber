@@ -49,6 +49,16 @@ from youber.musicvideo.pipeline import (
     run_musicvideo,
 )
 from youber.musicvideo.sections import detect_sections, find_highlights, score_section
+from youber.musicvideo.shots import (
+    DEFAULT_SLOTS,
+    ShotSlot,
+    SlotCoverage,
+    allocate_slots,
+    build_shot_slots,
+    distinct_count,
+    slot_coverage,
+    slots_to_shot_plan,
+)
 
 __all__ = [
     "FULL_RESOLUTION",
@@ -65,6 +75,14 @@ __all__ = [
     "best_highlight",
     "build_plan",
     "DEFAULT_SHORT_SECONDS",
+    "DEFAULT_SLOTS",
+    "ShotSlot",
+    "SlotCoverage",
+    "allocate_slots",
+    "build_shot_slots",
+    "distinct_count",
+    "slot_coverage",
+    "slots_to_shot_plan",
     "detect_sections",
     "direct_song",
     "find_highlights",

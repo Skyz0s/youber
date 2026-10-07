@@ -82,6 +82,43 @@ mejor = plan.highlights[0]
 short = plan_to_shot_plan(plan, scenes=plan.highlight_scenes(mejor), aspect="9:16")
 ```
 
+## Planos del guion (`youber.musicvideo.shots`)
+
+La dirección dice *qué* se cuenta; el **guion** dice *cuándo* se corta. El
+módulo reparte la canción en ``count`` huecos (:class:`ShotSlot`) y cada hueco es
+un plano:
+
+- **cubre la canción entera** (del segundo 0 a la duración), sin huecos ni
+  solapes, instrumentales incluidos;
+- cada hueco vive **dentro de un tramo** (un plano no cruza de verso a
+  estribillo) y su encuadre sale de la **línea dominante** de esa ventana;
+- los cortes caen **en el pulso** si se le pasa la rejilla medida;
+- el **motivo** solo aparece donde la canción **se repite de verdad**:
+  1. tramos con la **letra idéntica** (el estribillo que vuelve) comparten
+     planos, alineados por posición relativa;
+  2. dentro de un tramo, la **misma línea** comparte imagen en bloques de
+     ``MAX_MOTIF_RUN`` huecos (más seguidos sería un plano congelado).
+
+```python
+from youber.musicvideo import build_shot_slots, slot_coverage, distinct_count
+
+slots = build_shot_slots(plan, 40, grid=grid)   # 40 planos, cortes al pulso
+report = slot_coverage(slots, plan)
+assert report.ok                                # cubre la canción sin sorpresas
+print(distinct_count(slots), "planos que hay que generar de verdad")
+```
+
+Y sin gastar GPU, desde el CLI:
+
+```bash
+youber-musicvideo shots mi_cancion.m4a --slots 40 --out planos.json
+```
+
+El parte de cobertura (``report``) es lo que vigila el test: si un plano se va a
+otro tramo, si queda un hueco sin plano o si una escena se queda sin imagen, la
+suite lo caza. Es justo el fallo que hacía que un videoclip pareciera «un vídeo
+random con música encima».
+
 ## Ética
 
 La letra es tuya (o se transcribe de tu propio audio con `youber-sync`); los

@@ -4,6 +4,8 @@ Dos mandos:
 
 - ``plan``: dirige y **enseña la dirección** (tramos, mejores momentos,
   escenas) sin generar nada — para revisar antes de gastar GPU;
+- ``shots``: reparte esa dirección en los **planos del guion** (ventana, tramo,
+  motivo y cobertura) y avisa si algo no cuadra — tampoco gasta GPU;
 - ``render``: hace las dos líneas de producción (videoclip + corto vertical).
 
 El backend de generación es enchufable: ``--backend comfy`` (ComfyUI local, por
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 from pathlib import Path
 
 from rich.console import Console
@@ -31,6 +34,15 @@ from youber.musicvideo.pipeline import (
     prepare_plan,
     run_musicvideo,
 )
+from youber.musicvideo.shots import (
+    DEFAULT_SLOTS,
+    ShotSlot,
+    SlotCoverage,
+    build_shot_slots,
+    slot_coverage,
+    slots_to_shot_plan,
+)
+from youber.visuals.tempo import BeatGrid
 
 console = Console()
 
@@ -134,6 +146,98 @@ async def _cmd_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _cmd_shots(args: argparse.Namespace) -> int:
+    """Reparte la canción en planos y comprueba que el reparto cuadra."""
+    measurement = await _measure(
+        args.audio, with_energy=not args.no_measure, max_seconds=180.0
+    )
+    plan, measurement = await prepare_plan(
+        args.audio,
+        lyrics=args.lyrics,
+        title=args.title,
+        artist=args.artist,
+        measurement=measurement,
+        align=not args.no_align,
+        whisper_model=args.whisper_model,
+        language=args.language,
+        short_seconds=args.short_seconds,
+    )
+    grid = None
+    if measurement.beat_bpm and not args.no_beat:
+        grid = BeatGrid(
+            bpm=measurement.beat_bpm, offset=measurement.beat_offset or 0.0
+        )
+    slots = build_shot_slots(
+        plan, args.slots, grid=grid, motif=not args.no_motif
+    )
+    report = slot_coverage(slots, plan)
+    shot_plan = slots_to_shot_plan(
+        plan, slots, transition=0.0, include_topic=True
+    )
+    prompts = {shot.index: shot.prompt for shot in shot_plan.shots}
+    payload = {
+        "title": plan.title,
+        "duration": plan.duration,
+        "slots": [
+            {**slot.model_dump(mode="json"), "prompt": prompts.get(slot.index, "")}
+            for slot in slots
+        ],
+        "coverage": report.model_dump(mode="json"),
+    }
+    if args.json or args.out:
+        text = json.dumps(payload, indent=2, ensure_ascii=False)
+        if args.out:
+            Path(args.out).write_text(text, encoding="utf-8")
+            console.print(f"Planos escritos en [bold]{args.out}[/]")
+        if args.json:
+            console.print_json(text)
+        return 0
+    _print_slots(slots, report, grid is not None)
+    return 0
+
+
+def _print_slots(
+    slots: list[ShotSlot], report: SlotCoverage, beat_aligned: bool
+) -> None:
+    """Enseña los huecos del guion y el parte de cobertura."""
+    table = Table(title="Planos del guion", show_lines=False)
+    table.add_column("#", justify="right")
+    table.add_column("Inicio", justify="right")
+    table.add_column("Fin", justify="right")
+    table.add_column("Duración", justify="right")
+    table.add_column("Tramo")
+    table.add_column("Motivo", justify="right")
+    table.add_column("Letra")
+    for slot in slots:
+        table.add_row(
+            str(slot.index),
+            f"{slot.start:.1f}",
+            f"{slot.end:.1f}",
+            f"{slot.duration:.1f} s",
+            slot.section.value,
+            "—" if slot.repeat_of is None else f"={slot.repeat_of}",
+            slot.text[:44],
+        )
+    console.print(table)
+    colour = "green" if report.ok else "red"
+    console.print(
+        Panel.fit(
+            f"{report.slots} planos · [bold]{report.generated}[/] a generar · "
+            f"{report.repeated} por motivo{' · cortes al pulso' if beat_aligned else ''}\n"
+            f"cubre {report.covered:.1f} s de {report.duration:.1f} s · "
+            f"escenas {report.scenes_covered}/{report.scenes_total}\n"
+            + ("cobertura correcta" if report.ok else "\u26a0 cobertura con problemas"),
+            border_style=colour,
+        )
+    )
+    for missing in report.missing_scenes:
+        console.print(f"[red]Escena sin plano: {missing}[/]")
+    for stray in report.stray_slots:
+        console.print(f"[red]Plano fuera de su tramo: {stray}[/]")
+    for gap in report.gaps:
+        console.print(f"[red]Hueco sin plano: {gap[0]:.1f}–{gap[1]:.1f} s[/]")
+
+
 async def _cmd_render(args: argparse.Namespace) -> int:
     """Genera las dos líneas de producción (videoclip + corto vertical)."""
     preset = Resolution(args.preset)
@@ -205,6 +309,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="No mide pulso ni energía (solo la duración): más rápido",
     )
     plan.set_defaults(func=_cmd_plan)
+
+    shots = subparsers.add_parser(
+        "shots", help="Reparte la dirección en los planos del guion (sin generar)"
+    )
+    _add_common(shots)
+    shots.add_argument(
+        "--slots", type=int, default=DEFAULT_SLOTS, help="Planos que debe tener el videoclip"
+    )
+    shots.add_argument("--no-motif", action="store_true", help="No reutilizar planos (sin motivo)")
+    shots.add_argument("--no-beat", action="store_true", help="No ajustar los cortes al pulso")
+    shots.add_argument(
+        "--no-measure", action="store_true", help="No mide pulso ni energía (solo la duración)"
+    )
+    shots.add_argument("--json", action="store_true", help="Vuelca el reparto en JSON")
+    shots.add_argument("--out", help="Escribe el reparto (y los prompts) en un JSON")
+    shots.set_defaults(func=_cmd_shots)
 
     render = subparsers.add_parser("render", help="Genera el videoclip y el corto vertical")
     _add_common(render)
