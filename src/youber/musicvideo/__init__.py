@@ -38,6 +38,12 @@ from youber.musicvideo.models import (
     SectionSpan,
     SongSection,
 )
+from youber.musicvideo.montage import (
+    ShotSegment,
+    render_montage,
+    resolve_origins,
+    slot_segments,
+)
 from youber.musicvideo.pipeline import (
     FULL_RESOLUTION,
     SHORT_RESOLUTION,
@@ -76,12 +82,16 @@ __all__ = [
     "build_plan",
     "DEFAULT_SHORT_SECONDS",
     "DEFAULT_SLOTS",
+    "ShotSegment",
     "ShotSlot",
     "SlotCoverage",
     "allocate_slots",
     "build_shot_slots",
     "distinct_count",
+    "render_montage",
+    "resolve_origins",
     "slot_coverage",
+    "slot_segments",
     "slots_to_shot_plan",
     "detect_sections",
     "direct_song",
