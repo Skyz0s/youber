@@ -1,0 +1,415 @@
+{
+  "character": "a woman in her early thirties, dark hair, bare-faced, pale skin, plain dark clothing",
+  "style": "photorealistic psychological cinema, cold blue-grey palette with faint dirty amber highlights, deep blacks with legible exposure, natural skin texture, shallow depth of field, soft film grain, 35mm cinematic look, realistic lighting, minimal empty environment",
+  "negative": "text, watermark, subtitles, signature, cuts, surreal fantasy imagery, horror creature, monster, ghost, glitch effect, crying, screaming, open mouth, lip movement, theatrical expression, performing to camera, cartoon, anime, cgi, 3d render, illustration, plastic skin, oversaturated, hdr, blurry, out of focus subject, low quality, jpeg artifacts, deformed, disfigured, extra limbs, extra fingers, bad anatomy, bad hands, duplicate, underexposed, too dark, black frame, crushed blacks",
+  "note": "Generado desde la letra (40 huecos, 37 planos reales). Cada plano va atado a su tramo; los huecos de motivo reutilizan clip.",
+  "shots": [
+    {
+      "id": 0,
+      "section": "intro",
+      "window": [
+        0.0,
+        19.686
+      ],
+      "text": "I thought it would stop.",
+      "still": "slow aerial sweep: an open landscape coming to a halt, a quiet valley at dawn, soft even light, featuring coming to a halt; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous push-in, the camera creeps closer, everything else almost still, slow aerial sweep: an open landscape coming to a halt, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 1,
+      "section": "intro",
+      "window": [
+        19.686,
+        27.003
+      ],
+      "text": "That's the stupid part.",
+      "still": "wide establishing shot: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the left, the subject stays put, nothing else moves, wide establishing shot: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 2,
+      "section": "intro",
+      "window": [
+        27.003,
+        32.23
+      ],
+      "text": "it would stop. But it doesn't.",
+      "still": "slow aerial sweep: still water coming to a halt, a calm lake at dusk, pale dusk light, featuring coming to a halt; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous pull-back, the camera eases away, everything else almost still, slow aerial sweep: still water coming to a halt, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 3,
+      "section": "intro",
+      "window": [
+        32.23,
+        35.888
+      ],
+      "text": "Not when you sleep.",
+      "still": "slow aerial sweep: an open landscape sleeping, a quiet valley at dawn, soft even light, featuring sleeping; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the right, the subject stays put, nothing else moves, slow aerial sweep: an open landscape sleeping, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 4,
+      "section": "intro",
+      "window": [
+        35.888,
+        40.592
+      ],
+      "text": "Not when you close your eyes.",
+      "still": "slow tilt up: a pair of searching eyes rippling faintly, a calm lake at dusk, pale dusk light, featuring a pair of searching eyes; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt upward, the camera rises, the subject stays put, slow tilt up: a pair of searching eyes rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 5,
+      "section": "intro",
+      "window": [
+        40.592,
+        46.864
+      ],
+      "text": "Not when you try to think about something else.",
+      "still": "slow tilt up: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt downward, the camera lowers, the subject stays put, slow tilt up: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 6,
+      "section": "verse",
+      "window": [
+        46.864,
+        65.156
+      ],
+      "text": "I was fast.",
+      "still": "slow push in: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous push-in, the camera creeps closer, everything else almost still, slow push in: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 7,
+      "section": "verse",
+      "window": [
+        65.156,
+        70.905
+      ],
+      "text": "That's what I was.",
+      "still": "static medium shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the left, the subject stays put, nothing else moves, static medium shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 8,
+      "section": "verse",
+      "window": [
+        70.905,
+        74.041
+      ],
+      "text": "to believe that if you pressed hard enough...",
+      "still": "slow push in: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous pull-back, the camera eases away, everything else almost still, slow push in: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 9,
+      "section": "verse",
+      "window": [
+        74.041,
+        76.655
+      ],
+      "text": "something had to break. But it doesn't.",
+      "still": "slow push in: still water shattering, a calm lake at dusk, pale dusk light, featuring shattering; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the right, the subject stays put, nothing else moves, slow push in: still water shattering, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 10,
+      "section": "verse",
+      "window": [
+        76.655,
+        82.404
+      ],
+      "text": "It doesn't break. You're the one left standing,",
+      "still": "slow push in: an open landscape shattering, a quiet valley at dawn, soft even light, featuring shattering; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt upward, the camera rises, the subject stays put, slow push in: an open landscape shattering, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 11,
+      "section": "unknown",
+      "window": [
+        82.404,
+        87.108
+      ],
+      "text": "and nothing happens. It didn't happen all at once.",
+      "still": "slow push in: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt downward, the camera lowers, the subject stays put, slow push in: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 13,
+      "section": "verse",
+      "window": [
+        92.334,
+        96.515
+      ],
+      "text": "Like holding your breath.",
+      "still": "static medium shot: a held breath resting in the stillness, a quiet valley at dawn, soft even light, featuring a held breath; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the left, the subject stays put, nothing else moves, static medium shot: a held breath resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 14,
+      "section": "verse",
+      "window": [
+        96.515,
+        101.219
+      ],
+      "text": "You can. You can. And then you don't even know",
+      "still": "static medium shot: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous pull-back, the camera eases away, everything else almost still, static medium shot: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 15,
+      "section": "verse",
+      "window": [
+        101.219,
+        106.446
+      ],
+      "text": "I think. But I wasn't all there anymore.",
+      "still": "slow push in: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the right, the subject stays put, nothing else moves, slow push in: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 16,
+      "section": "pre_chorus",
+      "window": [
+        106.446,
+        111.149
+      ],
+      "text": "I always thought hate came after.",
+      "still": "medium tracking shot: a clenched fist resting in the stillness, a quiet valley at dawn, soft even light, featuring a clenched fist; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt upward, the camera rises, the subject stays put, medium tracking shot: a clenched fist resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 17,
+      "section": "pre_chorus",
+      "window": [
+        111.149,
+        114.285
+      ],
+      "text": "After you lose something.",
+      "still": "observational shot: still water drifting away, a calm lake at dusk, pale dusk light, featuring drifting away; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt downward, the camera lowers, the subject stays put, observational shot: still water drifting away, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 18,
+      "section": "pre_chorus",
+      "window": [
+        114.285,
+        124.216
+      ],
+      "text": "But it doesn't. It's there first.",
+      "still": "observational shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous push-in, the camera creeps closer, everything else almost still, observational shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 19,
+      "section": "chorus",
+      "window": [
+        124.216,
+        127.874
+      ],
+      "text": "And someone... gave it a shape.",
+      "still": "fast push in: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the left, the subject stays put, nothing else moves, fast push in: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 20,
+      "section": "chorus",
+      "window": [
+        127.874,
+        131.01
+      ],
+      "text": "And it fit. That's the part I can't...",
+      "still": "fast push in: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous pull-back, the camera eases away, everything else almost still, fast push in: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 21,
+      "section": "chorus",
+      "window": [
+        131.01,
+        137.282
+      ],
+      "text": "I can't get rid of. Not the moment.",
+      "still": "handheld close up: a fleeting moment rippling faintly, a calm lake at dusk, pale dusk light, featuring a fleeting moment; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the right, the subject stays put, nothing else moves, handheld close up: a fleeting moment rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 22,
+      "section": "verse",
+      "window": [
+        137.282,
+        145.122
+      ],
+      "text": "It wasn't him.",
+      "still": "static medium shot: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt upward, the camera rises, the subject stays put, static medium shot: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 23,
+      "section": "verse",
+      "window": [
+        145.122,
+        151.393
+      ],
+      "text": "Me wanting it to end.",
+      "still": "observational shot: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt downward, the camera lowers, the subject stays put, observational shot: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 24,
+      "section": "verse",
+      "window": [
+        151.393,
+        158.71
+      ],
+      "text": "at least something would be left.",
+      "still": "slow push in: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous push-in, the camera creeps closer, everything else almost still, slow push in: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 25,
+      "section": "bridge",
+      "window": [
+        158.71,
+        166.55
+      ],
+      "text": "Too slow. The moment doesn't move.",
+      "still": "static medium shot: a fleeting moment resting in the stillness, a quiet valley at dawn, soft even light, featuring a fleeting moment; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the left, the subject stays put, nothing else moves, static medium shot: a fleeting moment resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 26,
+      "section": "bridge",
+      "window": [
+        166.55,
+        172.299
+      ],
+      "text": "It stays. Like it never passed.",
+      "still": "static medium shot: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous pull-back, the camera eases away, everything else almost still, static medium shot: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 27,
+      "section": "bridge",
+      "window": [
+        172.299,
+        177.003
+      ],
+      "text": "Like it's still happening.",
+      "still": "medium tracking shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the right, the subject stays put, nothing else moves, medium tracking shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 28,
+      "section": "chorus",
+      "window": [
+        177.003,
+        184.32
+      ],
+      "text": "Before... I thought I could fix things.",
+      "still": "fast push in: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt upward, the camera rises, the subject stays put, fast push in: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 29,
+      "section": "chorus",
+      "window": [
+        184.32,
+        190.592
+      ],
+      "text": "Now... no. Now I'm...",
+      "still": "low angle rising shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt downward, the camera lowers, the subject stays put, low angle rising shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 30,
+      "section": "chorus",
+      "window": [
+        190.592,
+        194.25
+      ],
+      "text": "And it... it doesn't get fixed.",
+      "still": "slow motion wide shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous push-in, the camera creeps closer, everything else almost still, slow motion wide shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 31,
+      "section": "outro",
+      "window": [
+        194.25,
+        199.477
+      ],
+      "text": "It wasn't the moment.",
+      "still": "soft focus ending: a fleeting moment rippling faintly, a calm lake at dusk, pale dusk light, featuring a fleeting moment; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the left, the subject stays put, nothing else moves, soft focus ending: a fleeting moment rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 32,
+      "section": "outro",
+      "window": [
+        199.477,
+        203.658
+      ],
+      "text": "It was that for a second...",
+      "still": "static wide shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "very slow continuous pull-back, the camera eases away, everything else almost still, static wide shot: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 33,
+      "section": "outro",
+      "window": [
+        203.658,
+        206.271
+      ],
+      "text": "I... ...",
+      "still": "static wide shot: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the right, the subject stays put, nothing else moves, static wide shot: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 34,
+      "section": "outro",
+      "window": [
+        206.271,
+        211.498
+      ],
+      "text": "I wanted it",
+      "still": "soft focus ending: an open landscape resting in the stillness, a quiet valley at dawn, soft even light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt upward, the camera rises, the subject stays put, soft focus ending: an open landscape resting in the stillness, a quiet valley at dawn, soft even light"
+    },
+    {
+      "id": 35,
+      "section": "outro",
+      "window": [
+        211.498,
+        224.564
+      ],
+      "text": "to be like that.",
+      "still": "drifting aerial shot: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady tilt downward, the camera lowers, the subject stays put, drifting aerial shot: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 37,
+      "section": "outro",
+      "window": [
+        238.153,
+        251.219
+      ],
+      "text": "to be like that.",
+      "still": "drifting aerial shot: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the left, the subject stays put, nothing else moves, drifting aerial shot: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    },
+    {
+      "id": 39,
+      "section": "outro",
+      "window": [
+        258.014,
+        264.72
+      ],
+      "text": "to be like that.",
+      "still": "drifting aerial shot: still water rippling faintly, a calm lake at dusk, pale dusk light; theme: Wrath; dark moody scene, low key lighting, deep shadows, desaturated palette, volumetric light, cinematic, no text, no watermark",
+      "motion": "slow steady lateral drift to the right, the subject stays put, nothing else moves, drifting aerial shot: still water rippling faintly, a calm lake at dusk, pale dusk light"
+    }
+  ]
+}

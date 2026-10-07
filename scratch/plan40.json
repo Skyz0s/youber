@@ -1,0 +1,704 @@
+{
+  "coverage": {
+    "slots": 40,
+    "duration": 264.72,
+    "covered": 264.72,
+    "gaps": [],
+    "overlaps": [],
+    "scenes_total": 48,
+    "scenes_covered": 48,
+    "missing_scenes": [],
+    "stray_slots": [],
+    "bad_repeats": [],
+    "per_section": {
+      "intro": 6,
+      "verse": 11,
+      "unknown": 2,
+      "pre_chorus": 3,
+      "chorus": 6,
+      "bridge": 3,
+      "outro": 9
+    },
+    "generated": 37,
+    "repeated": 3
+  },
+  "slots": [
+    {
+      "index": 0,
+      "start": 0.0,
+      "end": 19.686,
+      "section": "intro",
+      "section_index": 0,
+      "scene_index": 0,
+      "scene_indexes": [
+        0
+      ],
+      "text": "I thought it would stop.",
+      "keywords": [
+        "coming to a halt"
+      ],
+      "energy": 0.7499462348787878,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 1,
+      "start": 19.686,
+      "end": 27.003,
+      "section": "intro",
+      "section_index": 0,
+      "scene_index": 1,
+      "scene_indexes": [
+        1,
+        2
+      ],
+      "text": "That's the stupid part.",
+      "keywords": [],
+      "energy": 0.7499462348787878,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 2,
+      "start": 27.003,
+      "end": 32.23,
+      "section": "intro",
+      "section_index": 0,
+      "scene_index": 3,
+      "scene_indexes": [
+        3
+      ],
+      "text": "it would stop. But it doesn't.",
+      "keywords": [
+        "coming to a halt"
+      ],
+      "energy": 0.7499462348787878,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 3,
+      "start": 32.23,
+      "end": 35.888,
+      "section": "intro",
+      "section_index": 0,
+      "scene_index": 4,
+      "scene_indexes": [
+        4
+      ],
+      "text": "Not when you sleep.",
+      "keywords": [
+        "sleeping"
+      ],
+      "energy": 0.7499462348787878,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 4,
+      "start": 35.888,
+      "end": 40.592,
+      "section": "intro",
+      "section_index": 0,
+      "scene_index": 5,
+      "scene_indexes": [
+        5
+      ],
+      "text": "Not when you close your eyes.",
+      "keywords": [
+        "a pair of searching eyes"
+      ],
+      "energy": 0.7499462348787878,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 5,
+      "start": 40.592,
+      "end": 46.864,
+      "section": "intro",
+      "section_index": 0,
+      "scene_index": 6,
+      "scene_indexes": [
+        6
+      ],
+      "text": "Not when you try to think about something else.",
+      "keywords": [],
+      "energy": 0.7499462348787878,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 6,
+      "start": 46.864,
+      "end": 65.156,
+      "section": "verse",
+      "section_index": 1,
+      "scene_index": 7,
+      "scene_indexes": [
+        7
+      ],
+      "text": "I was fast.",
+      "keywords": [],
+      "energy": 0.7241422544518349,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 7,
+      "start": 65.156,
+      "end": 70.905,
+      "section": "verse",
+      "section_index": 1,
+      "scene_index": 8,
+      "scene_indexes": [
+        8,
+        9
+      ],
+      "text": "That's what I was.",
+      "keywords": [],
+      "energy": 0.7241422544518349,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 8,
+      "start": 70.905,
+      "end": 74.041,
+      "section": "verse",
+      "section_index": 1,
+      "scene_index": 10,
+      "scene_indexes": [
+        10
+      ],
+      "text": "to believe that if you pressed hard enough...",
+      "keywords": [],
+      "energy": 0.7241422544518349,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 9,
+      "start": 74.041,
+      "end": 76.655,
+      "section": "verse",
+      "section_index": 1,
+      "scene_index": 11,
+      "scene_indexes": [
+        11
+      ],
+      "text": "something had to break. But it doesn't.",
+      "keywords": [
+        "shattering"
+      ],
+      "energy": 0.7241422544518349,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 10,
+      "start": 76.655,
+      "end": 82.404,
+      "section": "verse",
+      "section_index": 1,
+      "scene_index": 12,
+      "scene_indexes": [
+        12,
+        13
+      ],
+      "text": "It doesn't break. You're the one left standing,",
+      "keywords": [
+        "shattering"
+      ],
+      "energy": 0.7241422544518349,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 11,
+      "start": 82.404,
+      "end": 87.108,
+      "section": "unknown",
+      "section_index": -1,
+      "scene_index": 14,
+      "scene_indexes": [
+        14
+      ],
+      "text": "and nothing happens. It didn't happen all at once.",
+      "keywords": [],
+      "energy": 0.8816365717232592,
+      "hook": false,
+      "repeat_of": null
+    },
+    {
+      "index": 12,
+      "start": 87.108,
+      "end": 92.334,
+      "section": "unknown",
+      "section_index": -1,
+      "scene_index": 14,
+      "scene_indexes": [
+        14
+      ],
+      "text": "and nothing happens. It didn't happen all at once.",
+      "keywords": [],
+      "energy": 0.8816365717232592,
+      "hook": false,
+      "repeat_of": 11
+    },
+    {
+      "index": 13,
+      "start": 92.334,
+      "end": 96.515,
+      "section": "verse",
+      "section_index": 2,
+      "scene_index": 16,
+      "scene_indexes": [
+        15,
+        16
+      ],
+      "text": "Like holding your breath.",
+      "keywords": [
+        "a held breath"
+      ],
+      "energy": 0.7955468557683607,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 14,
+      "start": 96.515,
+      "end": 101.219,
+      "section": "verse",
+      "section_index": 2,
+      "scene_index": 17,
+      "scene_indexes": [
+        17,
+        18
+      ],
+      "text": "You can. You can. And then you don't even know",
+      "keywords": [],
+      "energy": 0.7955468557683607,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 15,
+      "start": 101.219,
+      "end": 106.446,
+      "section": "verse",
+      "section_index": 2,
+      "scene_index": 19,
+      "scene_indexes": [
+        19
+      ],
+      "text": "I think. But I wasn't all there anymore.",
+      "keywords": [],
+      "energy": 0.7955468557683607,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 16,
+      "start": 106.446,
+      "end": 111.149,
+      "section": "pre_chorus",
+      "section_index": 3,
+      "scene_index": 20,
+      "scene_indexes": [
+        20
+      ],
+      "text": "I always thought hate came after.",
+      "keywords": [
+        "a clenched fist"
+      ],
+      "energy": 0.7482147897401134,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 17,
+      "start": 111.149,
+      "end": 114.285,
+      "section": "pre_chorus",
+      "section_index": 3,
+      "scene_index": 21,
+      "scene_indexes": [
+        21
+      ],
+      "text": "After you lose something.",
+      "keywords": [
+        "drifting away"
+      ],
+      "energy": 0.7482147897401134,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 18,
+      "start": 114.285,
+      "end": 124.216,
+      "section": "pre_chorus",
+      "section_index": 3,
+      "scene_index": 22,
+      "scene_indexes": [
+        22,
+        23,
+        24
+      ],
+      "text": "But it doesn't. It's there first.",
+      "keywords": [],
+      "energy": 0.7482147897401134,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 19,
+      "start": 124.216,
+      "end": 127.874,
+      "section": "chorus",
+      "section_index": 4,
+      "scene_index": 25,
+      "scene_indexes": [
+        25
+      ],
+      "text": "And someone... gave it a shape.",
+      "keywords": [],
+      "energy": 0.8149181054310635,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 20,
+      "start": 127.874,
+      "end": 131.01,
+      "section": "chorus",
+      "section_index": 4,
+      "scene_index": 26,
+      "scene_indexes": [
+        26
+      ],
+      "text": "And it fit. That's the part I can't...",
+      "keywords": [],
+      "energy": 0.8149181054310635,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 21,
+      "start": 131.01,
+      "end": 137.282,
+      "section": "chorus",
+      "section_index": 4,
+      "scene_index": 27,
+      "scene_indexes": [
+        27,
+        28
+      ],
+      "text": "I can't get rid of. Not the moment.",
+      "keywords": [
+        "a fleeting moment"
+      ],
+      "energy": 0.8149181054310635,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 22,
+      "start": 137.282,
+      "end": 145.122,
+      "section": "verse",
+      "section_index": 5,
+      "scene_index": 29,
+      "scene_indexes": [
+        29,
+        30
+      ],
+      "text": "It wasn't him.",
+      "keywords": [],
+      "energy": 0.781527280734108,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 23,
+      "start": 145.122,
+      "end": 151.393,
+      "section": "verse",
+      "section_index": 5,
+      "scene_index": 31,
+      "scene_indexes": [
+        31,
+        32
+      ],
+      "text": "Me wanting it to end.",
+      "keywords": [],
+      "energy": 0.781527280734108,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 24,
+      "start": 151.393,
+      "end": 158.71,
+      "section": "verse",
+      "section_index": 5,
+      "scene_index": 33,
+      "scene_indexes": [
+        33,
+        34
+      ],
+      "text": "at least something would be left.",
+      "keywords": [],
+      "energy": 0.781527280734108,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 25,
+      "start": 158.71,
+      "end": 166.55,
+      "section": "bridge",
+      "section_index": 6,
+      "scene_index": 36,
+      "scene_indexes": [
+        35,
+        36
+      ],
+      "text": "Too slow. The moment doesn't move.",
+      "keywords": [
+        "a fleeting moment"
+      ],
+      "energy": 0.8579796732504481,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 26,
+      "start": 166.55,
+      "end": 172.299,
+      "section": "bridge",
+      "section_index": 6,
+      "scene_index": 37,
+      "scene_indexes": [
+        37
+      ],
+      "text": "It stays. Like it never passed.",
+      "keywords": [],
+      "energy": 0.8579796732504481,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 27,
+      "start": 172.299,
+      "end": 177.003,
+      "section": "bridge",
+      "section_index": 6,
+      "scene_index": 38,
+      "scene_indexes": [
+        38
+      ],
+      "text": "Like it's still happening.",
+      "keywords": [],
+      "energy": 0.8579796732504481,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 28,
+      "start": 177.003,
+      "end": 184.32,
+      "section": "chorus",
+      "section_index": 7,
+      "scene_index": 39,
+      "scene_indexes": [
+        39
+      ],
+      "text": "Before... I thought I could fix things.",
+      "keywords": [],
+      "energy": 0.9243448074368039,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 29,
+      "start": 184.32,
+      "end": 190.592,
+      "section": "chorus",
+      "section_index": 7,
+      "scene_index": 40,
+      "scene_indexes": [
+        40,
+        41
+      ],
+      "text": "Now... no. Now I'm...",
+      "keywords": [],
+      "energy": 0.9243448074368039,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 30,
+      "start": 190.592,
+      "end": 194.25,
+      "section": "chorus",
+      "section_index": 7,
+      "scene_index": 42,
+      "scene_indexes": [
+        42
+      ],
+      "text": "And it... it doesn't get fixed.",
+      "keywords": [],
+      "energy": 0.9243448074368039,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 31,
+      "start": 194.25,
+      "end": 199.477,
+      "section": "outro",
+      "section_index": 8,
+      "scene_index": 43,
+      "scene_indexes": [
+        43
+      ],
+      "text": "It wasn't the moment.",
+      "keywords": [
+        "a fleeting moment"
+      ],
+      "energy": 0.7791831960828662,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 32,
+      "start": 199.477,
+      "end": 203.658,
+      "section": "outro",
+      "section_index": 8,
+      "scene_index": 44,
+      "scene_indexes": [
+        44
+      ],
+      "text": "It was that for a second...",
+      "keywords": [],
+      "energy": 0.7791831960828662,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 33,
+      "start": 203.658,
+      "end": 206.271,
+      "section": "outro",
+      "section_index": 8,
+      "scene_index": 45,
+      "scene_indexes": [
+        45
+      ],
+      "text": "I... ...",
+      "keywords": [],
+      "energy": 0.7791831960828662,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 34,
+      "start": 206.271,
+      "end": 211.498,
+      "section": "outro",
+      "section_index": 8,
+      "scene_index": 46,
+      "scene_indexes": [
+        46
+      ],
+      "text": "I wanted it",
+      "keywords": [],
+      "energy": 0.7791831960828662,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 35,
+      "start": 211.498,
+      "end": 224.564,
+      "section": "outro",
+      "section_index": 8,
+      "scene_index": 47,
+      "scene_indexes": [
+        47
+      ],
+      "text": "to be like that.",
+      "keywords": [],
+      "energy": 0.7791831960828662,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 36,
+      "start": 224.564,
+      "end": 238.153,
+      "section": "outro",
+      "section_index": 8,
+      "scene_index": 47,
+      "scene_indexes": [
+        47
+      ],
+      "text": "to be like that.",
+      "keywords": [],
+      "energy": 0.7791831960828662,
+      "hook": true,
+      "repeat_of": 35
+    },
+    {
+      "index": 37,
+      "start": 238.153,
+      "end": 251.219,
+      "section": "outro",
+      "section_index": 8,
+      "scene_index": 47,
+      "scene_indexes": [
+        47
+      ],
+      "text": "to be like that.",
+      "keywords": [],
+      "energy": 0.7791831960828662,
+      "hook": true,
+      "repeat_of": null
+    },
+    {
+      "index": 38,
+      "start": 251.219,
+      "end": 258.014,
+      "section": "outro",
+      "section_index": 8,
+      "scene_index": 47,
+      "scene_indexes": [
+        47
+      ],
+      "text": "to be like that.",
+      "keywords": [],
+      "energy": 0.7791831960828662,
+      "hook": true,
+      "repeat_of": 37
+    },
+    {
+      "index": 39,
+      "start": 258.014,
+      "end": 264.72,
+      "section": "outro",
+      "section_index": 8,
+      "scene_index": 47,
+      "scene_indexes": [
+        47
+      ],
+      "text": "to be like that.",
+      "keywords": [],
+      "energy": 0.7791831960828662,
+      "hook": true,
+      "repeat_of": null
+    }
+  ]
+}
