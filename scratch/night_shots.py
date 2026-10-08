@@ -71,20 +71,54 @@ class NightBatch:
     # --- utilidades ---------------------------------------------------------
 
     def still_path(self, shot_id: int) -> Path:
-        return self.stills / f"fx{shot_id:03d}_s40.png"
+        # OJO: gen_still_faceid.py nombra los stills con DOS dígitos (fx00_s40.png).
+        return self.stills / f"fx{shot_id:02d}_s40.png"
 
     def clip_path(self, shot_id: int) -> Path:
         return self.clips / f"clip{shot_id:03d}_720p.mp4"
 
-    def run(self, cmd: list[str], timeout: float) -> int:
+    def publish(self, src: Path, shot_id: int) -> Path:
+        """Deja el clip en su nombre definitivo.
+
+        El primer intento ya escribe en la propia ruta final, así que copiarla
+        sobre sí misma daba ``WinError 32``; ese caso se salta. Un reintento a
+        más steps sí viene de otro fichero y se copia, con unos reintentos por
+        si Windows lo tiene cogido un instante (antivirus, ffmpeg, etc.).
+        """
+        target = self.clip_path(shot_id)
+        if src.resolve() == target.resolve():
+            return target
+        if not src.exists():
+            log(f"[{shot_id:03d}] no hay clip que publicar: {src.name}")
+            return src
+        for attempt in range(1, 4):
+            try:
+                shutil.copy2(src, target)
+                return target
+            except PermissionError:
+                if attempt == 3:
+                    log(f"[{shot_id:03d}] no pude publicar el clip: {src.name}")
+                    return src
+                time.sleep(1.5 * attempt)
+        return src
+
+    def run(self, cmd: list[str], timeout: float, *, tag: str = "") -> int:
+        log(f"$ {Path(cmd[0]).name}{tag} (timeout {timeout:.0f}s)")
         if self.dry_run:
             return 0
-        try:
-            return subprocess.run(cmd, timeout=timeout).returncode
-        except subprocess.TimeoutExpired:
-            log(f"TIMEOUT de {timeout:.0f}s")
-            self.unblock()
-            return 124
+        logfile = self.out / "logs" / f"child{tag}.log"
+        logfile.parent.mkdir(parents=True, exist_ok=True)
+        with logfile.open("a", encoding="utf-8", errors="replace") as fh:
+            fh.write("\n$ " + " ".join(cmd) + "\n")
+            fh.flush()
+            try:
+                return subprocess.run(
+                    cmd, timeout=timeout, stdout=fh, stderr=subprocess.STDOUT
+                ).returncode
+            except subprocess.TimeoutExpired:
+                log(f"TIMEOUT de {timeout:.0f}s")
+                self.unblock()
+                return 124
 
     def unblock(self) -> None:
         """Suelta un trabajo colgado: interrumpe y vacía la cola si es nuestra."""
@@ -175,7 +209,7 @@ class NightBatch:
                 "--seed-base",
                 "4000",
             ]
-            self.run(cmd, timeout=3600.0)
+            self.run(cmd, timeout=3600.0, tag="_stills")
             if self.dry_run:
                 return
 
@@ -224,7 +258,7 @@ class NightBatch:
             str(timeout),
         ]
         started = time.time()
-        code = self.run(cmd, timeout=timeout + 120.0)
+        code = self.run(cmd, timeout=timeout + 120.0, tag=f"_p{shot_id:03d}_s{steps}")
         entry: dict = {"steps": steps, "seconds": round(time.time() - started, 1), "rc": code}
         if code != 0 or not out.exists():
             entry["ok"] = False
@@ -244,9 +278,7 @@ class NightBatch:
             }
         )
         if quality.ok and steps == STEPS:
-            target = self.clip_path(shot_id)
-            shutil.copy2(out, target)
-            entry["file"] = str(target)
+            entry["file"] = str(self.publish(out, shot_id))
         return entry
 
     def run_clips(self) -> None:
@@ -263,9 +295,7 @@ class NightBatch:
                 log(f"[{shot_id:03d}] rechazado ({entry.get('reasons')}) -> reintento a {RETRY_STEPS} steps")
                 retry = self.generate_clip(shot, RETRY_STEPS, TIMEOUT * 2)
                 if retry.get("ok"):
-                    target = self.clip_path(shot_id)
-                    shutil.copy2(Path(retry["file"]), target)
-                    retry["file"] = str(target)
+                    retry["file"] = str(self.publish(Path(retry["file"]), shot_id))
                 entry = {**retry, "first_attempt": entry}
             self.manifest[key] = {**entry, "section": shot["section"], "text": shot["text"]}
             log(
