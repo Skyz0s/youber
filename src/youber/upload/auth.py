@@ -182,7 +182,10 @@ class YouTubeAuth:
             "response_type": "code",
             "scope": SCOPES,
             "access_type": "offline",
-            "prompt": "consent",
+            # select_account fuerza el selector de cuenta: si el navegador
+            # tiene varias sesiones de Google, no autoriza a la que toco por
+            # defecto.
+            "prompt": "consent select_account",
         }
         if state:
             params["state"] = state

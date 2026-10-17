@@ -154,8 +154,10 @@ def test_metadata_publish_at_forces_private():
 # ---------------------------------------------------------------------------
 
 
-def test_auth_requires_client():
-    auth = YouTubeAuth(client_id="", client_secret="")
+def test_auth_requires_client(tmp_path: Path):
+    # credentials_dir aislado: si no, el test lee el oauth_client.json real
+    # del desarrollador y deja de fallar donde no debe.
+    auth = YouTubeAuth(client_id="", client_secret="", credentials_dir=tmp_path)
     with pytest.raises(ValueError, match="GOOGLE_CLIENT_ID"):
         auth.get_authorization_url()
 
@@ -168,6 +170,7 @@ def test_auth_authorization_url():
     assert "scope=" in url
     assert "access_type=offline" in url
     assert "state=s1" in url
+    assert "prompt=consent+select_account" in url
     # sin redirect explícito se usa el flujo manual (clientes antiguos)
     assert OOB_REDIRECT_URI.replace(":", "%3A").replace("/", "%2F") in url
 

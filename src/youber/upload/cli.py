@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import secrets
 from datetime import datetime
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from youber.console import ensure_utf8_console
-from youber.upload.auth import YouTubeAuth
+from youber.upload.auth import LOOPBACK_TEMPLATE, YouTubeAuth, parse_callback_path
 from youber.upload.metadata import PrivacyStatus, VideoMetadata
 from youber.upload.thumbnail import make_thumbnail
 from youber.upload.youtube import YouTubeUploader
@@ -77,6 +78,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     auth.add_argument(
         "--port", type=int, default=0, help="Puerto local del flujo loopback (0 = libre)"
+    )
+    auth.add_argument(
+        "--timeout",
+        type=float,
+        default=600.0,
+        help="Segundos de espera del flujo loopback (default: 600)",
+    )
+    auth.add_argument(
+        "--paste",
+        action="store_true",
+        help=(
+            "Sin servidor local: imprime la URL y luego pegas la URL de vuelta "
+            "(útil si el navegador no alcanza 127.0.0.1, p. ej. con proxy)"
+        ),
     )
 
     sub.add_parser(
@@ -148,6 +163,42 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _uploader(auth: YouTubeAuth) -> YouTubeUploader:
     return YouTubeUploader(auth)
+
+
+def _auth_by_paste(auth: YouTubeAuth, port: int) -> dict:
+    """Autoriza sin servidor local: el usuario pega la URL de vuelta.
+
+    Args:
+        auth: Cliente de autenticación con las credenciales de la app.
+        port: Puerto que aparecerá en el ``redirect_uri`` (debe coincidir al
+            canjear el código; no se abre ningún socket).
+
+    Returns:
+        Los tokens guardados.
+    """
+    redirect = LOOPBACK_TEMPLATE.format(port=port or 8765)
+    state = secrets.token_urlsafe(16)
+    url = auth.get_authorization_url(state=state, redirect_uri=redirect)
+    console.print(
+        Panel.fit(
+            "[bold]Paso 1[/] Abre esta URL en el navegador y autoriza:\n"
+            f"[cyan]{url}[/]\n\n"
+            "[bold]Paso 2[/] Cuando el navegador intente abrir "
+            f"[bold]{redirect}[/] (aunque dé error de conexión), copia esa URL "
+            "completa de la barra de direcciones y pégala aquí:",
+            border_style="magenta",
+        )
+    )
+    raw = input("URL de vuelta (o código): ").strip()
+    params = parse_callback_path(raw) if raw.lower().startswith("http") else {}
+    if params.get("error"):
+        raise ValueError(f"Google devolvió un error: {params['error']}")
+    if params.get("state") and params["state"] != state:
+        raise ValueError("El 'state' de la respuesta no coincide; se aborta")
+    code = params.get("code") or raw
+    if not code:
+        raise ValueError("No se ha pegado ningún código")
+    return asyncio.run(auth.exchange_code(code, redirect_uri=redirect))
 
 
 async def _run_upload(
@@ -306,7 +357,9 @@ def run(args: argparse.Namespace) -> None:
                 "(o exporta GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."
             )
             raise SystemExit(1)
-        if args.manual:
+        if args.paste:
+            tokens = _auth_by_paste(auth, args.port)
+        elif args.manual:
             url = auth.get_authorization_url()
             console.print(
                 Panel.fit(
@@ -319,7 +372,9 @@ def run(args: argparse.Namespace) -> None:
             code = input("Código: ").strip()
             tokens = asyncio.run(auth.exchange_code(code))
         else:
-            tokens = auth.authorize_local_server(port=args.port)
+            tokens = auth.authorize_local_server(
+                port=args.port, timeout=args.timeout
+            )
         console.print(
             f"[green]Autenticado. Token guardado en {auth.token_file}[/] "
             f"(expira: {tokens['expires_at']})"
