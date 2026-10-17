@@ -378,6 +378,44 @@ def test_get_my_channel_without_channel(monkeypatch, tmp_path: Path):
         asyncio.run(YouTubeUploader(auth).get_my_channel())
 
 
+def test_set_privacy_conserva_campos_escribibles(monkeypatch, tmp_path: Path):
+    sent: dict = {}
+
+    def get_handler(method, url, kwargs):
+        return FakeResponse(
+            json_data={
+                "items": [
+                    {
+                        "id": VIDEO_ID,
+                        "status": {
+                            "uploadStatus": "processed",
+                            "privacyStatus": "private",
+                            "license": "youtube",
+                            "embeddable": True,
+                            "publicStatsViewable": True,
+                            "selfDeclaredMadeForKids": False,
+                        },
+                    }
+                ]
+            }
+        )
+
+    def put_handler(method, url, kwargs):
+        sent.update(kwargs["json"])
+        return FakeResponse(json_data={"id": VIDEO_ID, "status": kwargs["json"]["status"]})
+
+    make_fake_client(monkeypatch, {"get": get_handler, "put": put_handler})
+    auth = auth_with_token(monkeypatch, tmp_path)
+    resource = asyncio.run(
+        YouTubeUploader(auth).set_privacy(VIDEO_ID, PrivacyStatus.PUBLIC)
+    )
+    assert resource["status"]["privacyStatus"] == "public"
+    # videos.update pisa lo que no envias: se reenvia el estado escribible
+    assert sent["status"]["embeddable"] is True
+    assert sent["status"]["publicStatsViewable"] is True
+    assert "uploadStatus" not in sent["status"]
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------

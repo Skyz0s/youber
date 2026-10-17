@@ -24,7 +24,7 @@ from youber.upload.captions import (
     build_multipart_body,
     caption_snippet,
 )
-from youber.upload.metadata import VideoMetadata
+from youber.upload.metadata import PrivacyStatus, VideoMetadata
 
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 API_URL = "https://www.googleapis.com/youtube/v3/videos"
@@ -292,6 +292,49 @@ class YouTubeUploader:
                 "https://www.youtube.com/create_channel y reintenta."
             )
         return items[0]
+
+    async def set_privacy(
+        self, video_id: str, privacy: PrivacyStatus
+    ) -> dict:
+        """Cambia la visibilidad de un vídeo ya subido (``videos.update``).
+
+        Se lee el estado actual y se envía de vuelta con la privacidad nueva.
+        Enviar solo ``privacyStatus`` resetea ``embeddable`` y
+        ``publicStatsViewable`` a ``false`` (pasó de verdad al publicar el
+        videoclip), así que se conservan los campos escribibles.
+
+        Args:
+            video_id: Id del vídeo.
+            privacy: Nueva visibilidad (public/unlisted/private).
+
+        Returns:
+            El recurso del vídeo devuelto por la API.
+        """
+        current = await self.check_status(video_id)
+        writable = ("embeddable", "publicStatsViewable", "license",
+                    "selfDeclaredMadeForKids", "publishAt")
+        status = {
+            key: value
+            for key, value in current.get("status", {}).items()
+            if key in writable
+        }
+        status["privacyStatus"] = privacy.value
+        headers = {
+            **await self._headers(),
+            "Content-Type": "application/json; charset=UTF-8",
+        }
+        body = {"id": video_id, "status": status}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.put(
+                API_URL,
+                params={"part": "status"},
+                headers=headers,
+                json=body,
+            )
+            self._raise(response)
+            resource = response.json()
+        logger.info(f"Privacidad de {video_id} → {privacy.value}")
+        return resource
 
     @staticmethod
     def get_video_url(video_id: str) -> str:

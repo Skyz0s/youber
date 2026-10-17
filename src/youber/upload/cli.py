@@ -120,6 +120,12 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="Consulta el estado de un vídeo")
     status.add_argument("video_id", help="Id del vídeo en YouTube")
 
+    privacy = sub.add_parser("privacy", help="Cambia la visibilidad de un vídeo")
+    privacy.add_argument("video_id", help="Id del vídeo en YouTube")
+    privacy.add_argument(
+        "state", type=_privacy, help="public/unlisted/private"
+    )
+
     thumbnail = sub.add_parser(
         "thumbnail", help="Genera y sube la miniatura de un vídeo"
     )
@@ -250,6 +256,24 @@ async def _run_whoami(auth: YouTubeAuth) -> None:
             f"suscriptores: {stats.get('subscriberCount', '?')} · "
             f"vídeos: {stats.get('videoCount', '?')}\n"
             f"URL: https://www.youtube.com/channel/{channel_id}",
+            border_style="green",
+        )
+    )
+
+
+async def _run_privacy(
+    video_id: str, state: PrivacyStatus, auth: YouTubeAuth
+) -> None:
+    """Cambia la visibilidad de un vídeo y muestra el estado resultante."""
+    resource = await _uploader(auth).set_privacy(video_id, state)
+    status = resource.get("status", {})
+    console.print(
+        Panel.fit(
+            f"[bold green]Visibilidad actualizada[/]\n"
+            f"vídeo: {video_id}\n"
+            f"privacidad: {status.get('privacyStatus', state.value)}\n"
+            f"embeddable: {status.get('embeddable', '?')}\n"
+            f"URL: {YouTubeUploader.get_video_url(video_id)}",
             border_style="green",
         )
     )
@@ -404,6 +428,8 @@ def run(args: argparse.Namespace) -> None:
         asyncio.run(_run_status(args.video_id, auth))
     elif args.command == "whoami":
         asyncio.run(_run_whoami(auth))
+    elif args.command == "privacy":
+        asyncio.run(_run_privacy(args.video_id, args.state, auth))
     elif args.command == "thumbnail":
         asyncio.run(
             _run_thumbnail(
