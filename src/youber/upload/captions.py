@@ -40,10 +40,12 @@ def build_multipart_body(
     """Cuerpo ``multipart/related`` de ``captions.insert`` (puro y testeable).
 
     La API de subida de YouTube espera dos partes: la primera con el JSON del
-    ``snippet`` (``application/json``) y la segunda con los bytes del fichero.
+    **recurso** (``{"snippet": {...}}``, no el snippet suelto; con el snippet a
+    pelo responde 400 ``invalidMetadata``) y la segunda con los bytes del
+    fichero.
 
     Args:
-        snippet: Objeto ``snippet`` de la pista (``videoId``, ``language``...).
+        snippet: Recurso JSON de la pista (``{"snippet": {...}}``).
         media: Contenido del fichero de subtítulos (.srt).
         mime: Tipo MIME de la parte binaria.
         boundary: Separador (se genera si es ``None``).

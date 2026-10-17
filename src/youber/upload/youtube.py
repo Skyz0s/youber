@@ -195,8 +195,10 @@ class YouTubeUploader:
         snippet = caption_snippet(
             video_id, language=language, name=name, is_draft=is_draft
         )
+        # La API espera el recurso completo ({"snippet": {...}}), no el snippet
+        # suelto: con el snippet a pelo responde 400 invalidMetadata.
         body, content_type = build_multipart_body(
-            snippet, path.read_bytes(), mime=mime
+            {"snippet": snippet}, path.read_bytes(), mime=mime
         )
         headers = {**await self._headers(), "Content-Type": content_type}
         params = {"uploadType": "multipart", "part": "snippet"}
