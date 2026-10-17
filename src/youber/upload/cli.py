@@ -70,6 +70,14 @@ def build_parser() -> argparse.ArgumentParser:
     auth = sub.add_parser("auth", help="Autentica con Google (OAuth 2.0)")
     auth.add_argument("--client-id", default=None, help="OAuth Client ID (o GOOGLE_CLIENT_ID)")
     auth.add_argument("--client-secret", default=None, help="OAuth Client Secret (o GOOGLE_CLIENT_SECRET)")
+    auth.add_argument(
+        "--manual",
+        action="store_true",
+        help="Flujo out-of-band (pegar el código a mano). Solo para clientes antiguos",
+    )
+    auth.add_argument(
+        "--port", type=int, default=0, help="Puerto local del flujo loopback (0 = libre)"
+    )
 
     upload = sub.add_parser("upload", help="Sube un vídeo a YouTube")
     upload.add_argument("video", help="Ruta del vídeo (MP4/MKV)")
@@ -267,17 +275,28 @@ def run(args: argparse.Namespace) -> None:
     """Ejecuta el subcomando indicado."""
     if args.command == "auth":
         auth = YouTubeAuth(client_id=args.client_id, client_secret=args.client_secret)
-        url = auth.get_authorization_url()
-        console.print(
-            Panel.fit(
-                "[bold]Paso 1[/] Abre esta URL en el navegador y autoriza:\n"
-                f"[cyan]{url}[/]\n\n"
-                "[bold]Paso 2[/] Pega aquí el código de autorización:",
-                border_style="magenta",
+        if not auth.client_id or not auth.client_secret:
+            console.print(
+                "[red]✗ Faltan las credenciales de la app.[/]\n"
+                "Crea un OAuth Client ID de tipo 'App de escritorio' y guárdalo en "
+                f"[bold]{auth.credentials_dir / 'oauth_client.json'}[/] "
+                "(o exporta GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)."
             )
-        )
-        code = input("Código: ").strip()
-        tokens = asyncio.run(auth.exchange_code(code))
+            raise SystemExit(1)
+        if args.manual:
+            url = auth.get_authorization_url()
+            console.print(
+                Panel.fit(
+                    "[bold]Paso 1[/] Abre esta URL en el navegador y autoriza:\n"
+                    f"[cyan]{url}[/]\n\n"
+                    "[bold]Paso 2[/] Pega aquí el código de autorización:",
+                    border_style="magenta",
+                )
+            )
+            code = input("Código: ").strip()
+            tokens = asyncio.run(auth.exchange_code(code))
+        else:
+            tokens = auth.authorize_local_server(port=args.port)
         console.print(
             f"[green]Autenticado. Token guardado en {auth.token_file}[/] "
             f"(expira: {tokens['expires_at']})"

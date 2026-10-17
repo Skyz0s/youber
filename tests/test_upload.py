@@ -5,6 +5,8 @@ necesitar credenciales reales de Google.
 """
 
 import asyncio
+import json
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -12,7 +14,14 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from youber.upload.auth import YouTubeAuth
+from youber.upload.auth import (
+    LOOPBACK_TEMPLATE,
+    OOB_REDIRECT_URI,
+    YouTubeAuth,
+    _CallbackHandler,
+    _CallbackServer,
+    parse_callback_path,
+)
 from youber.upload.cli import _privacy, _publish_at, build_parser
 from youber.upload.metadata import PrivacyStatus, VideoMetadata
 from youber.upload.youtube import YouTubeUploader
@@ -159,6 +168,67 @@ def test_auth_authorization_url():
     assert "scope=" in url
     assert "access_type=offline" in url
     assert "state=s1" in url
+    # sin redirect explícito se usa el flujo manual (clientes antiguos)
+    assert OOB_REDIRECT_URI.replace(":", "%3A").replace("/", "%2F") in url
+
+
+def test_auth_authorization_url_loopback():
+    auth = YouTubeAuth(client_id="cid", client_secret="csecret")
+    redirect = LOOPBACK_TEMPLATE.format(port=8765)
+    url = auth.get_authorization_url(state="s2", redirect_uri=redirect)
+    assert "redirect_uri=http%3A%2F%2F127.0.0.1%3A8765%2Fcallback" in url
+    assert "state=s2" in url
+
+
+def test_parse_callback_path():
+    params = parse_callback_path("/callback?code=abc&state=xyz")
+    assert params == {"code": "abc", "state": "xyz"}
+    assert parse_callback_path("/callback?error=access_denied") == {
+        "error": "access_denied"
+    }
+    assert parse_callback_path("/otra?code=abc") == {"code": "abc"}
+
+
+def test_auth_loads_client_file(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+    (tmp_path / "oauth_client.json").write_text(
+        json.dumps({"client_id": "file-id", "client_secret": "file-secret"}),
+        encoding="utf-8",
+    )
+    auth = YouTubeAuth(credentials_dir=tmp_path)
+    assert auth.client_id == "file-id"
+    assert auth.client_secret == "file-secret"
+
+
+def test_auth_loads_google_installed_client_file(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("GOOGLE_CLIENT_ID", raising=False)
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+    (tmp_path / "oauth_client.json").write_text(
+        json.dumps({"installed": {"client_id": "g-id", "client_secret": "g-secret"}}),
+        encoding="utf-8",
+    )
+    auth = YouTubeAuth(credentials_dir=tmp_path)
+    assert auth.client_id == "g-id"
+    assert auth.client_secret == "g-secret"
+
+
+def test_callback_server_captures_code():
+    server = _CallbackServer(("127.0.0.1", 0), _CallbackHandler)
+    server.timeout = 5.0
+    port = server.server_port
+
+    def ping() -> None:
+        httpx.get(f"http://127.0.0.1:{port}/callback?code=c1&state=st", timeout=5.0)
+
+    thread = threading.Thread(target=ping)
+    thread.start()
+    try:
+        server.handle_request()
+    finally:
+        server.server_close()
+    thread.join(timeout=5.0)
+    assert server.result == {"code": "c1", "state": "st"}
 
 
 def test_auth_no_token():

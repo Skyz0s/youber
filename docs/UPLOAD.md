@@ -9,8 +9,18 @@ YouTube usando la YouTube Data API v3 con OAuth 2.0: vídeo, **miniatura**
 
 1. **OAuth Client ID**: crea unas credenciales de tipo "App de escritorio" en
    [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
-   y habilita la **YouTube Data API v3**.
-2. Exporta las credenciales:
+   y habilita la **YouTube Data API v3**. Añade tu cuenta como *test user* en
+   la pantalla de consentimiento (o publica la app si quieres que el refresh
+   token no caduque a los 7 días).
+2. Deja las credenciales a la app: o bien en
+   `~/.youber/credentials/oauth_client.json`
+
+   ```json
+   {"client_id": "xxxx.apps.googleusercontent.com", "client_secret": "xxxx"}
+   ```
+
+   (también vale el JSON que descarga Google, con la clave `installed`), o
+   bien en variables de entorno:
 
    ```bash
    # Windows (PowerShell)
@@ -27,8 +37,13 @@ YouTube usando la YouTube Data API v3 con OAuth 2.0: vídeo, **miniatura**
    youber-upload auth
    ```
 
-   Se abre una URL, autorizas con tu cuenta y pegas el código. Los tokens se
-   guardan en `~/.youber/credentials/youtube_token.json` (se refrescan solos).
+   Se abre el navegador, autorizas con tu cuenta y el código vuelve solo a un
+   servidor local (**loopback** en `127.0.0.1`). Los tokens se guardan en
+   `~/.youber/credentials/youtube_token.json` (se refrescan solos).
+
+   El flujo out-of-band (`urn:ietf:wg:oauth:2.0:oob`) está obsoleto en Google
+   y falla con clientes nuevos; solo se mantiene con `youber-upload auth
+   --manual` para clientes antiguos. `--port N` fija el puerto local.
 
    Scopes pedidos: `youtube` (subida de vídeo y miniatura) y
    `youtube.force-ssl` (pistas de subtítulos: `captions.insert` **no** acepta
