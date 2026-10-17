@@ -342,6 +342,39 @@ def test_get_video_url():
     assert YouTubeUploader.get_video_url(VIDEO_ID) == f"https://www.youtube.com/watch?v={VIDEO_ID}"
 
 
+def test_get_my_channel(monkeypatch, tmp_path: Path):
+    def handler(method, url, kwargs):
+        assert method == "get"
+        assert url.endswith("/channels")
+        assert kwargs["params"]["mine"] == "true"
+        return FakeResponse(
+            json_data={
+                "items": [
+                    {
+                        "id": "UC123",
+                        "snippet": {"title": "Mi canal"},
+                        "statistics": {"subscriberCount": "7", "videoCount": "3"},
+                    }
+                ]
+            }
+        )
+
+    make_fake_client(monkeypatch, {"get": handler})
+    auth = auth_with_token(monkeypatch, tmp_path)
+    channel = asyncio.run(YouTubeUploader(auth).get_my_channel())
+    assert channel["id"] == "UC123"
+    assert channel["snippet"]["title"] == "Mi canal"
+
+
+def test_get_my_channel_without_channel(monkeypatch, tmp_path: Path):
+    make_fake_client(
+        monkeypatch, {"get": lambda *a: FakeResponse(json_data={"items": []})}
+    )
+    auth = auth_with_token(monkeypatch, tmp_path)
+    with pytest.raises(ValueError, match="no tiene canal"):
+        asyncio.run(YouTubeUploader(auth).get_my_channel())
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------

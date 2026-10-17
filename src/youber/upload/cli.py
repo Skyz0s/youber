@@ -1,7 +1,7 @@
 """CLI ``youber-upload``: sube vídeos a YouTube (contenido propio).
 
-Comandos: ``auth``, ``upload``, ``schedule``, ``status``, ``thumbnail`` y
-``captions``.
+Comandos: ``auth``, ``whoami``, ``upload``, ``schedule``, ``status``,
+``thumbnail`` y ``captions``.
 
 Ejemplos:
 
@@ -77,6 +77,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     auth.add_argument(
         "--port", type=int, default=0, help="Puerto local del flujo loopback (0 = libre)"
+    )
+
+    sub.add_parser(
+        "whoami", help="Comprueba el token y muestra el canal autenticado"
     )
 
     upload = sub.add_parser("upload", help="Sube un vídeo a YouTube")
@@ -177,6 +181,25 @@ async def _run_status(video_id: str, auth: YouTubeAuth) -> None:
             f"estado: {status.get('uploadStatus', '?')}\n"
             f"URL: {YouTubeUploader.get_video_url(video_id)}",
             border_style="cyan",
+        )
+    )
+
+
+async def _run_whoami(auth: YouTubeAuth) -> None:
+    """Comprueba la autenticación mostrando el canal de la cuenta."""
+    channel = await _uploader(auth).get_my_channel()
+    snippet = channel.get("snippet", {})
+    stats = channel.get("statistics", {})
+    channel_id = str(channel.get("id", ""))
+    console.print(
+        Panel.fit(
+            f"[bold green]Token válido[/]\n"
+            f"canal: {snippet.get('title', '?')}\n"
+            f"id: {channel_id}\n"
+            f"suscriptores: {stats.get('subscriberCount', '?')} · "
+            f"vídeos: {stats.get('videoCount', '?')}\n"
+            f"URL: https://www.youtube.com/channel/{channel_id}",
+            border_style="green",
         )
     )
 
@@ -324,6 +347,8 @@ def run(args: argparse.Namespace) -> None:
         asyncio.run(_run_upload(args.video, metadata, auth))
     elif args.command == "status":
         asyncio.run(_run_status(args.video_id, auth))
+    elif args.command == "whoami":
+        asyncio.run(_run_whoami(auth))
     elif args.command == "thumbnail":
         asyncio.run(
             _run_thumbnail(

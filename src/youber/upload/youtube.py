@@ -28,6 +28,7 @@ from youber.upload.metadata import VideoMetadata
 
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 API_URL = "https://www.googleapis.com/youtube/v3/videos"
+CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 THUMBNAILS_URL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
 CONTENT_TYPE = "application/octet-stream"
 
@@ -263,6 +264,31 @@ class YouTubeUploader:
             items = response.json().get("items", [])
         if not items:
             raise ValueError(f"Vídeo no encontrado: {video_id}")
+        return items[0]
+
+    async def get_my_channel(self) -> dict:
+        """Devuelve el canal de la cuenta autenticada (``channels.list``).
+
+        Sirve para comprobar de un vistazo que el token vale y que la cuenta
+        tiene canal antes de intentar subir nada.
+
+        Returns:
+            El recurso del canal (``id``, ``snippet`` y ``statistics``).
+
+        Raises:
+            ValueError: si la cuenta no tiene canal de YouTube.
+        """
+        headers = await self._headers()
+        params = {"part": "snippet,statistics", "mine": "true"}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(CHANNELS_URL, params=params, headers=headers)
+            self._raise(response)
+            items = response.json().get("items", [])
+        if not items:
+            raise ValueError(
+                "La cuenta autenticada no tiene canal de YouTube. Créalo en "
+                "https://www.youtube.com/create_channel y reintenta."
+            )
         return items[0]
 
     @staticmethod
