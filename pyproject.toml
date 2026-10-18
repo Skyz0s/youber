@@ -91,6 +91,9 @@ select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
 ignore = []
 
 [tool.mypy]
-python_version = "3.11"
+# El paquete se ejecuta en 3.11+ (ver requires-python), pero los stubs de numpy 2.x
+# usan sintaxis PEP 695 y mypy no los puede parsear con target 3.11. Ruff sigue
+# fijando py311, asi que la sintaxis del codigo no se relaja.
+python_version = "3.12"
 ignore_missing_imports = true
 warn_unused_ignores = true
