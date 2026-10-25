@@ -93,6 +93,16 @@ EMOTION_LEXICON: dict[str, frozenset[str]] = {
             "sad", "sadness", "cry", "crying", "tear", "tears", "sob", "weep",
             "grief", "sorrow", "mourning", "heartbreak", "heartbroken", "empty",
             "lonely", "loneliness", "alone", "loss", "goodbye", "miss",
+            "blue", "broken", "break", "broke", "breaking", "crack", "shatter",
+            "wound", "scar", "bleed", "hurt", "ache", "pain", "fear", "scared",
+            "hollow", "numb", "ghost", "fade", "fading", "gone", "lose", "left",
+            "leaving", "ending", "dead", "dying", "drown", "blame", "regret",
+            "mistake", "liar", "lie", "betray", "cold", "storm", "wreck",
+            "romper", "romperse", "roto", "rota", "herida", "cicatriz", "sangrar",
+            "doler", "miedo", "asustado", "asustada", "hueco", "fantasma", "perder", "perdido", "final", "muerto", "morir",
+            "ahogar", "culpa", "arrepentir", "error", "mentira", "mentiroso",
+            "traicion", "frio", "tormenta", "caer", "caida", "hundir", "naufragio",
+            "hurts", "cries", "cried", "aching", "scars", "wounds",
         }
     ),
     "energia": frozenset(
@@ -141,8 +151,106 @@ EMOTION_LEXICON: dict[str, frozenset[str]] = {
 }
 
 #: Polaridad de cada tema para el sentimiento global.
-POSITIVE_THEMES = frozenset({"felicidad", "energia", "amor", "calma"})
+POSITIVE_THEMES = frozenset({"felicidad", "amor", "energia"})
 NEGATIVE_THEMES = frozenset({"tristeza"})
+#: Temas atmosféricos: describen tono, no polaridad.
+NEUTRAL_THEMES = frozenset({"calma", "misterio"})
+
+#: Cuánto pesa cada tema en la polaridad (energía pesa menos que felicidad/amor).
+THEME_POLARITY: dict[str, float] = {
+    "felicidad": 1.0,
+    "amor": 0.9,
+    "energia": 0.35,
+    "tristeza": -1.0,
+}
+
+#: Negaciones: invierten la polaridad de las NEGATION_WINDOW palabras siguientes.
+NEGATIONS: frozenset[str] = frozenset(
+    {
+        "no", "not", "never", "none", "nothing", "nobody", "nowhere", "without",
+        "nada", "nadie", "nunca", "jamas", "tampoco", "sin", "ni",
+        "don't", "dont", "doesn't", "doesnt", "didn't", "didnt", "isn't", "isnt",
+        "aren't", "arent", "wasn't", "wasnt", "weren't", "werent", "can't", "cant",
+        "cannot", "won't", "wont", "wouldn't", "wouldnt", "shouldn't", "shouldnt",
+        "couldn't", "couldnt", "ain't", "aint",
+    }
+)
+NEGATION_WINDOW = 3
+
+#: Términos con evidencia clara. El resto del léxico (genéricos) pesa la mitad.
+STRONG_TERMS: dict[str, frozenset[str]] = {
+    "felicidad": frozenset(
+        {
+            "feliz", "felicidad", "alegria", "contento", "contenta", "maravilloso",
+            "maravillosa", "fantastico", "increible", "genial", "perfecto",
+            "perfecta", "happy", "happiness", "joy", "joyful", "wonderful",
+        }
+    ),
+    "tristeza": frozenset(
+        {
+            "triste", "tristeza", "llanto", "llorar", "llorando", "lagrima",
+            "lagrimas", "dolor", "doloroso", "sufrimiento", "sufrir", "pena",
+            "nostalgia", "melancolia", "sollozo", "depresion", "desesperanza",
+            "solo", "sola", "solitario", "perdida", "adios", "olvido", "roto",
+            "rota", "herida", "cicatriz", "culpa", "mentira", "traicion", "miedo",
+            "sad", "sadness", "cry", "crying", "tear", "tears", "sob", "weep",
+            "grief", "sorrow", "heartbreak", "heartbroken", "lonely", "loneliness",
+            "alone", "goodbye", "broken", "hurt", "ache", "pain", "fear", "scared",
+            "hollow", "numb", "ghost", "lost", "regret", "blame", "liar", "betray",
+        }
+    ),
+    "energia": frozenset(
+        {
+            "energia", "fuerza", "poder", "intenso", "intensa", "vibrante", "fuego",
+            "fuerte", "salvaje", "energy", "power", "powerful", "strong", "strength",
+            "force", "intense", "fire", "wild", "burn", "fight", "rise",
+        }
+    ),
+    "calma": frozenset(
+        {
+            "calma", "paz", "sereno", "serena", "tranquilo", "tranquila", "apacible",
+            "placido", "quietud", "calm", "peace", "peaceful", "tranquil", "serene",
+            "serenity", "relax",
+        }
+    ),
+    "misterio": frozenset(
+        {
+            "misterio", "misterioso", "misteriosa", "enigmatico", "enigmatica",
+            "secreto", "oculto", "oculta", "penumbra", "niebla", "bruma",
+            "mystery", "mysterious", "enigmatic", "cryptic", "secret", "hidden",
+            "concealed", "fog", "mist", "unknown",
+        }
+    ),
+    "amor": frozenset(
+        {
+            "amor", "amante", "amada", "amado", "ternura", "devocion", "beso",
+            "abrazo", "corazon", "deseo", "love", "lover", "beloved", "darling",
+            "adore", "cherish", "affection", "devotion", "kiss", "heart", "desire",
+        }
+    ),
+}
+
+_TERM_WEIGHT_STRONG = 1.0
+_TERM_WEIGHT_WEAK = 0.5
+_NEGATION_FACTOR = 0.75
+_NEGATION_PRESSURE = 0.12
+_NEGATION_PRESSURE_CAP = 1.2
+
+#: palabra -> ((tema, peso), ...) construido a partir del léxico.
+_WORD_THEMES: dict[str, tuple[tuple[str, float], ...]] = {}
+for _theme, _lexicon in EMOTION_LEXICON.items():
+    _strong = STRONG_TERMS.get(_theme, frozenset())
+    for _word in sorted(_lexicon):
+        _weight = _TERM_WEIGHT_STRONG if _word in _strong else _TERM_WEIGHT_WEAK
+        _WORD_THEMES[_word] = (*_WORD_THEMES.get(_word, ()), (_theme, _weight))
+
+#: Tokenizador que conserva los apóstrofos («don't» es una sola palabra).
+_TOKEN_RE = re.compile(r"[^\W\d_]+(?:['\u2019][^\W\d_]+)*", re.UNICODE)
+
+
+def _tokenize(text: str) -> list[str]:
+    """Divide el texto en palabras, manteniendo contracciones y negaciones."""
+    return [token.replace("\u2019", "'") for token in _TOKEN_RE.findall(text)]
 
 #: Tema emocional → etiqueta de mood del catálogo (para filtrar/buscar).
 THEME_TO_MOOD: dict[str, Mood] = {
@@ -238,8 +346,8 @@ class LyricsAnalyzer:
         text_clean = _normalize_lyrics(lyrics_text)
         language = self._detect_language(text_clean)
         words = self._significant_words(text_clean, language)
-        themes = self._emotional_themes(words)
-        sentiment = self._sentiment(themes)
+        tokens = _tokenize(text_clean)
+        themes, sentiment = self._score_lyrics(tokens)
         confidence = self._confidence(words, themes)
 
         return LyricsAnalysis(
@@ -275,38 +383,73 @@ class LyricsAnalyzer:
             if len(word) >= self.min_word_length and word not in stop
         ]
 
-    @staticmethod
-    def _emotional_themes(words: list[str]) -> dict[str, float]:
-        """Puntúa cada tema emocional según su presencia en la letra.
+    def _score_lyrics(self, tokens: list[str]) -> tuple[dict[str, float], str]:
+        """Puntúa temas y sentimiento sobre la secuencia de palabras.
 
-        El peso combina la proporción de coincidencias del léxico con la
-        densidad respecto al total de palabras (evita que un texto largo
-        con una sola mención puntúe alto).
+        A diferencia de un conteo plano, aquí importa el orden: una negación
+        (``no``, ``never``, ``sin``…) invierte la polaridad de las palabras que
+        vienen detrás, y los términos con evidencia clara pesan más que los
+        genéricos (``heartbreak`` frente a ``night``).
         """
-        if not words:
-            return {}
-        unique = set(words)
-        total = len(words)
-        themes: dict[str, float] = {}
-        for theme, lexicon in EMOTION_LEXICON.items():
-            matches = len(unique & lexicon)
-            if matches == 0:
+        raw: dict[str, float] = {}
+        positive = 0.0
+        negative = 0.0
+        negate_until = -1
+        negations = 0
+
+        for index, token in enumerate(tokens):
+            if token in NEGATIONS:
+                negate_until = index + NEGATION_WINDOW
+                negations += 1
                 continue
-            density = matches / total
-            # Escala suave: 3 coincidencias ya saturan el peso del tema.
-            themes[theme] = round(min(1.0, matches / 3.0) * 0.7 + min(1.0, density * 10) * 0.3, 4)
-        return dict(sorted(themes.items(), key=lambda item: item[1], reverse=True))
+
+            hits = _WORD_THEMES.get(token.split("'")[0])
+            if not hits:
+                continue
+
+            negated = index <= negate_until
+            for theme, weight in hits:
+                # La palabra negada sigue contando para el tema, pero mucho menos.
+                raw[theme] = raw.get(theme, 0.0) + weight * (0.4 if negated else 1.0)
+
+                polarity = THEME_POLARITY.get(theme, 0.0)
+                if polarity == 0.0:
+                    continue
+                if negated:
+                    # «No te quiero» resta, pero «no llores» no suma: negar una
+                    # tristeza solo la cancela, no convierte la letra en alegre.
+                    if polarity > 0:
+                        negative += weight * _NEGATION_FACTOR
+                    continue
+                value = weight * polarity
+                if value > 0:
+                    positive += value
+                else:
+                    negative -= value
+
+        # Muchas negaciones seguidas son señal de tensión, no de calma.
+        negative += min(_NEGATION_PRESSURE_CAP, negations * _NEGATION_PRESSURE)
+
+        themes = {
+            theme: round(min(1.0, score / 3.0), 4)
+            for theme, score in raw.items()
+            if score > 0
+        }
+        themes = dict(sorted(themes.items(), key=lambda item: item[1], reverse=True))
+        return themes, self._sentiment(positive, negative)
 
     @staticmethod
-    def _sentiment(themes: dict[str, float]) -> str:
-        """Sentimiento global a partir de los temas detectados."""
-        if not themes:
+    def _sentiment(positive: float, negative: float) -> str:
+        """Sentimiento global a partir de la evidencia positiva y negativa.
+
+        ``calma`` y ``misterio`` no aportan polaridad: una letra solo
+        atmosférica se queda en ``neutral`` en vez de contar como positiva.
+        """
+        if positive <= 0.0 and negative <= 0.0:
             return "neutral"
-        positive = sum(score for theme, score in themes.items() if theme in POSITIVE_THEMES)
-        negative = sum(score for theme, score in themes.items() if theme in NEGATIVE_THEMES)
-        if positive > negative * 1.5:
+        if positive >= 1.2 and positive > negative * 1.8:
             return "positive"
-        if negative > positive * 1.5:
+        if negative >= 1.0 and negative > positive * 1.15:
             return "negative"
         return "neutral"
 

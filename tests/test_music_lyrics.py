@@ -129,6 +129,36 @@ def test_lexicon_is_reasonable():
         assert words
 
 
+def test_negation_flips_positive_lyrics():
+    analysis = LyricsAnalyzer().analyze_lyrics(
+        "I don't love you anymore\nDon't smile at me\nI never wanted this"
+    )
+    assert analysis.sentiment != "positive"
+
+
+def test_atmospheric_lyrics_stay_neutral():
+    analysis = LyricsAnalyzer().analyze_lyrics(
+        "Silencio en la noche\nsombra y niebla\ncalma lenta"
+    )
+    assert analysis.themes
+    assert analysis.sentiment == "neutral"
+
+
+def test_negated_sadness_does_not_turn_positive():
+    analysis = LyricsAnalyzer().analyze_lyrics(
+        "Don't cry, don't break, don't hurt\nI won't lose the night"
+    )
+    assert analysis.sentiment == "neutral"
+
+
+def test_breakup_vocabulary_is_negative():
+    analysis = LyricsAnalyzer().analyze_lyrics(
+        "My heart is broken and it hurts\nI feel hollow, I feel numb\nA ghost of what we had"
+    )
+    assert "tristeza" in analysis.themes
+    assert analysis.sentiment == "negative"
+
+
 def test_create_default_analyzer():
     assert isinstance(create_default_analyzer(), LyricsAnalyzer)
 
