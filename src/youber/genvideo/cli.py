@@ -254,6 +254,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             report_dir=args.report,
             state_path=args.state,
             verify=not args.no_verify,
+            clean=not args.no_clean,
             keep_awake=not args.no_keep_awake,
             manage_comfyui=not args.no_manage_comfyui,
             keep_comfyui=args.keep_comfyui,
@@ -347,6 +348,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--report", help="Carpeta del manifiesto y el resumen")
     run.add_argument("--state", help="Fichero de cola (por defecto, el del usuario)")
     run.add_argument("--no-verify", action="store_true", help="No verificar los clips")
+    run.add_argument(
+        "--no-clean",
+        action="store_true",
+        help="No lavar los clips (grano + latido) al terminar cada uno",
+    )
     run.add_argument(
         "--no-manage-comfyui",
         action="store_true",

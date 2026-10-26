@@ -26,6 +26,7 @@ from pathlib import Path
 from loguru import logger
 
 from youber.genvideo import power
+from youber.genvideo.clean import clean_clip, replace
 from youber.genvideo.client import (
     ComfyUIClient,
     GenerationClient,
@@ -58,6 +59,9 @@ DEFAULT_RETRY_STEPS = 16
 
 #: Fallos seguidos que abortan el lote (señal de que el backend se ha caído).
 MAX_CONSECUTIVE_FAILURES = 3
+
+#: Subcarpeta donde se guarda el clip **crudo** cuando el lote lo lava.
+RAW_SUBDIR = "raw"
 
 #: Margen sobre la estimación para decidir si un clip cabe antes del cierre.
 WINDOW_MARGIN = 0.15
@@ -322,6 +326,8 @@ class NightlyRunner:
         output_dir: str | Path | None = None,
         report_dir: str | Path | None = None,
         verify: bool = True,
+        clean: bool = True,
+        keep_raw: bool = True,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
         retry_steps: int = DEFAULT_RETRY_STEPS,
         min_detail: float = MIN_DETAIL,
@@ -337,6 +343,8 @@ class NightlyRunner:
         self.output_dir = Path(output_dir) if output_dir else default_dir() / "clips"
         self.report_dir = Path(report_dir) if report_dir else None
         self.verify = verify
+        self.clean = clean
+        self.keep_raw = keep_raw
         self.max_attempts = max_attempts
         self.retry_steps = retry_steps
         self.min_detail = min_detail
@@ -508,6 +516,8 @@ class NightlyRunner:
             logger.info(
                 f"[{ordinal:03d}] OK · {request.seconds / 60:.1f} min · {dest.name}"
             )
+            if self.clean:
+                await self._clean_clip(request, ordinal)
         except Exception as exc:  # noqa: BLE001 - un clip malo no debe tumbar el lote
             request.status = JobStatus.FAILED
             request.error = describe_error(exc)[:500]
@@ -517,6 +527,43 @@ class NightlyRunner:
         if request.seconds:
             self._observed_seconds.append(request.seconds)
         self.queue.update(request)
+
+    async def _clean_clip(self, request: ClipRequest, ordinal: int) -> None:
+        """Lava el clip recién generado (grano + latido) y guarda el crudo aparte.
+
+        Es la receta ``hqdn3d + tmix + igualado temporal`` que antes se hacía a
+        mano con un script aparte; aquí va dentro del lote, para que lo que sale
+        del lote ya esté listo para el montaje. Es *best-effort*: si el lavado
+        falla, el clip crudo se queda donde estaba y el lote sigue.
+        """
+        if not request.output:
+            return
+        final = Path(request.output)
+        stash = final.parent / RAW_SUBDIR
+        stashed = stash / final.name
+        washed = stash / f"_{final.stem}_lavado{final.suffix}"
+        try:
+            stash.mkdir(parents=True, exist_ok=True)
+            if self.keep_raw:
+                replace(final, stashed)
+                origin = stashed
+            else:
+                origin = final
+            report = await clean_clip(origin, washed)
+            replace(washed, final)
+            logger.info(f"[{ordinal:03d}] lavado · {report.summary}")
+            if not report.ok:
+                logger.warning(
+                    f"[{ordinal:03d}] el lavado movió el nivel más de la cuenta "
+                    f"({report.level_before:.1f} -> {report.level_after:.1f})"
+                )
+        except Exception as exc:  # noqa: BLE001 - el lavado no debe tumbar el lote
+            logger.warning(
+                f"[{ordinal:03d}] el lavado falló ({describe_error(exc)}); "
+                f"dejo el clip tal como salió del motor"
+            )
+            if not final.exists() and stashed.exists():
+                replace(stashed, final)
 
     def _handle_bad_quality(self, request: ClipRequest, ordinal: int) -> None:
         """Decide si un clip que no pasa la verificación se reintenta o se tira."""
@@ -566,6 +613,8 @@ async def run_nightly(
     report_dir: str | Path | None = None,
     state_path: str | Path | None = None,
     verify: bool = True,
+    clean: bool = True,
+    keep_raw: bool = True,
     keep_awake: bool = True,
     manage_comfyui: bool = True,
     keep_comfyui: bool = False,
@@ -596,6 +645,9 @@ async def run_nightly(
         report_dir: Carpeta del manifiesto y el resumen.
         state_path: Fichero de cola (por defecto, el del usuario).
         verify: Si se verifica cada clip.
+        clean: Lavar cada clip verificado (grano + latido) antes de darlo por
+            bueno. Deja el clip lavado en su ruta y el crudo en ``raw/``.
+        keep_raw: Guardar el clip crudo (``raw/``) además del lavado.
         keep_awake: Desactivar la suspensión del equipo mientras dure el lote.
         manage_comfyui: Levantar ComfyUI si no está y pararlo al terminar.
         keep_comfyui: Dejar ComfyUI levantado al acabar (no pararlo).
@@ -658,6 +710,8 @@ async def run_nightly(
         output_dir=output_dir,
         report_dir=report_dir,
         verify=verify,
+        clean=clean,
+        keep_raw=keep_raw,
         keep_awake=keep_awake,
         deadline=deadline,
         window_start=window_start,

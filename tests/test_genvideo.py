@@ -21,6 +21,15 @@ import httpx
 import pytest
 
 from youber.genvideo import power
+from youber.genvideo.clean import (
+    clean_clip,
+    histogram,
+    inverse_cdf,
+    match_table,
+    percentile_threshold,
+    pulse,
+    sum_histograms,
+)
 from youber.genvideo.cli import main as genvideo_main
 from youber.genvideo.client import (
     ComfyUIClient,
@@ -1321,3 +1330,120 @@ def test_scheduler_ejecuta_lote_genvideo(tmp_path: Path):
     assert isinstance(result, dict)
     assert result["clips"] == 1
     assert result["metrage"] > 0
+
+
+# -- lavado (``youber.genvideo.clean``) --------------------------------------
+
+
+def _pico(level: int, count: int = 256) -> list[int]:
+    """Histograma de un fotograma de un solo nivel (probar sin FFmpeg)."""
+    hist = [0] * 256
+    hist[level] = count
+    return hist
+
+
+def test_lavado_histograma_cuenta_niveles():
+    plano = bytes([0, 0, 5, 255, 255, 255])
+    hist = histogram(plano)
+    assert sum(hist) == 6
+    assert hist[0] == 2
+    assert hist[5] == 1
+    assert hist[255] == 3
+
+
+def test_lavado_pulse_mide_el_latido():
+    latido, _, nivel = pulse([_pico(60), _pico(90)])
+    assert latido == pytest.approx(30.0)
+    assert nivel == pytest.approx(75.0)
+
+
+def test_lavado_percentile_threshold():
+    hist = [0] * 256
+    hist[10] = 90
+    hist[200] = 10
+    assert percentile_threshold(hist, 0.90) == 10
+    assert percentile_threshold(hist, 0.95) == 200
+
+
+def test_lavado_igualado_deja_el_mismo_histograma():
+    """Tras el igualado, dos fotogramas con latido acaban con la misma media."""
+    oscuro = [0] * 256
+    oscuro[60] = 200
+    oscuro[61] = 56
+    claro = [0] * 256
+    claro[90] = 200
+    claro[91] = 56
+    inversa = inverse_cdf(sum_histograms([oscuro, claro]))
+
+    def media(hist: list[int]) -> float:
+        tabla = match_table(hist, inversa)
+        return sum(tabla[value] * count for value, count in enumerate(hist)) / sum(hist)
+
+    assert media(oscuro) == pytest.approx(media(claro), abs=1.0)
+    # el fotograma oscuro se ha ido al nivel de la referencia (deja de latir)
+    assert media(oscuro) > 60.0
+
+
+def test_clean_clip_rechaza_la_misma_ruta(tmp_path: Path):
+    origen = tmp_path / "x.mp4"
+    origen.write_bytes(b"no soy un video")
+    with pytest.raises(ValueError):
+        asyncio.run(clean_clip(origen, origen))
+
+
+@needs_ffmpeg
+def test_clean_clip_real(tmp_path: Path):
+    """Lavado de verdad: a un clip con latido le baja el latido."""
+    origen = tmp_path / "latido.mp4"
+    subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+         "-i", "testsrc2=s=320x176:r=24", "-t", "3",
+         "-vf", "format=gray,geq=lum='lum(X,Y)*(0.55+0.4*(0.5+0.5*sin(2*PI*T)))'",
+         "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(origen)],
+        check=True,
+    )
+    salida = tmp_path / "lavado.mp4"
+    informe = asyncio.run(clean_clip(origen, salida))
+    assert salida.exists() and salida.stat().st_size > 0
+    assert informe.frames > 0
+    assert informe.pulse_before > 10.0
+    assert informe.pulse_after < informe.pulse_before
+
+
+@needs_ffmpeg
+def test_runner_lava_los_clips(tmp_path: Path):
+    """El lote deja el clip lavado en su ruta y el crudo en ``raw/``."""
+    report = _run(
+        run_nightly(
+            prompts=["un pasillo vacío"],
+            preset=Resolution.SD,
+            stub=True,
+            clean=True,
+            output_dir=tmp_path / "clips",
+            report_dir=tmp_path / "reports",
+            state_path=tmp_path / "queue.json",
+        )
+    )
+    assert len(report.done) == 1
+    clip = report.done[0]
+    assert clip.output and Path(clip.output).exists()
+    assert (Path(clip.output).parent / "raw" / Path(clip.output).name).exists()
+
+
+@needs_ffmpeg
+def test_runner_puede_no_lavar(tmp_path: Path):
+    """Con ``clean=False`` no se guarda copia cruda."""
+    report = _run(
+        run_nightly(
+            prompts=["un pasillo vacío"],
+            preset=Resolution.SD,
+            stub=True,
+            clean=False,
+            output_dir=tmp_path / "clips",
+            report_dir=tmp_path / "reports",
+            state_path=tmp_path / "queue.json",
+        )
+    )
+    clip = report.done[0]
+    assert clip.output and Path(clip.output).exists()
+    assert not (Path(clip.output).parent / "raw").exists()

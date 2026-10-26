@@ -24,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from youber.genvideo.models import frames_for_seconds  # noqa: E402
 from youber.genvideo.verify import verify_clip  # noqa: E402
 
 GEN = ROOT / "scratch" / "gen_video_from_still.py"
@@ -103,7 +104,7 @@ def main() -> int:
         nfile = out_dir / f"_p{sid}.negative.txt"
         mfile.write_text(motion, encoding="utf-8")
         nfile.write_text(negative, encoding="utf-8")
-        frames = int(round(float(shot.get("clip_duration_seconds") or 8) * FPS))
+        frames = frames_for_seconds(float(shot.get("clip_duration_seconds") or 8), FPS)
         base = a.seed_base if a.seed_base is not None else 8000 + int(sid)
         seed = base + (random.randint(1000, 900000) if a.reseed else 0)
         out = out_dir / f"clip{sid}_{a.res}_{a.tag}.mp4"

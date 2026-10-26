@@ -13,7 +13,8 @@ aquí:
 
 - a 720p el cuello de botella es la **decodificación del VAE**, no la difusión
   → ``tiled_vae=True`` siempre (5× más rápido y el pico de VRAM baja de 7,9 a
-  3,2 GB);
+  3,2 GB); y las teselas van a **512 con 128 de solape** (con las de 256 las
+  juntas se ven como un «velo»/grano en los planos abiertos);
 - con la LoRA Turbo hacen falta **8 steps** a 720p (con 4 la imagen sale plana
   y oscura) y bastan **4** a 480p;
 - los pesos **GGUF Q8 son un 10 % más lentos** que el fp16 → se usa fp16;
@@ -127,8 +128,12 @@ class GenConfig(BaseModel):
     height: int = Field(default=704, ge=64)
     frames: int = Field(default=DEFAULT_FRAMES, ge=1)
     tiled_vae: bool = True
-    tile_size: int = Field(default=256, ge=64)
-    tile_overlap: int = Field(default=64, ge=0)
+    #: Teselas de 512/128, no 256/64: con las pequeñas las juntas del VAE se ven
+    #: como un "velo"/grano, sobre todo en planos abiertos con paredes lisas.
+    #: Medido en Argumentos v2 (planos 1 y 4): con 512 las juntas desaparecen; y
+    #: 512 aguanta a 720p en la RTX 3050 (8 GB).
+    tile_size: int = Field(default=512, ge=64)
+    tile_overlap: int = Field(default=128, ge=0)
     temporal_size: int = Field(default=16, ge=1)
     temporal_overlap: int = Field(default=4, ge=0)
     latent_multiplier: float = 1.0
