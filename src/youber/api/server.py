@@ -19,6 +19,7 @@ from loguru import logger
 
 from youber.api.models import ApiError
 from youber.api.routes import ROUTES
+from youber.console import ensure_utf8_console
 
 __all__ = ["ROUTES", "handle", "list_routes"]
 
@@ -52,10 +53,9 @@ def _main(argv: list[str] | None = None) -> int:
     """
     import argparse
 
-    # stdout en UTF-8: en Windows el codec por defecto (cp1252) rompe con
+    # stdout/stderr en UTF-8: en Windows el codec por defecto (cp1252) rompe con
     # emojis/unicode de los logs (UnicodeEncodeError) al imprimir el JSON.
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    ensure_utf8_console()
 
     parser = argparse.ArgumentParser(prog="python -m youber.api.server")
     parser.add_argument("--route", required=True, help="Ruta canónica (music.list, ...)")
