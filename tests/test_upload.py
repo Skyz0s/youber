@@ -170,7 +170,8 @@ def test_auth_authorization_url():
     assert "scope=" in url
     assert "access_type=offline" in url
     assert "state=s1" in url
-    assert "prompt=consent+select_account" in url
+    assert "prompt=consent" in url
+    assert "select_account" not in url
     # sin redirect explícito se usa el flujo manual (clientes antiguos)
     assert OOB_REDIRECT_URI.replace(":", "%3A").replace("/", "%2F") in url
 

@@ -176,20 +176,23 @@ class YouTubeAuth:
                 de out-of-band, para el flujo manual).
         """
         self._require_client()
-        params = {
+        params: dict[str, str] = {
             "client_id": self.client_id,
             "redirect_uri": redirect_uri or self.redirect_uri or OOB_REDIRECT_URI,
             "response_type": "code",
             "scope": SCOPES,
             "access_type": "offline",
-            # select_account fuerza el selector de cuenta: si el navegador
-            # tiene varias sesiones de Google, no autoriza a la que toco por
-            # defecto.
-            "prompt": "consent select_account",
+            # Google solo admite UN valor en ``prompt``: "consent" fuerza la
+            # pantalla de permisos (necesaria al añadir scopes nuevos).
+            # "consent select_account" da 400 malformed y repetir el parámetro
+            # da "OAuth 2 parameters can only have a single value: prompt".
+            # Con varias cuentas de Google conviene YOUBER_OAUTH_PROMPT=select_account
+            # para que el usuario elija cuál autoriza.
+            "prompt": os.getenv("YOUBER_OAUTH_PROMPT", "consent"),
         }
         if state:
             params["state"] = state
-        return f"{AUTH_URL}?{urlencode(params)}"
+        return f"{AUTH_URL}?{urlencode(params, doseq=True)}"
 
     async def exchange_code(self, code: str, redirect_uri: str | None = None) -> dict:
         """Intercambia el código de autorización por tokens y los guarda.
