@@ -25,6 +25,7 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import re
 import secrets
 import time
 import webbrowser
@@ -57,6 +58,23 @@ SCOPES = (
 DEFAULT_CREDENTIALS_DIR = Path.home() / ".youber" / "credentials"
 TOKEN_FILENAME = "youtube_token.json"
 CLIENT_FILENAME = "oauth_client.json"
+
+#: Variable de entorno para separar tokens por cuenta de YouTube:
+#: ``YOUBER_ACCOUNT=virtujarvis`` -> ``~/.youber/credentials/virtujarvis/``.
+#: Sin la variable se usa el directorio de siempre (compatible hacia atrás).
+ACCOUNT_ENV = "YOUBER_ACCOUNT"
+
+
+def account_dir(account: str) -> Path:
+    """Directorio de credenciales para una cuenta concreta."""
+    safe = re.sub(r"[^A-Za-z0-9.@_-]", "_", account.strip()) or "default"
+    return DEFAULT_CREDENTIALS_DIR / safe
+
+
+def _dir_for_account() -> Path:
+    """Credenciales activas: ``YOUBER_ACCOUNT`` manda, si no el directorio base."""
+    account = os.getenv(ACCOUNT_ENV, "").strip()
+    return account_dir(account) if account else DEFAULT_CREDENTIALS_DIR
 
 
 class _CallbackServer(http.server.HTTPServer):
@@ -128,7 +146,7 @@ class YouTubeAuth:
                 el puerto que elija :meth:`authorize_local_server`; el flujo
                 manual usa ``OOB_REDIRECT_URI``.
         """
-        self.credentials_dir = Path(credentials_dir or DEFAULT_CREDENTIALS_DIR)
+        self.credentials_dir = Path(credentials_dir or _dir_for_account())
         self.token_file = self.credentials_dir / TOKEN_FILENAME
         stored_id, stored_secret = self._load_client_file()
         self.client_id = client_id or os.getenv("GOOGLE_CLIENT_ID", "") or stored_id

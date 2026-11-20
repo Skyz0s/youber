@@ -456,3 +456,16 @@ def test_cli_parser_commands():
     )
     assert args.command == "schedule"
     assert args.publish_at is not None
+
+def test_yourber_account_separa_tokens_por_cuenta(tmp_path, monkeypatch):
+    """YOUBER_ACCOUNT manda el token a un subdirectorio: dos canales, dos tokens."""
+    from youber.upload import auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "DEFAULT_CREDENTIALS_DIR", tmp_path)
+    monkeypatch.setenv("YOUBER_ACCOUNT", "virtujarvis@gmail.com")
+    carpeta = auth_mod.YouTubeAuth(client_id="id", client_secret="secreto")
+    assert carpeta.token_file == tmp_path / "virtujarvis@gmail.com" / auth_mod.TOKEN_FILENAME
+
+    monkeypatch.delenv("YOUBER_ACCOUNT")
+    base = auth_mod.YouTubeAuth(client_id="id", client_secret="secreto")
+    assert base.token_file == tmp_path / auth_mod.TOKEN_FILENAME
