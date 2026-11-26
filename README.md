@@ -117,6 +117,7 @@ asyncio.run(main())
 - [YouTube Music](docs/YOUTUBE_MUSIC.md) — catálogo en la nube e importación CSV
 - [Descubrimiento de canales](docs/DISCOVERY.md) — búsqueda por categorías, ranking y similares
 - [Edición de vídeo](docs/VIDEO_EDITOR.md) — proyectos, transiciones y overlays
+- [Subida a TikTok](docs/TIKTOK.md) - Content Posting API (bandeja de entrada y post directo)
 - [Subida a YouTube](docs/UPLOAD.md) — OAuth 2.0 y publicación programada
 - [Bot de Telegram](docs/TELEGRAM.md) — comandos para controlar el framework
 - [Programador de tareas](docs/SCHEDULER.md) — jobs, cron y daemon
